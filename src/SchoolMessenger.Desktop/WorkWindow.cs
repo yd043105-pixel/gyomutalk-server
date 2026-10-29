@@ -20,6 +20,7 @@ public sealed class WorkWindow : Window
     readonly StackPanel detail = new() { Margin = new Thickness(24) };
     readonly TextBlock feedback = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(16, 8, 16, 10) };
     readonly Dictionary<string, SubmissionPacket> pending = new();
+    WrapPanel? targetsPanel;
     string view = "todos";
     int offset;
     bool busy, rendering;
@@ -53,7 +54,7 @@ public sealed class WorkWindow : Window
         var summary=new FrameworkElementFactory(typeof(TextBlock));summary.SetBinding(TextBlock.TextProperty,new Binding("Summary"));summary.SetValue(TextBlock.FontSizeProperty,10d);summary.SetResourceReference(TextBlock.ForegroundProperty,"Muted");summary.SetValue(FrameworkElement.MarginProperty,new Thickness(0,6,0,0));summary.SetValue(TextBlock.TextWrappingProperty,TextWrapping.NoWrap);summary.SetValue(TextBlock.TextTrimmingProperty,TextTrimming.CharacterEllipsis);row.AppendChild(summary);
         list.ItemTemplate=new DataTemplate{VisualTree=row};
         list.SelectionChanged += async (_, _) => { if (!rendering && list.SelectedItem is WorkRow row) await Run(() => Show(row.Value)); };
-        grid.Children.Add(list); var scroll = new ScrollViewer { Content = detail, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }; Grid.SetColumn(scroll, 1); grid.Children.Add(scroll); layout.Children.Add(grid);
+        grid.Children.Add(list); var scroll = new ScrollViewer { Content = detail, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled }; Grid.SetColumn(scroll, 1); grid.Children.Add(scroll); layout.Children.Add(grid);
         Loaded += async (_, _) => await Run(async () => { await Reload(); if (requestedId is not null) await Submission(requestedId); });
         Loaded+=(_,_)=>deadlineClock.Start();Closed+=(_,_)=>deadlineClock.Stop();
         deadlineClock.Tick+=async(_,_)=>{var today=KoreanToday;if(today!=displayedDay&&!busy){if(view=="todos")await Run(Reload);else displayedDay=today;}};
@@ -138,17 +139,38 @@ public sealed class WorkWindow : Window
             var actions=new WrapPanel();actions.Children.Add(Action("파일 일괄 다운로드 (ZIP)", async () => { var dialog = new Microsoft.Win32.SaveFileDialog { FileName = "제출파일.zip", Filter = "ZIP 파일|*.zip" }; if (dialog.ShowDialog(this) == true) await api.DownloadPath($"api/submission-requests/{id}/zip", dialog.FileName); },true));
             if (!closed) actions.Children.Add(Action("요청 종료", async () => { if (System.Windows.MessageBox.Show(this, "새 제출과 자동 알림을 종료할까요?", "제출 요청 종료", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return; await api.Send<JsonElement>(HttpMethod.Post, $"api/submission-requests/{id}/close"); await Submission(id); }));detail.Children.Add(actions);
         }
+        var targetGrid=new WrapPanel{ItemWidth=126,HorizontalAlignment=HorizontalAlignment.Stretch,Tag="submission-targets"};targetsPanel=targetGrid;
+        targetGrid.SizeChanged+=(_,e)=>{if(e.NewSize.Width<=0)return;var columns=mine?Math.Clamp((int)(e.NewSize.Width/126),1,4):1;targetGrid.ItemWidth=Math.Floor(e.NewSize.Width/columns);};
+        detail.Children.Add(targetGrid);
         foreach (var target in targets)
         {
             var exempt = target.GetProperty("exempt").GetBoolean(); var submitted = target.GetProperty("submittedAt").ValueKind != JsonValueKind.Null;
-            var targetDetails=new StackPanel();targetDetails.Children.Add(Text(String(target, "name") + " · " + (exempt ? "면제" : submitted ? target.GetProperty("late").GetBoolean() ? "지각 제출" : "제출 완료" : "미제출")));
+            var name=String(target,"name");var state=exempt?"면제":submitted?target.GetProperty("late").GetBoolean()?"지각 제출":"제출 완료":"미제출";
+            var targetDetails=new StackPanel();var header=new Grid{ColumnDefinitions={new(){Width=new GridLength(12)},new(),new(){Width=GridLength.Auto}}};
+            var indicator=new System.Windows.Shapes.Ellipse{Width=6,Height=6,HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Center};indicator.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,exempt?"Muted":submitted?"Blue":"Line");header.Children.Add(indicator);
+            var label=Text(name,12);label.SetResourceReference(TextBlock.ForegroundProperty,"Ink");label.FontWeight=FontWeights.SemiBold;label.TextWrapping=TextWrapping.NoWrap;label.TextTrimming=TextTrimming.CharacterEllipsis;label.Margin=new Thickness(0);label.VerticalAlignment=VerticalAlignment.Center;Grid.SetColumn(label,1);header.Children.Add(label);targetDetails.Children.Add(header);
             foreach (var file in target.GetProperty("files").EnumerateArray())
             {
                 var attachment = file.Deserialize<Attachment>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
-                if (attachment.Expired) targetDetails.Children.Add(Text(attachment.Name + " · 파일 만료", 11));
-                else targetDetails.Children.Add(Action(attachment.Description, async () => { var dialog = new Microsoft.Win32.SaveFileDialog { FileName = attachment.Name }; if (dialog.ShowDialog(this) == true) await api.Download(attachment.Id, dialog.FileName); }));
+                var filename=Text(attachment.Name,10);filename.TextWrapping=TextWrapping.NoWrap;filename.TextTrimming=TextTrimming.CharacterEllipsis;filename.Margin=new Thickness(0);filename.ToolTip=attachment.Description+(attachment.Expired?" · 파일 만료":"");
+                if (attachment.Expired){filename.Margin=new Thickness(0,6,0,0);targetDetails.Children.Add(filename);}
+                else
+                {
+                    var download=Action(attachment.Name, async () => { var dialog = new Microsoft.Win32.SaveFileDialog { FileName = attachment.Name }; if (dialog.ShowDialog(this) == true) await api.Download(attachment.Id, dialog.FileName); });
+                    download.Content=filename;download.HorizontalContentAlignment=HorizontalAlignment.Stretch;download.MinWidth=0;download.Padding=new Thickness(4,3,4,3);download.Margin=new Thickness(0,6,0,0);download.ToolTip=attachment.Description;download.Tag="submission-file";
+                    System.Windows.Automation.AutomationProperties.SetName(download,attachment.Description);targetDetails.Children.Add(download);
+                }
             }
-            if (mine && !closed) targetDetails.Children.Add(Action(exempt ? "면제 해제" : "제출 면제", async () => { await api.Send<JsonElement>(HttpMethod.Patch, $"api/submission-requests/{id}/targets/{String(target, "id")}", new { exempt = !exempt }); await Submission(id); }));detail.Children.Add(Card(targetDetails));
+            var card=Card(targetDetails);card.Padding=new Thickness(8);card.CornerRadius=new CornerRadius(9);card.Margin=new Thickness(0,0,8,8);card.MinHeight=48;card.ToolTip=name+" · "+state;card.Tag=String(target,"id");
+            System.Windows.Automation.AutomationProperties.SetName(card,name);System.Windows.Automation.AutomationProperties.SetHelpText(card,state);
+            if(mine&&!closed)
+            {
+                var menu=new ContextMenu();var exemption=new MenuItem{Header=exempt?"면제 해제":"제출 면제"};menu.Items.Add(exemption);card.ContextMenu=menu;
+                exemption.Click+=async(_,_)=>{if(busy)return;busy=true;try{await Run(async()=>{await api.Send<JsonElement>(HttpMethod.Patch,$"api/submission-requests/{id}/targets/{String(target,"id")}",new{exempt=!exempt});await Submission(id);});}finally{busy=false;}};
+                var more=new Button{Content="…",Width=20,Height=22,Padding=new Thickness(0),Margin=new Thickness(2,0,0,0),BorderThickness=new Thickness(0),Background=Brushes.Transparent,ToolTip=name+" 제출 관리"};more.SetResourceReference(Control.ForegroundProperty,"Muted");System.Windows.Automation.AutomationProperties.SetName(more,name+" 제출 관리");
+                more.Click+=(_,_)=>{if(busy)return;menu.PlacementTarget=more;menu.Placement=System.Windows.Controls.Primitives.PlacementMode.Bottom;menu.IsOpen=true;};Grid.SetColumn(more,2);header.Children.Add(more);
+            }
+            targetGrid.Children.Add(card);
         }
         if (!mine && !closed && targets.Length > 0 && !targets[0].GetProperty("exempt").GetBoolean())
         {
@@ -178,6 +200,29 @@ public sealed class WorkWindow : Window
         detail.Children.Add(Text("업로드한 파일은 30일 보관됩니다.",11));
     }
     sealed record WorkRow(JsonElement Value, string Title,string Summary){public string Label=>Title+"\n"+Summary;}
+    internal async Task VerifySubmissionLayout(Action<Window,string> capture,string directory)
+    {
+        var checks=new List<string>();void Check(bool ok,string message){if(!ok)throw new InvalidOperationException(message);checks.Add(message);}
+        for(var i=0;i<100&&(targetsPanel?.Children.Count??0)<8;i++)await Task.Delay(50);
+        Check(targetsPanel?.Children.Count==16,"all sixteen synthetic recipients are rendered");
+        void Layout(){UpdateLayout();targetsPanel!.UpdateLayout();UpdateLayout();}
+        double Y(int index)=>targetsPanel!.Children[index].TranslatePoint(new Point(),targetsPanel).Y;
+        Width=860;Layout();Check(Math.Abs(Y(0)-Y(3))<1&&Y(4)>Y(0),"four recipient cards fit on one row at the normal window size");
+        Check(targetsPanel!.Children.Cast<FrameworkElement>().All(c=>c.TranslatePoint(new Point(),targetsPanel).X+c.ActualWidth<=targetsPanel.ActualWidth+1),"recipient cards stay inside the detail viewport without horizontal overflow");
+        var file=targetsPanel.Children.Cast<Border>().SelectMany(c=>((StackPanel)c.Child).Children.OfType<Button>()).First(b=>Equals(b.Tag,"submission-file"));var text=(TextBlock)file.Content;
+        var full=new FormattedText(text.Text,CultureInfo.CurrentUICulture,FlowDirection.LeftToRight,new Typeface(text.FontFamily,text.FontStyle,text.FontWeight,text.FontStretch),text.FontSize,Brushes.Black,VisualTreeHelper.GetDpi(text).PixelsPerDip);
+        Check(text.TextWrapping==TextWrapping.NoWrap&&text.TextTrimming==TextTrimming.CharacterEllipsis&&full.Width>text.ActualWidth&&file.ToolTip!.ToString()!.Contains(text.Text),"an overflowing filename is ellipsized while its full name remains available in the tooltip");
+        capture(this,Path.Combine(directory,"submissions-compact.png"));
+        Width=650;Layout();Check(Math.Abs(Y(0)-Y(1))<1&&Y(2)>Y(0),"a narrower window reduces the recipient grid to two columns");capture(this,Path.Combine(directory,"submissions-compact-narrow.png"));
+        Width=860;Layout();var card=targetsPanel.Children.Cast<Border>().First(c=>System.Windows.Automation.AutomationProperties.GetHelpText(c)=="미제출");var targetId=(string)card.Tag;
+        ((MenuItem)card.ContextMenu.Items[0]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));for(var i=0;i<100&&busy;i++)await Task.Delay(50);
+        var result=await api.Get<JsonElement>($"api/submission-requests/{requestedId}");Check(result.GetProperty("targets").EnumerateArray().First(t=>String(t,"id")==targetId).GetProperty("exempt").GetBoolean(),"compact recipient management still exempts the selected person through the server");
+        card=targetsPanel!.Children.Cast<Border>().First(c=>Equals(c.Tag,targetId));((MenuItem)card.ContextMenu.Items[0]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));for(var i=0;i<100&&busy;i++)await Task.Delay(50);
+        result=await api.Get<JsonElement>($"api/submission-requests/{requestedId}");Check(!result.GetProperty("targets").EnumerateArray().First(t=>String(t,"id")==targetId).GetProperty("exempt").GetBoolean(),"exemption can be undone without changing the other recipients");
+        var attachment=result.GetProperty("targets").EnumerateArray().SelectMany(t=>t.GetProperty("files").EnumerateArray()).First().Deserialize<Attachment>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        var downloaded=Path.Combine(directory,"submission-download-check.txt");await api.Download(attachment.Id,downloaded);Check(File.ReadAllText(downloaded).Contains("synthetic-submission"),"collector can still download the submitted file with its existing authorization");
+        Layout();capture(this,Path.Combine(directory,"submissions-compact.png"));File.WriteAllText(Path.Combine(directory,"submission-layout-checks.json"),JsonSerializer.Serialize(new{checks,realSchoolData=false}));
+    }
     internal async Task Verify()
     {
         var day=new DateOnly(2026,12,31);

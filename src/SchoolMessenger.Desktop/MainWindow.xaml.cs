@@ -431,6 +431,12 @@ public partial class MainWindow : Window
             UsernameBox.Text = Environment.GetEnvironmentVariable("SCHOOL_UI_USER") ?? "admin";
             RememberLogin.IsChecked = true;
             PasswordBox.Password = Environment.GetEnvironmentVariable("SCHOOL_UI_PASSWORD") ?? ""; await SignIn();
+            if(Environment.GetEnvironmentVariable("YY_SUBMISSION_UI_ONLY")=="1")
+            {
+                if(Api?.Session?.User is null)throw new InvalidOperationException("제출 화면 시운행 로그인 실패");
+                var submissionOutput=Path.GetDirectoryName(Path.GetFullPath(Environment.GetEnvironmentVariable("SCHOOL_UI_OUTPUT")!))!;
+                var work=new WorkWindow(this,Environment.GetEnvironmentVariable("YY_SUBMISSION_PREVIEW_ID"));work.Show();await work.VerifySubmissionLayout(SavePreview,submissionOutput);work.Close();await SignOut();exiting=true;System.Windows.Application.Current.Shutdown(0);return;
+            }
             var saved = File.ReadAllBytes(savedLogin.FilePath);
             if (System.Text.Encoding.UTF8.GetString(saved).Contains(Environment.GetEnvironmentVariable("SCHOOL_UI_PASSWORD")!)) throw new InvalidOperationException("비밀번호 저장 금지 검증 실패");
             var originalUser = Api!.Session!.User!.Id;
