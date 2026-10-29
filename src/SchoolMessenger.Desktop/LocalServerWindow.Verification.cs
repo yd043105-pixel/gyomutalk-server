@@ -30,7 +30,7 @@ public sealed partial class LocalServerWindow
         }
         try
         {
-            foreach(var c in cards){c.Auto.IsChecked=false;c.Mode.SelectedIndex=0;c.Data.Text=Path.Combine(directory,c.Service);}
+            foreach(var c in cards){c.Auto.IsChecked=false;c.Mode.SelectedIndex=0;c.Data.Text=Path.Combine(directory,c.Service);c.Activated=true;}Refresh();
             if(ownerExit)
             {
                 await Start(cards[0]);await Ready(5080);File.WriteAllText(Path.Combine(outputDirectory,"owner-exit-ready.json"),"{\"ready\":true}");quitting=true;Application.Current.Shutdown();return;
