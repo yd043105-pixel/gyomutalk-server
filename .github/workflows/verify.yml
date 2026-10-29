@@ -44,6 +44,7 @@ jobs:
           ./scripts/Build-ServerInstaller.ps1
           ./tests/server-installer.ps1 -ShortcutOnly
           Copy-Item artifacts/yymessenger-1.0.0-server-setup-win-x64.exe artifacts/gyomutalk-server-1.0.0-trial.exe
+          ((Get-FileHash 'artifacts/gyomutalk-server-1.0.0-trial.exe' -Algorithm SHA256).Hash.ToLowerInvariant() + '  gyomutalk-server-1.0.0-trial.exe') | Set-Content artifacts/SHA256SUMS.txt -Encoding ascii
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: gyomutalk-server-1.0.0-trial
