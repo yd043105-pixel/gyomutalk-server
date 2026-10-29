@@ -17,7 +17,7 @@ public sealed partial class LocalServerWindow
             foreach(var card in cards)await card.Host.Stop();
             foreach(var card in cards.Where(c=>c.Host.Installed))
             {
-                if(card.Mode.SelectedIndex==0&&!File.Exists(Path.Combine(card.Data.Text,".initialized")))continue;
+                if(card.Mode.SelectedIndex!=1&&!Initialized(card))continue;
                 await BackupBeforeUpdate(card);
             }
             SaveSettings();
@@ -29,16 +29,16 @@ public sealed partial class LocalServerWindow
     }
     async Task BackupBeforeUpdate(ServerCard card)
     {
-        var trial=card.Mode.SelectedIndex==0;
+        var trial=card.Mode.SelectedIndex!=1;
         var start=new ProcessStartInfo(trial?card.Host.Executable:Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"System32","WindowsPowerShell","v1.0","powershell.exe")){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true,WorkingDirectory=Path.GetDirectoryName(card.Host.Executable)!};
         foreach(var key in start.Environment.Keys.Where(k=>new[]{"School__","Portal__","Operations__","Announcements__","Registration__","FeedbackMail__","YY_MANAGED_"}.Any(p=>k.StartsWith(p,StringComparison.OrdinalIgnoreCase))).ToArray())start.Environment.Remove(key);
         if(trial)
         {
             var prefix=card.Service=="office"?"School":"Portal";
             start.Environment["ASPNETCORE_ENVIRONMENT"]="Development";
-            start.Environment[prefix+"__DataDirectory"]=Path.GetFullPath(card.Data.Text);
+            start.Environment[prefix+"__DataDirectory"]=Path.GetFullPath(DataPath(card));
             // Reuse the backend's managed backup location so expiry/graduation erasure also covers update backups.
-            start.Environment[prefix+"__BackupDirectory"]=Path.Combine(Path.GetFullPath(card.Data.Text),"backups");
+            start.Environment[prefix+"__BackupDirectory"]=Simple(card)?Path.GetFullPath(card.Backup.Text):Path.Combine(Path.GetFullPath(card.Data.Text),"backups");
             start.Environment[prefix+"__AttachmentBackup"]="true";
             start.ArgumentList.Add("--operations-backup");
         }

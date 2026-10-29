@@ -33,6 +33,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        CertificatePins.UseFolder(LocalDirectory);
         InitializeActivity();
         InitializeNavigation();
         MinHeight = Math.Min(580, SystemParameters.WorkArea.Height - 30);
@@ -127,6 +128,18 @@ public partial class MainWindow : Window
     }
     async Task SignIn()
     {
+        try { await SignInOnce(); }
+        catch (HttpRequestException) when (CertificatePins.Pending(ServerAddress.Text) is { } fingerprint && ConfirmCertificate(fingerprint))
+        { await SignInOnce(); }
+    }
+    bool ConfirmCertificate(string fingerprint)
+    {
+        var answer = MessageBox.Show(this, "이 학교 서버에 처음 연결합니다.\n\n연결 확인 코드: " + CertificatePins.Code(fingerprint) + "\n\n서버 PC의 관리자 프로그램(또는 학교 관리자 안내)에 표시된 코드와 똑같을 때만 '예'를 누르세요. 다르면 '아니요'를 누르고 관리자에게 알려 주세요.", "학교 서버 확인", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (answer != MessageBoxResult.Yes) return false;
+        CertificatePins.Trust(ServerAddress.Text, fingerprint); return true;
+    }
+    async Task SignInOnce()
+    {
         await VerifySelectedSchool();
         if (hub is not null) await hub.DisposeAsync(); Api?.Dispose(); Api = new Api(ServerAddress.Text);
         await Api.Login(UsernameBox.Text.Trim(), PasswordBox.Password, RememberLogin.IsChecked == true); PasswordBox.Clear(); UsernameBox.Text=Api.Session!.User!.Username; SavePreferences();
@@ -176,7 +189,7 @@ public partial class MainWindow : Window
     {
         if (Api is null) return;
         if (hub is not null) await hub.DisposeAsync();
-        hub = new HubConnectionBuilder().WithUrl(new Uri(Api.Address, "hub"), o => o.Cookies = Api.Cookies).WithAutomaticReconnect().Build();
+        hub = new HubConnectionBuilder().WithUrl(new Uri(Api.Address, "hub"), o => { o.Cookies = Api.Cookies; CertificatePins.Apply(o, Api.Address); }).WithAutomaticReconnect().Build();
         hub.On<string>("NewMessage", async id => await Dispatcher.InvokeAsync(() => Run(async () => { if (knownIncoming.Add(id)) Notify(); await Refresh(); })).Task.Unwrap());
         hub.On<string>("MessageRecalled", async id => await Dispatcher.InvokeAsync(() => Run(async()=>{Archive.Remove(id);await Refresh();})).Task.Unwrap());
         hub.On<string>("ReadChanged", async _ => await Dispatcher.InvokeAsync(() => Run(RefreshWindows)).Task.Unwrap());

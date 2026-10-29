@@ -17,4 +17,5 @@ async function run(extra=[]){await new Promise((resolve,reject)=>{const child=sp
 await run();const report=JSON.parse(readFileSync(path.join(output,'server-manager-checks.json'),'utf8'));for(const item of report.checks)console.log('PASS '+item);
 await run(['--owner-exit']);
 for(const port of [5080,5081]){let stopped=false;for(let n=0;n<60;n++){try{await fetch('http://127.0.0.1:'+port+'/health',{signal:AbortSignal.timeout(400)});}catch{stopped=true;break;}await new Promise(r=>setTimeout(r,250));}assert.ok(stopped,'A managed server survived its owner exit');}
-report.checks.push('managed servers shut down when their manager process exits; no orphaned backend remains');writeFileSync(path.join(output,'server-manager-checks.json'),JSON.stringify(report,null,2));console.log(report.checks.length+' native server-manager checks passed.');
+report.checks.push('managed servers shut down when their manager process exits; no orphaned backend remains');
+await run(['--simple-setup']);for(const item of JSON.parse(readFileSync(path.join(output,'simple-setup-checks.json'),'utf8')).checks){console.log('PASS '+item);report.checks.push(item);}writeFileSync(path.join(output,'server-manager-checks.json'),JSON.stringify(report,null,2));console.log(report.checks.length+' native server-manager checks passed.');

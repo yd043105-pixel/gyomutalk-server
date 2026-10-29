@@ -30,7 +30,7 @@ public sealed class RemoteClient(MainWindow main, Api? connectionApi = null) : I
         var api = connectionApi ?? main.Api;
         if (disposed || api is null) return;
         if (hub is not null) { if (hub.State == HubConnectionState.Disconnected) await hub.StartAsync(); return; }
-        hub = new HubConnectionBuilder().WithUrl(new Uri(api.Address, "remote"), o => o.Cookies = api.Cookies).WithAutomaticReconnect().Build();
+        hub = new HubConnectionBuilder().WithUrl(new Uri(api.Address, "remote"), o => { o.Cookies = api.Cookies; CertificatePins.Apply(o, api.Address); }).WithAutomaticReconnect().Build();
         hub.On<RemoteOffer>("Offer", offer => OnUi(() => { if (Offer is null) { IsTarget = true; Show(offer); } }));
         hub.On<RemoteOffer>("Started", offer => OnUi(() =>
         {

@@ -25,7 +25,7 @@ public partial class MainWindow
     }
     Task VerifySelectedSchool()=>selectedSchool is null
         ?string.IsNullOrWhiteSpace(ServerAddress.Text)?Task.FromException(new InvalidOperationException("학교를 먼저 검색해 선택하세요.")):Task.CompletedTask
-        :SchoolDirectory.Verify(selectedSchool,"office");
+        :SchoolDirectory.Verify(selectedSchool,"office",default,CertificatePins.Handler(new Uri(selectedSchool.OfficeAddress.TrimEnd('/')+"/")));
     void SelectSchool(SchoolDirectory.Entry school)
     {
         var changed=selectedSchool?.Id!=school.Id||ServerAddress.Text.TrimEnd('/')!=school.OfficeAddress.TrimEnd('/');

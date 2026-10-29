@@ -37,7 +37,7 @@ public partial class App : System.Windows.Application
             var root=Environment.GetEnvironmentVariable("YY_MANAGER_ROOT")??throw new InvalidOperationException("시험 배포 경로가 필요합니다.");
             var state=Environment.GetEnvironmentVariable("YY_MANAGER_STATE")??throw new InvalidOperationException("시험 저장 경로가 필요합니다.");
             var window=new LocalServerWindow(root,state,@"Software\YeoyangSchoolMessenger\ManagerTests\"+Path.GetFileName(state));MainWindow=window;
-            window.Loaded+=async(_,_)=>await window.Verify(Environment.GetEnvironmentVariable("YY_MANAGER_OUTPUT")??state,e.Args.Contains("--owner-exit"));window.Show();
+            var output=Environment.GetEnvironmentVariable("YY_MANAGER_OUTPUT")??state;window.Loaded+=async(_,_)=>{if(e.Args.Contains("--simple-setup"))await window.VerifySimple(output);else await window.Verify(output,e.Args.Contains("--owner-exit"));};window.Show();
         }
         else if(AdministratorMode)
         {

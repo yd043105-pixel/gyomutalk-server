@@ -21,9 +21,10 @@ builder.Services.AddSingleton(deploymentReview);
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 105L*1024*1024);
 if (builder.Configuration["Portal:CertificateThumbprint"] is {Length:>0} thumbprint)
 {
-    using var certificates = new System.Security.Cryptography.X509Certificates.X509Store(System.Security.Cryptography.X509Certificates.StoreName.My,System.Security.Cryptography.X509Certificates.StoreLocation.LocalMachine);
+    var managed = builder.Configuration["Portal:CertificateStore"] == "CurrentUser";
+    using var certificates = new System.Security.Cryptography.X509Certificates.X509Store(System.Security.Cryptography.X509Certificates.StoreName.My,managed?System.Security.Cryptography.X509Certificates.StoreLocation.CurrentUser:System.Security.Cryptography.X509Certificates.StoreLocation.LocalMachine);
     certificates.Open(System.Security.Cryptography.X509Certificates.OpenFlags.ReadOnly);
-    var certificate = certificates.Certificates.Find(System.Security.Cryptography.X509Certificates.X509FindType.FindByThumbprint,thumbprint,true).FirstOrDefault(c=>c.HasPrivateKey)
+    var certificate = certificates.Certificates.Find(System.Security.Cryptography.X509Certificates.X509FindType.FindByThumbprint,thumbprint,!managed).FirstOrDefault(c=>c.HasPrivateKey)
         ?? throw new InvalidOperationException("유효한 공지 서버 인증서와 개인키가 필요합니다.");
     builder.WebHost.ConfigureKestrel(o=>o.ConfigureHttpsDefaults(https=>https.ServerCertificate=certificate));
 }
@@ -69,7 +70,8 @@ var hasher=app.Services.GetRequiredService<PasswordHasher<Account>>();
 if(store.Query("SELECT Id FROM People WHERE Role='admin'",r=>r.GetString(0)).Count==0)
 {
     var password=builder.Configuration["Portal:AdminPassword"];if(!Password(password))throw new InvalidOperationException("첫 실행: Portal__AdminPassword에 12~128자 비밀번호를 지정하세요.");
-    var administrator=new Account(Guid.NewGuid().ToString("N"),"admin","학교 공지 관리자","admin",null,null,false,true,1,null,0,0);
+    var username=builder.Configuration["Portal:AdminUsername"]??"admin";if(!PortalSecurity.Username(username))throw new InvalidOperationException("관리자 아이디는 영문·숫자·._- 3~32자입니다.");
+    var administrator=new Account(Guid.NewGuid().ToString("N"),username,"학교 공지 관리자","admin",null,null,false,true,1,null,0,0);
     store.Execute("INSERT INTO People(Id,Username,Name,Role,PasswordHash) VALUES($id,'admin',$name,'admin',$hash)",("$id",administrator.Id),("$name",administrator.Name),("$hash",hasher.HashPassword(administrator,password!)));
 }
 File.WriteAllText(Path.Combine(store.Root,".initialized"),"initialized");

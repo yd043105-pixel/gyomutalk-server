@@ -60,7 +60,7 @@ Name: "custom"; Description: "사용자 지정 · 시험 환경"; Flags: iscusto
 
 [Components]
 Name: "office"; Description: "교내 업무 서버 · 교직원 메시지·업무"; Types: office
-Name: "announcements"; Description: "학교 소식 서버 · 학생·학부모 앱"; Types: announcements
+Name: "announcements"; Description: "학생·학부모 소식 서버 · 관리자 프로그램에서 필요할 때 설치"; Types: office announcements
 Name: "admin"; Description: "관리자 프로그램 · 서버·구성원·학교 설정"; Types: office announcements administrator custom; Flags: fixed
 
 [Tasks]

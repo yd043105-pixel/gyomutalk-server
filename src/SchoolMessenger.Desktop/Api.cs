@@ -20,7 +20,7 @@ public sealed class Api : IDisposable
         Address = uri;
         if (Address.Scheme != "https" && !(Address.Scheme == "http" && Address.IsLoopback))
             throw new InvalidOperationException("교내 서버 주소는 HTTPS여야 합니다. HTTP는 이 PC의 개발 서버에만 허용됩니다.");
-        Http = new HttpClient(new HttpClientHandler { CookieContainer = Cookies, AllowAutoRedirect=false }) { BaseAddress = Address, Timeout = TimeSpan.FromSeconds(90) };
+        Http = new HttpClient(CertificatePins.Handler(Address, new HttpClientHandler { CookieContainer = Cookies, AllowAutoRedirect=false })) { BaseAddress = Address, Timeout = TimeSpan.FromSeconds(90) };
         Http.DefaultRequestHeaders.Add("X-YY-Product","windows");
         Http.DefaultRequestHeaders.Add("X-YY-Version",typeof(Api).Assembly.GetName().Version?.ToString(3)??"1.0.0");
     }
