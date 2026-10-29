@@ -28,7 +28,7 @@ internal static class DesktopUpdater
         owner=window;
         try
         {
-            using var stream=typeof(DesktopUpdater).Assembly.GetManifestResourceStream("SchoolMessenger.UpdatePublisher.json")??throw new InvalidOperationException("업데이트 게시자 설정이 없습니다.");
+            using var stream=(manager?typeof(DesktopUpdater).Assembly.GetManifestResourceStream("SchoolMessenger.ServerUpdatePublisher.json"):null)??typeof(DesktopUpdater).Assembly.GetManifestResourceStream("SchoolMessenger.UpdatePublisher.json")??throw new InvalidOperationException("업데이트 게시자 설정이 없습니다.");
             using var config=JsonDocument.Parse(stream);product=config.RootElement.GetProperty("product").GetString()!;
             if(product!=(manager?"server":"windows"))throw new InvalidOperationException("이 설치본의 역할과 업데이트 채널이 일치하지 않습니다.");
             var repository="yd043105-pixel/gyomutalk-"+product;
@@ -44,6 +44,16 @@ internal static class DesktopUpdater
             Native.win_sparkle_set_user_run_installer_callback(installer);
             Native.win_sparkle_set_error_callback(failed);
             Native.win_sparkle_init();initialized=true;
+            var result=Path.Combine(Path.GetDirectoryName(setting)!,"last-result.json");
+            if(File.Exists(result))
+            {
+                try
+                {
+                    using var outcome=JsonDocument.Parse(File.ReadAllText(result));var success=outcome.RootElement.GetProperty("success").GetBoolean();File.Delete(result);
+                    Application.Current.Dispatcher.BeginInvoke(new Action(()=>MessageBox.Show(window,success?"프로그램 업데이트 설치를 완료했습니다. 서버관리자는 두 서버의 가동 상태를 확인하세요.":"업데이트 설치가 완료되지 않았습니다. 기존 프로그램으로 돌아왔습니다. 공식 릴리즈 설치파일과 Windows 권한을 확인하세요.","프로그램 업데이트")));
+                }
+                catch(Exception e)when(e is IOException or JsonException or InvalidOperationException or KeyNotFoundException) { }
+            }
         }
         catch(Exception e) when(e is IOException or JsonException or DllNotFoundException or EntryPointNotFoundException or BadImageFormatException or InvalidOperationException){error=e.Message;}
     }

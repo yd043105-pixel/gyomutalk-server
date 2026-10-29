@@ -28,7 +28,7 @@ jobs:
           $version=[string]([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.Version
           "APP_VERSION=$version" >> $env:GITHUB_ENV
           ./scripts/Install-WinSparkle.ps1
-          python -m pip install cryptography==46.0.3
+          python -m pip install cryptography==50.0.2
           python tests/update-feed.py
           if ($LASTEXITCODE -ne 0) { throw 'Signed updater verification failed' }
       - name: Build isolated server and administrator sources

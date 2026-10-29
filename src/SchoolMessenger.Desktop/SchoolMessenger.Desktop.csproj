@@ -10,6 +10,7 @@
   <ItemGroup><PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" /></ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="../../config/update-publisher.json" LogicalName="SchoolMessenger.UpdatePublisher.json" Condition="Exists('../../config/update-publisher.json')" />
+    <EmbeddedResource Include="../../config/update-publisher-server.json" LogicalName="SchoolMessenger.ServerUpdatePublisher.json" Condition="Exists('../../config/update-publisher-server.json')" />
     <Content Include="../../.tools/update-frameworks/winsparkle/WinSparkle-0.9.4/x64/Release/WinSparkle.dll" Link="WinSparkle.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" Condition="Exists('../../.tools/update-frameworks/winsparkle/WinSparkle-0.9.4/x64/Release/WinSparkle.dll')" />
     <Content Include="../../.tools/update-frameworks/winsparkle/WinSparkle-0.9.4/COPYING*" Link="licenses/WinSparkle/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
     <Content Include="../../scripts/Finish-DesktopUpdate.ps1" Link="Finish-DesktopUpdate.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
