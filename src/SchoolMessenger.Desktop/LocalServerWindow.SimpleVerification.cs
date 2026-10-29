@@ -32,6 +32,8 @@ public sealed partial class LocalServerWindow
             Check(card.SimpleFields.IsVisible&&card.PasswordFields.IsVisible&&!card.TrialFields.IsVisible&&!card.ProductionFields.IsVisible,"simple setup asks only for school name, administrator account and approval document");
             await Start(card);
             Check(card.Host.Running&&card.Fingerprint.Length==64,"the server starts in production mode with a generated certificate");
+            Check(CertificatePins.ValidateFingerprint(new Uri(address+"/"),card.Fingerprint),"the administrator program trusts the certificate it generated for its own sign-in");
+            CertificatePins.UseFolder(Path.Combine(directory,"teacher-pc")); // from here on, act as a teacher PC that has never connected
             async Task<bool> Ready(){using var http=new HttpClient(CertificatePins.Handler(new Uri(address+"/"),new HttpClientHandler())){Timeout=TimeSpan.FromSeconds(2)};for(var i=0;i<80;i++){try{if((await http.GetAsync(address+"/health")).IsSuccessStatusCode)return true;}catch(HttpRequestException){}catch(TaskCanceledException){}await Task.Delay(250);}return false;}
             Check(!await Ready()&&CertificatePins.Pending(address)==card.Fingerprint,"an unconfirmed school certificate is refused and offered for code comparison");
             CertificatePins.Trust(address,card.Fingerprint);

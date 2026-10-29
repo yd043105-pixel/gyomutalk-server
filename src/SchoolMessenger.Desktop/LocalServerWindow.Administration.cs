@@ -15,7 +15,8 @@ public sealed partial class LocalServerWindow
 {
     readonly Dictionary<string,Api> adminSessions=new();
     readonly Grid administrationView=new();
-    readonly TextBlock adminIdentity=Note("관리자 로그인이 필요합니다.");
+    readonly TextBlock adminIdentity=Note("관리자 로그인이 필요합니다."),adminRole=AdminUi.Label("","Faint",11);
+    readonly Border adminAvatar=AdminUi.Avatar("관");
     readonly Button signOut=new(){Content="이 서버 로그아웃",Visibility=Visibility.Collapsed};
     readonly List<Button> administrationNavigation=new();
     readonly DispatcherTimer sessionTimer=new(){Interval=TimeSpan.FromSeconds(15)};
@@ -38,7 +39,8 @@ public sealed partial class LocalServerWindow
     void UpdateAdminIdentity()
     {
         var authenticated=adminSessions.TryGetValue(activeService,out var source);
-        adminIdentity.Text=RoleName(activeService)+" · "+(authenticated?source!.Session?.User?.Name:"관리자 로그인 필요");
+        var name=authenticated?source!.Session?.User?.Name??"관리자":"로그인 필요";
+        adminIdentity.Text=name;adminRole.Text=RoleName(activeService)+" 관리자";((TextBlock)adminAvatar.Child).Text=authenticated&&name.Length>0?name[..1]:"관";
         signOut.Visibility=authenticated?Visibility.Visible:Visibility.Collapsed;
     }
     internal void ShowServerControls()=>SelectCard(cards.First(c=>c.Service==activeService));
@@ -98,7 +100,7 @@ public sealed partial class LocalServerWindow
         var role=service??activeService;CloseAdministrationPage();activeService=role;activePage=page;
         serverViews.Visibility=Visibility.Collapsed;administrationView.Visibility=Visibility.Visible;UpdateAdminIdentity();
         foreach(var card in cards)NavigationState(card.Navigation,false);
-        foreach(var button in administrationNavigation)NavigationState(button,Equals(button.Tag,page));
+        foreach(var button in administrationNavigation)NavigationState(button,button.Uid==page);
         if(!adminSessions.TryGetValue(role,out var source)){ShowAdministratorLogin(role,page);return;}
         var revision=viewRevision;
         administrationView.Children.Add(Surface(Note("관리자 권한을 확인하고 있습니다…")));
@@ -122,7 +124,8 @@ public sealed partial class LocalServerWindow
             var view=(FrameworkElement)controller.Content;controller.Content=null;view.Resources=controller.Resources;
             administrationController=controller;
             controller.Closed+=(_,_)=>{if(!closingPage&&ReferenceEquals(administrationController,controller))_ = SignOutAdministrator(role);};
-            administrationView.Children.Add(controller is ServerManagementWindow?view:Surface(view,new Thickness(0)));
+            // Office pages draw their own cards; the members page sits directly on the canvas.
+            administrationView.Children.Add(controller is ServerManagementWindow or OfficeWindow?view:Surface(view,new Thickness(0)));
         }
         catch(ApiRequestException e)when(e.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden){await SignOutAdministrator(role);}
         catch(Exception e){if(revision==viewRevision){var panel=new StackPanel();panel.Children.Add(Note(e.Message));var retry=new Button{Content="다시 연결",HorizontalAlignment=HorizontalAlignment.Left};retry.Click+=async(_,_)=>await OpenAdministration(page,role);panel.Children.Add(retry);administrationView.Children.Add(Surface(panel));}}
@@ -133,8 +136,9 @@ public sealed partial class LocalServerWindow
         var content=new StackPanel{MaxWidth=560,HorizontalAlignment=HorizontalAlignment.Left};
         var title=Text(RoleName(service)+" 관리자 로그인",22);title.FontWeight=FontWeights.Bold;content.Children.Add(title);
         content.Children.Add(Note("이 관리자 프로그램에서 구성원과 학교 설정을 관리합니다. 서버별 관리자 계정으로 로그인하세요."));
-        content.Children.Add(Text("서버 주소"));var card=cards.First(c=>c.Service==service);var address=new TextBox{Text=card.Host.Installed&&card.Mode.SelectedIndex==0?(service=="office"?"http://localhost:5080":"http://localhost:5081"):"",MinWidth=360,ToolTip="학교에서 안내한 해당 서버의 HTTPS 주소"};content.Children.Add(address);
-        content.Children.Add(Text("관리자 아이디"));var username=new TextBox{Text="admin"};content.Children.Add(username);
+        content.Children.Add(Text("서버 주소"));var card=cards.First(c=>c.Service==service);var local=card.Host.Installed&&card.Activated;
+        var address=new TextBox{Text=local&&card.Mode.SelectedIndex==0?(service=="office"?"http://localhost:5080":"http://localhost:5081"):local&&Simple(card)?"https://localhost:"+SimpleOperation.Port(service):"",MinWidth=360,ToolTip="학교에서 안내한 해당 서버의 HTTPS 주소"};content.Children.Add(address);
+        content.Children.Add(Text("관리자 아이디"));var username=new TextBox{Text=local&&Simple(card)&&card.AdminUsername.Text.Trim().Length>0?card.AdminUsername.Text.Trim():"admin"};content.Children.Add(username);
         content.Children.Add(Text("관리자 비밀번호"));var password=new PasswordBox{MinHeight=38};content.Children.Add(password);
         var status=Note(message??"비밀번호와 로그인 정보는 파일에 저장하지 않습니다.");content.Children.Add(status);
         var login=new Button{Content="관리자 로그인",Margin=new Thickness(0,12,0,0),HorizontalAlignment=HorizontalAlignment.Left,MinWidth=140};login.SetResourceReference(StyleProperty,"PrimaryButton");content.Children.Add(login);

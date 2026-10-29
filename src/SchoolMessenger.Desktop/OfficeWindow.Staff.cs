@@ -1,9 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using SchoolMessenger.Contracts;
 
@@ -11,61 +13,122 @@ namespace SchoolMessenger.Desktop;
 
 public sealed partial class OfficeWindow
 {
+    string? selectedStaff;string staffFilter="all";
+    record StaffRow(JsonElement User,string Id,string Name,string Department,string Position,string Username,string Seat,bool Active,bool Pending,bool Admin,bool Broadcast,bool Calendar,bool Rooms);
+    static string Value(JsonElement row,string key)=>row.TryGetProperty(key,out var value)&&value.ValueKind==JsonValueKind.String?value.GetString()??"":"";
+    static bool Flag(JsonElement row,string key)=>row.TryGetProperty(key,out var value)&&value.ValueKind==JsonValueKind.True;
+    // Member directory: searchable table on the left, the selected teacher's settings on the right (Figma "구성원 · 교직원·권한").
     async Task StaffList()
     {
-        body.Children.Clear();
-        var heading=new DockPanel{Margin=new Thickness(0,0,0,20)};var add=new Button{Content="교직원 등록 · 승인",VerticalAlignment=VerticalAlignment.Top,Margin=new Thickness(16,2,0,0),Padding=new Thickness(14,10,14,10)};add.SetResourceReference(StyleProperty,"PrimaryButton");add.ToolTip="교직원 사전 등록 · 가입 승인 · 업무 담당 권한";add.Click+=async(_,_)=>await Run(Administration);DockPanel.SetDock(add,Dock.Right);heading.Children.Add(add);
-        var introduction=new StackPanel();var title=Text("교직원·권한",24);title.FontWeight=FontWeights.Bold;title.Margin=new Thickness(0,0,0,8);introduction.Children.Add(title);var description=Text("계정 정보와 학교 업무 권한을 관리하세요.",12);description.Margin=new Thickness(0);description.SetResourceReference(TextBlock.ForegroundProperty,"Muted");introduction.Children.Add(description);heading.Children.Add(introduction);body.Children.Add(heading);
-        var users=await api.Get<JsonElement>("api/admin/users");
-        var searchGrid=new Grid{Margin=new Thickness(0,0,0,18)};var search=new TextBox{MinHeight=40};System.Windows.Automation.AutomationProperties.SetName(search,"교직원 검색");search.ToolTip="이름 · 부서 · 로그인 아이디 검색";searchGrid.Children.Add(search);var hint=new TextBlock{Text="이름 · 부서 · 로그인 아이디 검색",IsHitTestVisible=false,Margin=new Thickness(12,0,0,0),VerticalAlignment=VerticalAlignment.Center};hint.SetResourceReference(TextBlock.ForegroundProperty,"Muted");searchGrid.Children.Add(hint);body.Children.Add(searchGrid);
-        var count=Text("",12);count.Margin=new Thickness(0,0,0,10);count.SetResourceReference(TextBlock.ForegroundProperty,"Muted");body.Children.Add(count);
-        Grid Columns(){var grid=new Grid();foreach(var width in new[]{new GridLength(1.1,GridUnitType.Star),new GridLength(1.2,GridUnitType.Star),new GridLength(1,GridUnitType.Star),new GridLength(66),new GridLength(74)})grid.ColumnDefinitions.Add(new ColumnDefinition{Width=width});return grid;}
-        TextBlock Cell(string value,bool muted=false){var text=new TextBlock{Text=value,FontSize=12,VerticalAlignment=VerticalAlignment.Center,TextTrimming=TextTrimming.CharacterEllipsis,Margin=new Thickness(0,0,12,0),ToolTip=value};if(muted)text.SetResourceReference(TextBlock.ForegroundProperty,"Muted");return text;}
-        var labels=Columns();var titles=new[]{"이름","부서 · 직책","아이디","상태","관리"};for(var i=0;i<titles.Length;i++){var text=Cell(titles[i],true);text.FontSize=11;Grid.SetColumn(text,i);labels.Children.Add(text);}var header=new Border{Child=labels,Padding=new Thickness(14,12,14,12),CornerRadius=new CornerRadius(8,8,0,0)};header.SetResourceReference(Border.BackgroundProperty,"Soft");body.Children.Add(header);var list=new StackPanel();body.Children.Add(list);
-        void Render()
+        var usersTask=api.Get<JsonElement>("api/admin/users");var permissionsTask=api.Get<JsonElement>("api/admin/office/permissions");var pendingTask=api.Get<JsonElement>("api/admin/registrations");
+        var permissions=(await permissionsTask).EnumerateArray().ToDictionary(p=>Value(p,"userId"),p=>(Calendar:Flag(p,"calendarManager"),Rooms:Flag(p,"roomManager")));
+        var staff=(await usersTask).EnumerateArray().Select(u=>{var id=Value(u,"id");permissions.TryGetValue(id,out var p);return new StaffRow(u,id,Value(u,"name"),Value(u,"department"),Value(u,"position"),Value(u,"username"),Value(u,"seatIp"),Flag(u,"active"),Flag(u,"activationRequired"),Flag(u,"isAdmin"),Flag(u,"canBroadcast"),p.Calendar,p.Rooms);}).ToArray();
+        var pending=(await pendingTask).GetArrayLength();
+        Page(false);
+        var heading=new DockPanel{Margin=new Thickness(0,0,0,16)};
+        var add=new Button{Content=AdminUi.IconLabel("AdminPlusIcon","교직원 등록"),VerticalAlignment=VerticalAlignment.Bottom,ToolTip="교직원 사전 등록 · 가입 승인"};add.SetResourceReference(StyleProperty,"PrimaryButton");AutomationProperties.SetName(add,"교직원 등록 · 승인");add.Click+=async(_,_)=>await Run(Administration);DockPanel.SetDock(add,Dock.Right);heading.Children.Add(add);
+        var introduction=new StackPanel();introduction.Children.Add(AdminUi.Heading("교직원·권한",22));var description=AdminUi.Label("교직원 계정과 학교 업무 권한을 한 곳에서 관리합니다.","Muted",13);description.Margin=new Thickness(0,4,0,0);introduction.Children.Add(description);heading.Children.Add(introduction);body.Children.Add(heading);
+        // Toolbar: search and status filters; the sign-up filter opens the approval page.
+        var toolbar=new DockPanel{Margin=new Thickness(0,0,0,16)};var count=AdminUi.Label("","Faint");count.VerticalAlignment=VerticalAlignment.Center;DockPanel.SetDock(count,Dock.Right);toolbar.Children.Add(count);
+        var tools=new WrapPanel();toolbar.Children.Add(tools);body.Children.Add(toolbar);
+        var searchBox=new Grid{Width=300,Margin=new Thickness(0,0,8,0)};var search=new TextBox{Padding=new Thickness(32,6,8,6),ToolTip="이름 · 부서 · 아이디 · 좌석 IP 검색"};AutomationProperties.SetName(search,"교직원 검색");searchBox.Children.Add(search);
+        var glass=AdminUi.Icon("AdminSearchIcon",15,"Faint");glass.HorizontalAlignment=HorizontalAlignment.Left;glass.Margin=new Thickness(10,0,0,0);glass.IsHitTestVisible=false;searchBox.Children.Add(glass);
+        var hint=AdminUi.Label("이름 · 부서 · 좌석 IP 검색","Faint",12);hint.IsHitTestVisible=false;hint.Margin=new Thickness(33,0,0,0);hint.VerticalAlignment=VerticalAlignment.Center;searchBox.Children.Add(hint);tools.Children.Add(searchBox);
+        var rows=new StackPanel();var panel=new Border();var chips=new List<Button>();
+        void Chip(string filter,string label,int number,bool warn=false)
         {
-            list.Children.Clear();var query=search.Text.Trim();hint.Visibility=search.Text.Length==0?Visibility.Visible:Visibility.Collapsed;
-            var visible=0;foreach(var user in users.EnumerateArray())
-            {
-                var name=user.GetProperty("name").GetString()??"";var department=user.GetProperty("department").GetString()??"";var username=user.GetProperty("username").GetString()??"";
-                if(query.Length>0&&!(name+" "+department+" "+username).Contains(query,StringComparison.CurrentCultureIgnoreCase))continue;
-                visible++;var row=Columns();var person=Cell(name);person.FontWeight=FontWeights.SemiBold;row.Children.Add(person);var position=user.TryGetProperty("position",out var p)?p.GetString():"";var departmentCell=new StackPanel{VerticalAlignment=VerticalAlignment.Center};departmentCell.Children.Add(Cell(department));if(!string.IsNullOrWhiteSpace(position)){var detail=Cell(position,true);detail.FontSize=11;detail.Margin=new Thickness(0,4,12,0);departmentCell.Children.Add(detail);}Grid.SetColumn(departmentCell,1);row.Children.Add(departmentCell);
-                var identifier=Cell(username,true);Grid.SetColumn(identifier,2);row.Children.Add(identifier);var active=user.GetProperty("active").GetBoolean();var state=Cell(active?"사용 중":"중지",true);state.FontSize=11;state.Margin=new Thickness(0);var badge=new Border{Child=state,Padding=new Thickness(8,4,8,4),CornerRadius=new CornerRadius(5),HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Center};badge.SetResourceReference(Border.BackgroundProperty,active?"Pale":"Soft");if(active)state.SetResourceReference(TextBlock.ForegroundProperty,"Blue");Grid.SetColumn(badge,3);row.Children.Add(badge);
-                var edit=new Button{Content="설정",VerticalAlignment=VerticalAlignment.Center,Padding=new Thickness(10,6,10,6),Margin=new Thickness(6,0,0,0)};System.Windows.Automation.AutomationProperties.SetName(edit,name+" 계정 설정");edit.Click+=async(_,_)=>await Run(()=>StaffSettings(user));Grid.SetColumn(edit,4);row.Children.Add(edit);
-                var line=new Border{Child=row,Padding=new Thickness(14,14,14,14),MinHeight=66,BorderThickness=new Thickness(0,0,0,1)};line.SetResourceReference(Border.BorderBrushProperty,"Line");list.Children.Add(line);
-            }
-            if(list.Children.Count==0)list.Children.Add(Text("일치하는 교직원이 없습니다."));
-            count.Text=query.Length==0?$"전체 {users.GetArrayLength()}명":$"검색 결과 {visible}명 · 전체 {users.GetArrayLength()}명";
+            var content=new StackPanel{Orientation=Orientation.Horizontal};
+            if(warn){var dot=new System.Windows.Shapes.Ellipse{Width=7,Height=7,Margin=new Thickness(0,0,6,0),VerticalAlignment=VerticalAlignment.Center};dot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,"Warning");content.Children.Add(dot);}
+            content.Children.Add(new TextBlock{Text=label,FontWeight=FontWeights.SemiBold});content.Children.Add(new TextBlock{Text=" "+number,Opacity=0.65});
+            var chip=new Button{Content=content,Uid=filter,Tag=filter==staffFilter?"selected":null};chip.SetResourceReference(StyleProperty,"Chip");AutomationProperties.SetName(chip,label+" "+number+"명");
+            chip.Click+=async(_,_)=>{if(filter=="pending"){await Run(Administration);return;}staffFilter=filter;foreach(var c in chips)c.Tag=c.Uid==staffFilter?"selected":null;Rows();};
+            chips.Add(chip);tools.Children.Add(chip);
         }
-        search.TextChanged+=(_,_)=>Render();Render();
-    }
-    Task StaffSettings(JsonElement user)
-    {
-        body.Children.Clear();Button("교직원 목록으로",StaffList);var id=user.GetProperty("id").GetString()!;
-        var identifier=Field("교내 계정 ID · 외부 교사 연결에 사용",id);identifier.IsReadOnly=true;
-        var name=Field("이름",user.GetProperty("name").GetString()!);var department=Field("부서",user.GetProperty("department").GetString()!);var position=Field("직책 · 표시용, 권한과 별도로 관리",user.TryGetProperty("position",out var title)?title.GetString()??"":"");position.MaxLength=50;
-        var active=new CheckBox{Content="계정 사용 허용",IsChecked=user.GetProperty("active").GetBoolean()};var admin=new CheckBox{Content="시스템 관리자",IsChecked=user.GetProperty("isAdmin").GetBoolean()};var broadcast=new CheckBox{Content="학교 전체 공지 발송 허용",IsChecked=user.GetProperty("canBroadcast").GetBoolean()};body.Children.Add(active);body.Children.Add(admin);body.Children.Add(broadcast);
-        Button("계정 상태 저장 · 기존 세션 회수",async()=>{await api.Send<JsonElement>(HttpMethod.Patch,"api/admin/users/"+id,new{name=name.Text,department=department.Text,position=position.Text,password="",isAdmin=admin.IsChecked==true,canBroadcast=broadcast.IsChecked==true,active=active.IsChecked==true});await api.RefreshSession();await StaffList();});
-        Button("좌석 · 초기화 관리",()=>StaffSeat(user));
-        return Task.CompletedTask;
-    }
-    Task StaffSeat(JsonElement user)
-    {
-        body.Children.Clear();Button("교직원 목록으로",StaffList);var id=user.GetProperty("id").GetString()!;
-        body.Children.Add(Text(user.GetProperty("name").GetString()+" · "+user.GetProperty("username").GetString(),20));
-        var ip=Field("좌석 IPv4 · 비우면 연결 해제",user.TryGetProperty("seatIp",out var seat)&&seat.ValueKind==JsonValueKind.String?seat.GetString()!:"");
-        Button("좌석 변경 · 계정과 업무 기록 유지",async()=>{await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff/"+id+"/seat",new StaffSeatRequest(ip.Text));await StaffList();});
-        body.Children.Add(Text("계정 초기화는 모든 기기의 세션을 회수합니다. 새 번호는 교사 본인에게 개별 전달하세요."));var login=Field("로그인 아이디 · 본인 이름, 동명이인은 이름.2",user.GetProperty("name").GetString()!);body.Children.Add(Text("이름 아이디와 초기 비밀번호 12345678로 초기화합니다. 새 활성화 번호 확인과 개인 비밀번호 설정이 필요합니다."));
-        Button("계정 초기화 · 활성화 번호 재발급",async()=>
+        Chip("all","전체",staff.Length);Chip("active","사용 중",staff.Count(s=>s.Active&&!s.Pending));Chip("stopped","중지",staff.Count(s=>!s.Active));if(pending>0)Chip("pending","가입 신청",pending,true);
+        // Table and detail panel; the panel drops below the table on narrow windows.
+        var content=new Grid();content.ColumnDefinitions.Add(new ColumnDefinition());content.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(16)});content.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(340)});content.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});content.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});body.Children.Add(content);
+        var table=new StackPanel();
+        Grid Columns(){var grid=new Grid();foreach(var width in new[]{new GridLength(1.3,GridUnitType.Star),new GridLength(1,GridUnitType.Star),new GridLength(1.4,GridUnitType.Star),new GridLength(88)})grid.ColumnDefinitions.Add(new ColumnDefinition{Width=width});return grid;}
+        var labels=Columns();var titles=new[]{"이름","부서 · 직책","업무 권한","상태"};for(var i=0;i<titles.Length;i++){var text=AdminUi.Label(titles[i],"Muted",11,true);Grid.SetColumn(text,i);labels.Children.Add(text);}
+        var header=new Border{Child=labels,Padding=new Thickness(16,11,16,11),BorderThickness=new Thickness(0,0,0,1)};header.SetResourceReference(Border.BackgroundProperty,"Subtle");header.SetResourceReference(Border.BorderBrushProperty,"Line");table.Children.Add(header);table.Children.Add(rows);
+        var tableCard=AdminUi.Card(table,0);tableCard.ClipToBounds=true;tableCard.VerticalAlignment=VerticalAlignment.Top;content.Children.Add(tableCard);
+        var panelCard=AdminUi.Card(panel,20);panelCard.VerticalAlignment=VerticalAlignment.Top;content.Children.Add(panelCard);
+        content.SizeChanged+=(_,_)=>{var wide=content.ActualWidth>=760;Grid.SetColumn(panelCard,wide?2:0);Grid.SetRow(panelCard,wide?0:1);Grid.SetColumnSpan(panelCard,wide?1:3);Grid.SetColumnSpan(tableCard,wide?1:3);panelCard.Margin=new Thickness(0,wide?0:16,0,0);};
+        static Border Status(StaffRow s)=>s.Pending?AdminUi.Badge("활성화 대기","Warning"):s.Active?AdminUi.Badge("사용 중","Success"):AdminUi.Badge("중지","Neutral");
+        void Rows()
         {
-            if(MessageBox.Show(InteractionOwner,"로그인 이름과 초기 비밀번호를 적용하고, 모든 기기의 세션을 회수한 뒤 활성화를 다시 요구할까요?","교직원 계정 초기화",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
-            var result=await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff/"+id+"/reset",new StaffAccountRequest(login.Text.Trim(),user.GetProperty("name").GetString()!,user.GetProperty("department").GetString()!,null,"12345678",UseSharedPassword:true));
-            MessageBox.Show(InteractionOwner,"개별 전달할 활성화 번호:\n"+result.GetProperty("activationCode").GetString()+"\n유효 기간: 7일.","계정 초기화");await StaffList();
-        });return Task.CompletedTask;
+            rows.Children.Clear();var query=search.Text.Trim();hint.Visibility=search.Text.Length==0?Visibility.Visible:Visibility.Collapsed;
+            var visible=staff.Where(s=>staffFilter switch{"active"=>s.Active&&!s.Pending,"stopped"=>!s.Active,_=>true}).Where(s=>query.Length==0||(s.Name+" "+s.Department+" "+s.Position+" "+s.Username+" "+s.Seat).Contains(query,StringComparison.CurrentCultureIgnoreCase)).ToArray();
+            foreach(var s in visible)
+            {
+                var selected=s.Id==selectedStaff;var row=Columns();
+                var person=new DockPanel();var avatar=AdminUi.Avatar(s.Name);if(selected)avatar.SetResourceReference(Border.BackgroundProperty,"Surface");person.Children.Add(avatar);
+                var names=new StackPanel{Margin=new Thickness(10,0,8,0),VerticalAlignment=VerticalAlignment.Center};var name=AdminUi.Label(s.Name,"Ink",13,true);name.TextTrimming=TextTrimming.CharacterEllipsis;name.TextWrapping=TextWrapping.NoWrap;names.Children.Add(name);names.Children.Add(AdminUi.Label(s.Seat.Length>0?"좌석 "+s.Seat:"좌석 미지정","Faint",11));person.Children.Add(names);row.Children.Add(person);
+                var department=new StackPanel{VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(0,0,8,0)};department.Children.Add(AdminUi.Label(s.Department,"Ink"));if(s.Position.Length>0)department.Children.Add(AdminUi.Label(s.Position,"Muted",11));Grid.SetColumn(department,1);row.Children.Add(department);
+                var roles=new WrapPanel{VerticalAlignment=VerticalAlignment.Center};
+                foreach(var (on,label,tone) in new[]{(s.Admin,"관리자","Accent"),(s.Broadcast,"전체 공지","Neutral"),(s.Calendar,"학사일정","Neutral"),(s.Rooms,"특별실","Neutral")}){if(!on)continue;var badge=AdminUi.Badge(label,tone,false);badge.Margin=new Thickness(0,2,6,2);if(selected)badge.SetResourceReference(Border.BackgroundProperty,"Surface");roles.Children.Add(badge);}
+                Grid.SetColumn(roles,2);row.Children.Add(roles);var state=Status(s);Grid.SetColumn(state,3);row.Children.Add(state);
+                var line=new Button{Content=row,Tag=selected?"selected":null};line.SetResourceReference(StyleProperty,"TableRow");AutomationProperties.SetName(line,s.Name+" 계정 설정");AutomationProperties.SetItemStatus(line,selected?"선택됨":"");
+                line.Click+=(_,_)=>{selectedStaff=s.Id;Rows();Detail();};rows.Children.Add(line);
+            }
+            if(visible.Length==0){var none=AdminUi.Label("일치하는 교직원이 없습니다.","Muted",13);none.Margin=new Thickness(16,20,16,20);rows.Children.Add(none);}
+            count.Text=visible.Length==staff.Length?$"전체 {staff.Length}명":$"{visible.Length}명 표시 · 전체 {staff.Length}명";
+        }
+        void Detail()
+        {
+            var s=staff.FirstOrDefault(x=>x.Id==selectedStaff);if(s is null){panel.Child=AdminUi.Label("교직원을 선택하세요.","Muted",13);return;}
+            var stack=new StackPanel();panel.Child=stack;
+            var top=new DockPanel{Margin=new Thickness(0,0,0,18)};var state=Status(s);DockPanel.SetDock(state,Dock.Right);top.Children.Add(state);top.Children.Add(AdminUi.Avatar(s.Name,44));
+            var who=new StackPanel{Margin=new Thickness(12,0,8,0),VerticalAlignment=VerticalAlignment.Center};who.Children.Add(AdminUi.Heading(s.Name));who.Children.Add(AdminUi.Label(string.Join(" · ",new[]{"아이디 "+s.Username,s.Department,s.Position}.Where(v=>v.Trim().Length>0)),"Muted",11));top.Children.Add(who);stack.Children.Add(top);
+            stack.Children.Add(AdminUi.Group("기본 정보"));
+            var fields=new Grid();fields.ColumnDefinitions.Add(new ColumnDefinition());fields.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(12)});fields.ColumnDefinitions.Add(new ColumnDefinition());stack.Children.Add(fields);
+            TextBox Input(string label,string value,int index,int maxLength)
+            {
+                if(index%2==0)fields.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
+                var cell=new StackPanel{Margin=new Thickness(0,0,0,12)};var caption=AdminUi.Label(label,"Muted",12);caption.Margin=new Thickness(0,0,0,6);cell.Children.Add(caption);
+                var box=new TextBox{Text=value,MaxLength=maxLength};AutomationProperties.SetName(box,label);cell.Children.Add(box);Grid.SetRow(cell,index/2);Grid.SetColumn(cell,index%2==0?0:2);fields.Children.Add(cell);return box;
+            }
+            var name=Input("이름",s.Name,0,40);var position=Input("직책",s.Position,1,50);var department=Input("부서",s.Department,2,60);var seat=Input("좌석 IP",s.Seat,3,15);seat.ToolTip="교사 PC 자동 로그인용 IPv4 · 휴대폰 로그인에는 쓰지 않습니다. 비우면 연결 해제";
+            var roles=AdminUi.Group("업무 권한");roles.Margin=new Thickness(0,8,0,0);stack.Children.Add(roles);
+            CheckBox Switch(string title,string detail,bool value)
+            {
+                var text=new StackPanel();text.Children.Add(AdminUi.Label(title,"Ink",13,true));text.Children.Add(AdminUi.Label(detail,"Muted",11));
+                var toggle=new CheckBox{Content=text,IsChecked=value};toggle.SetResourceReference(StyleProperty,"Switch");AutomationProperties.SetName(toggle,title);stack.Children.Add(toggle);return toggle;
+            }
+            var admin=Switch("시스템 관리자","관리자 프로그램에 로그인하고 계정을 관리합니다.",s.Admin);
+            var broadcast=Switch("학교 전체 공지","전 교직원에게 공지 메시지를 보낼 수 있습니다.",s.Broadcast);
+            var calendar=Switch("학사일정 담당","학사일정을 등록하고 변경합니다.",s.Calendar);
+            var rooms=Switch("특별실 운영 담당","특별실을 추가하고 예약을 조정합니다.",s.Rooms);rooms.BorderThickness=new Thickness(0);
+            var actions=new DockPanel{Margin=new Thickness(0,18,0,0)};
+            var reset=new Button{Content="계정 초기화",ToolTip="초기 비밀번호 12345678로 되돌리고 새 활성화 번호를 발급합니다."};reset.SetResourceReference(StyleProperty,"DangerButton");actions.Children.Add(reset);
+            var save=new Button{Content="변경 저장",Margin=new Thickness(8,0,0,0)};save.SetResourceReference(StyleProperty,"PrimaryButton");DockPanel.SetDock(save,Dock.Right);
+            var toggleActive=new Button{Content=s.Active?"사용 중지":"다시 사용",Margin=new Thickness(8,0,0,0)};DockPanel.SetDock(toggleActive,Dock.Right);
+            actions.Children.Add(save);actions.Children.Add(toggleActive);actions.Children.Add(new Border());stack.Children.Add(actions);
+            save.Click+=async(_,_)=>await Run(async()=>
+            {
+                await api.Send<JsonElement>(HttpMethod.Patch,"api/admin/users/"+s.Id,new{name=name.Text,department=department.Text,position=position.Text,password="",isAdmin=admin.IsChecked==true,canBroadcast=broadcast.IsChecked==true,active=s.Active});
+                if(calendar.IsChecked!=s.Calendar||rooms.IsChecked!=s.Rooms)await api.Send<JsonElement>(HttpMethod.Post,"api/admin/office/permissions",new OfficePermissionRequest(s.Id,calendar.IsChecked==true,rooms.IsChecked==true));
+                if(seat.Text.Trim()!=s.Seat)await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff/"+s.Id+"/seat",new StaffSeatRequest(seat.Text.Trim()));
+                await api.RefreshSession();await StaffList();error.Text=s.Name+" 님의 설정을 저장했습니다.";
+            });
+            toggleActive.Click+=async(_,_)=>await Run(async()=>
+            {
+                if(s.Active&&MessageBox.Show(InteractionOwner,s.Name+" 님의 계정을 중지할까요?\n모든 기기에서 바로 로그아웃되고, 다시 사용으로 되돌릴 수 있습니다.","계정 사용 중지",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+                await api.Send<JsonElement>(HttpMethod.Patch,"api/admin/users/"+s.Id,new{name=s.Name,department=s.Department,position=s.Position,password="",isAdmin=s.Admin,canBroadcast=s.Broadcast,active=!s.Active});await api.RefreshSession();await StaffList();
+            });
+            reset.Click+=async(_,_)=>await Run(async()=>
+            {
+                if(MessageBox.Show(InteractionOwner,s.Name+" 님의 계정을 초기화할까요?\n\n아이디 "+s.Username+"와 초기 비밀번호 12345678로 바뀌고, 모든 기기에서 로그아웃됩니다. 새 활성화 번호로 다시 시작해야 합니다.","교직원 계정 초기화",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+                var result=await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff/"+s.Id+"/reset",new StaffAccountRequest(s.Username,s.Name,s.Department,null,"12345678",UseSharedPassword:true));
+                MessageBox.Show(InteractionOwner,"개별 전달할 활성화 번호:\n"+result.GetProperty("activationCode").GetString()+"\n유효 기간: 7일. 번호는 이 화면에서만 표시됩니다.","계정 초기화");await StaffList();
+            });
+        }
+        if(staff.All(s=>s.Id!=selectedStaff))selectedStaff=staff.FirstOrDefault()?.Id;
+        search.TextChanged+=(_,_)=>Rows();Rows();Detail();
     }
     async Task Audit()
     {
-        body.Children.Clear();Button("계정 관리로",Administration);body.Children.Add(Text("최근 운영 변경 기록 · 최대 200건",20));
+        Page();Button("계정 관리로",Administration);body.Children.Add(Text("최근 운영 변경 기록 · 최대 200건",20));
         var rows=await api.Get<JsonElement>("api/admin/office/audit");foreach(var row in rows.EnumerateArray()){var time=DateTimeOffset.FromUnixTimeMilliseconds(row.GetProperty("createdAt").GetInt64()).ToOffset(TimeSpan.FromHours(9));body.Children.Add(Text(time.ToString("yyyy-MM-dd HH:mm")+" · "+row.GetProperty("actor").GetString()+" · "+row.GetProperty("action").GetString()+"\n대상: "+row.GetProperty("resourceId").GetString(),12));}
     }
 }

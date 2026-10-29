@@ -15,14 +15,14 @@ public sealed partial class OfficeWindow
 {
     async Task Sections()
     {
-        var directory=await api.Get<JsonElement>("api/admin/sections/setup");body.Children.Clear();Button("계정 관리로",Administration);
+        var directory=await api.Get<JsonElement>("api/admin/sections/setup");Page();Button("계정 관리로",Administration);
         if(!directory.GetProperty("connected").GetBoolean()){body.Children.Add(Text("외부 학교 소식 서버 연결이 필요합니다."));return;}
         body.Children.Add(Text("선택과목 분반 · 수강 명부",22));Button("분반 만들기",()=>SectionEditor(directory,null));
         foreach(var section in directory.GetProperty("sections").EnumerateArray())Button(section.GetProperty("term").GetString()+" · "+section.GetProperty("name").GetString()+" · "+section.GetProperty("members").GetArrayLength()+"명",()=>SectionEditor(directory,section));
     }
     Task SectionEditor(JsonElement directory,JsonElement? existing)
     {
-        body.Children.Clear();Button("분반 목록으로",Sections);var name=Field("분반 이름",existing?.GetProperty("name").GetString()??"");var term=Field("학년도·학기",existing?.GetProperty("term").GetString()??DateTime.UtcNow.AddHours(9).Year+" 2학기");
+        Page();Button("분반 목록으로",Sections);var name=Field("분반 이름",existing?.GetProperty("name").GetString()??"");var term=Field("학년도·학기",existing?.GetProperty("term").GetString()??DateTime.UtcNow.AddHours(9).Year+" 2학기");
         body.Children.Add(Text("명부를 아직 받지 않았다면 학생을 선택하지 않고 분반만 준비할 수 있습니다. 수강생 0명인 분반에는 발송할 수 없습니다."));
         var teachers=new Dictionary<string,CheckBox>();var students=new Dictionary<string,CheckBox>();
         var selectedTeachers=existing?.GetProperty("teacherIds").EnumerateArray().Select(v=>v.GetString()).ToArray()??[];var selectedStudents=existing?.GetProperty("members").EnumerateArray().Select(v=>v.GetProperty("studentId").GetString()).ToArray()??[];

@@ -46,6 +46,11 @@ public sealed partial class LocalServerWindow:Window
         public CheckBox Auto=new(){Content="관리 프로그램을 열면 이 서버도 자동 시작",Margin=new Thickness(0,8,0,8)};
         public Button Start=new(){Content="서버 시작"},Stop=new(){Content="서버 중지"},Admin=new(){Content="관리자 기능 열기"};
         public bool Busy;
+        // Dashboard pieces from the administrator design: status badge, connection columns, checklist card and the not-installed state.
+        public Border StatusBadge=new(),StatusCard=new(),Empty=new(),ChecklistCard=new(),SettingsCard=new(),ChecklistBadge=AdminUi.Badge("","Neutral",false);
+        public TextBlock Summary=AdminUi.Label(""),AddressValue=new(),SchoolValue=AdminUi.Heading(""),SchoolNote=AdminUi.Label(""),EmptyNote=AdminUi.Label("","Muted",13);
+        public Grid ConnectionPanel=new(),DetailsGrid=new();
+        public string ChecklistKey="";
     }
     record Settings(string Service,bool Trial,string Data,string Config,bool Auto,int Mode=-1,string School="",string AdminUsername="admin",string SimpleData="",string Backup="",string Approval="",string ApprovalSha256="",DateTimeOffset? ReviewedAt=null,string SchoolId="",bool Activated=true,bool Ups=false);
     static bool Simple(ServerCard c)=>c.Mode.SelectedIndex==2;
@@ -58,7 +63,7 @@ public sealed partial class LocalServerWindow:Window
     internal LocalServerWindow(string installedRoot,string settingsDirectory,string? registry)
     {
         root=Path.GetFullPath(installedRoot);directory=settingsDirectory;Directory.CreateDirectory(directory);startup=Startup(registry);
-        Title="교무톡 관리자";Width=1060;Height=780;MinWidth=760;MinHeight=560;MaxHeight=SystemParameters.WorkArea.Height-25;
+        Title="교무톡 관리자";Width=Math.Min(1280,SystemParameters.WorkArea.Width-40);Height=Math.Min(820,SystemParameters.WorkArea.Height-25);MinWidth=760;MinHeight=560;MaxHeight=SystemParameters.WorkArea.Height-25;
         Style=(Style)FindResource("SchoolWindow");
         BuildDashboard();
         autoProgram.IsChecked=startup.Enabled;
@@ -89,9 +94,18 @@ public sealed partial class LocalServerWindow:Window
             c.Admin.Content=adminSessions.ContainsKey(c.Service)?"관리 기능 열기":"관리자 로그인";
             c.Auto.IsEnabled=!c.Busy&&(c.Mode.SelectedIndex==1||Initialized(c));c.Log.Text=c.Host.Output;c.Details.Visibility=string.IsNullOrEmpty(c.Log.Text)?Visibility.Collapsed:Visibility.Visible;
             c.Address.Text=!available?(c.Host.Installed?"필요할 때 ‘설치하기’를 누르면 이 PC에서 사용할 수 있습니다.":"서버 설치 프로그램을 다시 실행해 이 서버를 추가하세요."):trial?(c.Service=="office"?"이 PC 접속 주소: http://localhost:5080":"이 PC 학교 소식 주소: http://localhost:5081"):simple?"교사 PC 접속 주소: "+string.Join(" 또는 ",SimpleOperation.Addresses(c.Service)):"학교 운영 설정의 HTTPS 주소로 접속합니다. 실행 후 관리자 로그인으로 연결을 확인하세요.";
-            c.Connection.Text=simple&&c.Fingerprint.Length>0?"연결 확인 코드  "+CertificatePins.Code(c.Fingerprint)+"\n교사가 처음 접속할 때 화면의 코드와 같은지 확인합니다.":"";c.Connection.Visibility=c.Connection.Text.Length>0?Visibility.Visible:Visibility.Collapsed;
+            AdminUi.SetBadge(c.StatusBadge,c.Status.Text,!available?"Neutral":c.Busy?"Warning":running?"Success":"Neutral");c.NavigationStatus.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,running?"Success":"Faint");
+            c.Summary.Text=!available?"":trial?"이 PC 시험 · 외부 접속 없음":simple?"학교 운영 · 간편 설정":"학교 운영 · 운영 설정 파일";
+            c.StatusCard.Visibility=c.DetailsGrid.Visibility=available?Visibility.Visible:Visibility.Collapsed;c.Empty.Visibility=available?Visibility.Collapsed:Visibility.Visible;
+            c.EmptyNote.Text=!c.Host.Installed?"서버 설치 프로그램을 다시 실행해 이 서버를 추가하세요.":"필요할 때 설치하면 됩니다. 교내 업무 서버와 따로 실행되며, 설치 파일은 이미 이 PC에 들어 있습니다.";
+            var connected=simple&&c.Fingerprint.Length>0;c.ConnectionPanel.Visibility=connected?Visibility.Visible:Visibility.Collapsed;c.Address.Visibility=connected?Visibility.Collapsed:Visibility.Visible;
+            if(connected){c.AddressValue.Text=SimpleOperation.Addresses(c.Service)[0];c.Connection.Text=CertificatePins.Code(c.Fingerprint);c.SchoolValue.Text=c.School.Text.Trim();c.SchoolNote.Text="관리자 아이디 "+c.AdminUsername.Text.Trim();}
             if(simple)BuildChecklist(c);
+            ArrangeDetails(c);
         }
+        var office=cards.First(c=>c.Service=="office");
+        railSchool.Text=Simple(office)&&office.School.Text.Trim().Length>0?office.School.Text.Trim():"교무톡 서버";
+        railStatus.Text="교내 업무 서버 "+office.Status.Text;railDot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,office.Host.Running?"Success":"Faint");
     }
     async Task StartSelected(){foreach(var card in cards.Where(c=>c.Host.Installed&&c.Auto.IsChecked==true))await Start(card);}
     async Task Start(ServerCard c)

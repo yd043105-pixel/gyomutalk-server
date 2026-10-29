@@ -20,7 +20,14 @@ public sealed partial class OfficeWindow:Window
     internal OfficeWindow(Window owner,Api source,bool administration,string page="administration")
     {
         api=source;this.administration=administration;Owner=owner;Resources=owner.Resources;Title=administration?"교직원 · 학교 운영 관리":"학사일정 · 특별실 예약";Width=700;Height=760;MinHeight=500;MinWidth=500;
-        WindowStartupLocation=WindowStartupLocation.CenterOwner;var dock=new DockPanel();DockPanel.SetDock(error,Dock.Bottom);dock.Children.Add(error);dock.Children.Add(new ScrollViewer{Content=body});Content=dock;var initialized=false;dock.Loaded+=async(_,_)=>{if(initialized)return;initialized=true;await Run(async()=>{if(!administration){await Load(false);return;}switch(page){case "staff":await StaffList();break;case "sections":await Sections();break;case "rooms":setup=await api.Get<JsonElement>("api/office/setup");await Rooms();break;case "calendar":await Load(false);break;case "audit":await Audit();break;default:await Administration();break;}});};
+        WindowStartupLocation=WindowStartupLocation.CenterOwner;var dock=new DockPanel();DockPanel.SetDock(error,Dock.Bottom);dock.Children.Add(error);surface.Child=new ScrollViewer{Content=body};surface.Margin=new Thickness(administration?0:16);dock.Children.Add(surface);Content=dock;Page();var initialized=false;dock.Loaded+=async(_,_)=>{if(initialized)return;initialized=true;await Run(async()=>{if(!administration){await Load(false);return;}switch(page){case "staff":await StaffList();break;case "sections":await Sections();break;case "rooms":setup=await api.Get<JsonElement>("api/office/setup");await Rooms();break;case "calendar":await Load(false);break;case "audit":await Audit();break;default:await Administration();break;}});};
+    }
+    readonly Border surface=new(){CornerRadius=new CornerRadius(10)};
+    // Every page starts here: most pages sit on a card, the member directory draws its own table and panel.
+    void Page(bool card=true)
+    {
+        body.Children.Clear();body.Margin=new Thickness(card?24:0);surface.BorderThickness=new Thickness(card?1:0);
+        if(card){surface.SetResourceReference(Border.BackgroundProperty,"Surface");surface.SetResourceReference(Border.BorderBrushProperty,"Line");}else surface.Background=null;
     }
     static TextBlock Text(string text,int size=14)=>new(){Text=text,FontSize=size,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,8,0,6)};
     void Button(string label,Func<Task> action){var b=new Button{Content=label,Margin=new Thickness(0,4,0,8),HorizontalAlignment=HorizontalAlignment.Left};b.Click+=async(_,_)=>await Run(action);body.Children.Add(b);}
@@ -29,7 +36,7 @@ public sealed partial class OfficeWindow:Window
     static string Date(JsonElement row,string key)=>DateTimeOffset.FromUnixTimeMilliseconds(row.GetProperty(key).GetInt64()).ToOffset(TimeSpan.FromHours(9)).ToString("M/d HH:mm");
     async Task Load(bool bookings)
     {
-        setup=await api.Get<JsonElement>("api/office/setup");body.Children.Clear();Button("학사력 · 학교 일정",()=>Load(false));Button("특별실 예약",()=>Load(true));if(administration&&api.Session!.User!.IsAdmin)Button("교직원 계정 · 운영 권한",Administration);
+        setup=await api.Get<JsonElement>("api/office/setup");Page();Button("학사력 · 학교 일정",()=>Load(false));Button("특별실 예약",()=>Load(true));if(administration&&api.Session!.User!.IsAdmin)Button("교직원 계정 · 운영 권한",Administration);
         body.Children.Add(Text(bookings?"특별실 예약":"학사력 · 행사 · 학교 일정",22));
         var date=new DatePicker{SelectedDate=DateTime.UtcNow.AddHours(9).Date};body.Children.Add(date);var list=new StackPanel();
         async Task Refresh()
@@ -56,7 +63,7 @@ public sealed partial class OfficeWindow:Window
     Task Editor(bool booking,JsonElement? existing)
     {
         if(booking)return BookingEditor(existing);
-        body.Children.Clear();Button("목록으로",()=>Load(booking));var title=Field("제목",existing?.GetProperty("title").GetString()??"");var description=booking?null:Field("행사·일정 설명",existing?.GetProperty("description").GetString()??"");
+        Page();Button("목록으로",()=>Load(booking));var title=Field("제목",existing?.GetProperty("title").GetString()??"");var description=booking?null:Field("행사·일정 설명",existing?.GetProperty("description").GetString()??"");
         var start=existing is{} a?DateTimeOffset.FromUnixTimeMilliseconds(a.GetProperty("start").GetInt64()).ToOffset(TimeSpan.FromHours(9)):DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(9)).AddHours(1);
         var end=existing is{} b?DateTimeOffset.FromUnixTimeMilliseconds(b.GetProperty("end").GetInt64()).ToOffset(TimeSpan.FromHours(9)):start.AddHours(1);
         body.Children.Add(Text("시작 날짜 · 한국 시간"));var first=new DatePicker{SelectedDate=start.Date};body.Children.Add(first);var firstTime=Field("시작 시각 · HH:mm",start.ToString("HH:mm"));
@@ -76,7 +83,7 @@ public sealed partial class OfficeWindow:Window
     }
     Task Rooms()
     {
-        body.Children.Clear();Button("예약 목록으로",()=>Load(true));if(administration)Button("관리 목록으로",Administration);var name=Field("특별실 이름");var location=Field("위치");Button("특별실 추가",async()=>{await api.Send<JsonElement>(HttpMethod.Post,"api/office/rooms",new OfficeRoomRequest(name.Text,location.Text));setup=await api.Get<JsonElement>("api/office/setup");await Rooms();});
+        Page();Button("예약 목록으로",()=>Load(true));if(administration)Button("관리 목록으로",Administration);var name=Field("특별실 이름");var location=Field("위치");Button("특별실 추가",async()=>{await api.Send<JsonElement>(HttpMethod.Post,"api/office/rooms",new OfficeRoomRequest(name.Text,location.Text));setup=await api.Get<JsonElement>("api/office/setup");await Rooms();});
         foreach(var row in setup.GetProperty("rooms").EnumerateArray())
         {
             body.Children.Add(Text("특별실 설정",18));var roomName=Field("이름",row.GetProperty("name").GetString()!);roomName.MaxLength=80;var roomLocation=Field("위치",row.GetProperty("location").GetString()!);roomLocation.MaxLength=100;
@@ -87,7 +94,7 @@ public sealed partial class OfficeWindow:Window
     }
     async Task Administration()
     {
-        body.Children.Clear();Button("학교 운영으로",()=>Load(false));Button("특별실 목록 설정",async()=>{setup=await api.Get<JsonElement>("api/office/setup");await Rooms();});Button("분반 · 수강 명부 관리",Sections);Button("학생·학부모 가입 · 학교 명부 관리",async()=>{if(InteractionOwner is LocalServerWindow manager)await manager.OpenAdministration("portal","announcements");else new PortalAdministrationWindow(InteractionOwner).Show();});Button("계정 상태 · 좌석 · 초기화",StaffList);Button("운영 변경 기록",Audit);body.Children.Add(Text("교직원 사전 등록",22));var name=Field("교사 이름 · 로그인 아이디");var login=Field("로그인 이름 · 기본은 본인 이름, 동명이인은 이름.2");name.TextChanged+=(_,_)=>login.Text=name.Text.Trim();var department=Field("부서");var position=Field("직책 · 예: 교무부장, 담임");position.MaxLength=50;var ip=Field("좌석 IPv4 · 휴대폰 로그인에는 사용하지 않음");body.Children.Add(Text("최초 비밀번호는 12345678입니다. 첫 로그인에서 개별 활성화 번호와 개인 비밀번호를 설정해야 합니다. 좌석 IP는 로그인 아이디가 아닙니다."));
+        Page();Button("학교 운영으로",()=>Load(false));Button("특별실 목록 설정",async()=>{setup=await api.Get<JsonElement>("api/office/setup");await Rooms();});Button("분반 · 수강 명부 관리",Sections);Button("학생·학부모 가입 · 학교 명부 관리",async()=>{if(InteractionOwner is LocalServerWindow manager)await manager.OpenAdministration("portal","announcements");else new PortalAdministrationWindow(InteractionOwner).Show();});Button("계정 상태 · 좌석 · 초기화",StaffList);Button("운영 변경 기록",Audit);body.Children.Add(Text("교직원 사전 등록",22));var name=Field("교사 이름 · 로그인 아이디");var login=Field("로그인 이름 · 기본은 본인 이름, 동명이인은 이름.2");name.TextChanged+=(_,_)=>login.Text=name.Text.Trim();var department=Field("부서");var position=Field("직책 · 예: 교무부장, 담임");position.MaxLength=50;var ip=Field("좌석 IPv4 · 휴대폰 로그인에는 사용하지 않음");body.Children.Add(Text("최초 비밀번호는 12345678입니다. 첫 로그인에서 개별 활성화 번호와 개인 비밀번호를 설정해야 합니다. 좌석 IP는 로그인 아이디가 아닙니다."));
         Button("계정 등록 · 활성화 번호 발급",async()=>
         {
             var value=await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff",new StaffAccountRequest(login.Text.Trim(),name.Text,department.Text,ip.Text,"12345678",position.Text,true));

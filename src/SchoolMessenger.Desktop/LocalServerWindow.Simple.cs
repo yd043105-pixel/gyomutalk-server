@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -23,6 +24,8 @@ public sealed partial class LocalServerWindow
         if(c.SchoolId.Length==0)c.SchoolId=SimpleOperation.NewSchoolId();
         var setup=new SimpleSetup(c.Service,school,admin,c.SimpleData.Text,c.Backup.Text,c.Approval.Text,c.ApprovalSha256,reviewed,c.SchoolId);
         var (thumbprint,fingerprint)=SimpleOperation.Certificate(directory,c.Service);c.Fingerprint=fingerprint;
+        // This program made the certificate, so its own administrator sign-in trusts it without a code check.
+        var port=SimpleOperation.Port(c.Service);foreach(var address in SimpleOperation.Addresses(c.Service).Append("https://localhost:"+port).Append("https://127.0.0.1:"+port))CertificatePins.Trust(address,fingerprint);
         SimpleOperation.EnableDiscovery(c.SimpleData.Text,c.Service);
         SaveSettings();
         return (setup,thumbprint,SimpleOperation.WriteReview(directory,setup));
@@ -41,14 +44,31 @@ public sealed partial class LocalServerWindow
     }
     void BuildChecklist(ServerCard c)
     {
-        c.Checklist.Children.Clear();
-        void Item(bool done,string text){var line=Text((done?"✓  ":"!  ")+text,12);if(done)line.SetResourceReference(TextBlock.ForegroundProperty,"Ink");else line.Foreground=new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xA5,0x3A,0x38));c.Checklist.Children.Add(line);}
-        if(c.ReviewedAt is{} reviewed){var expires=reviewed.AddYears(1);Item(expires>DateTimeOffset.Now.AddDays(30),"학교장 승인 기록 · "+expires.ToString("yyyy-MM-dd")+"까지 유효");}else Item(false,"학교장 승인(내부결재) 문서를 선택하세요.");
-        var backup=c.Backup.Text.Trim().Length>0?c.Backup.Text:SimpleOperation.DefaultBackup(c.SimpleData.Text,c.Service);
-        Item(!SimpleOperation.SameDrive(c.SimpleData.Text,backup),SimpleOperation.SameDrive(c.SimpleData.Text,backup)?"백업이 서버와 같은 드라이브에 있습니다. 외장 드라이브를 연결한 뒤 ‘자세한 설정’에서 백업 위치를 바꾸세요.":"백업 위치 · "+backup);
-        Item(c.Ups.IsChecked==true,"정전 대비 UPS 확인");
-        Item(true,"교사 PC 자동검색 · 교직원망에서 UDP 45983이 허용되어야 합니다.");
-        Item(false,"처음 서버를 시작할 때 Windows 방화벽 창이 뜨면 ‘개인 네트워크’에 허용하세요.");
-        Item(false,"오류·장애 알림 메일은 선택 사항입니다. 필요하면 운영 안내의 ‘알림 메일’을 참고하세요.");
+        var items=new List<(bool Done,string Title,string Detail,string? Action,Action? Run)>();
+        if(c.ReviewedAt is{} reviewed){var expires=reviewed.AddYears(1);var fresh=expires>DateTimeOffset.Now.AddDays(30);items.Add((fresh,"학교장 승인 문서",expires.ToString("yyyy년 M월 d일")+"까지 유효 · 이 PC에만 보관",fresh?null:"새 문서",()=>ChooseApproval(c)));}
+        else items.Add((false,"학교장 승인 문서","학교장 승인(내부결재) 문서를 선택하세요.","문서 선택",()=>ChooseApproval(c)));
+        items.Add((true,"HTTPS 인증서",c.Fingerprint.Length>0?"이 서버 전용 인증서 · 연결 확인 코드 "+CertificatePins.Code(c.Fingerprint):"처음 시작할 때 자동으로 만들어집니다.",null,null));
+        items.Add((true,"교사 PC 자동검색","켜짐 · 교직원망에서 UDP 45983이 허용되어야 합니다.",null,null));
+        var backup=c.Backup.Text.Trim().Length>0?c.Backup.Text:SimpleOperation.DefaultBackup(c.SimpleData.Text,c.Service);var same=SimpleOperation.SameDrive(c.SimpleData.Text,backup);
+        items.Add((!same,"백업 위치",same?"서버와 같은 드라이브에 있습니다. 외장 드라이브를 권장합니다.":backup,"위치 변경",()=>ChooseBackup(c)));
+        items.Add((c.Ups.IsChecked==true,"정전 대비(UPS)",c.Ups.IsChecked==true?"UPS 설치·시험을 확인했습니다.":"정전 때 서버 PC가 안전하게 꺼지도록 UPS를 연결하세요.",c.Ups.IsChecked==true?null:"확인함",()=>{c.Ups.IsChecked=true;SaveSettings();Refresh();}));
+        items.Add((Initialized(c),"Windows 방화벽",Initialized(c)?"처음 시작할 때 ‘개인 네트워크’ 허용을 확인했습니다.":"처음 시작할 때 방화벽 창이 뜨면 ‘개인 네트워크’에 허용하세요.",null,null));
+        items.Add((false,"장애 알림 메일","선택 사항 · 서버가 멈추면 관리자에게 메일로 알립니다.","안내",OpenGuide));
+        // Rebuilt only when something changed so a click is never lost to the 3-second refresh.
+        var key=string.Join("|",items.Select(i=>i.Done+i.Title+i.Detail));if(key==c.ChecklistKey)return;c.ChecklistKey=key;
+        c.Checklist.Children.Clear();var open=items.Count(i=>!i.Done);AdminUi.SetBadge(c.ChecklistBadge,open==0?"모두 확인됨":open+"건 확인 필요",open==0?"Success":"Warning");
+        for(var i=0;i<items.Count;i++)
+        {
+            var item=items[i];var row=new DockPanel();var line=new Border{Child=row,Padding=new Thickness(0,10,0,10),BorderThickness=new Thickness(0,0,0,i==items.Count-1?0:1)};line.SetResourceReference(Border.BorderBrushProperty,"Line");
+            var mark=new Border{Width=24,Height=24,CornerRadius=new CornerRadius(12),Margin=new Thickness(0,0,12,0),VerticalAlignment=VerticalAlignment.Top,Child=AdminUi.Icon(item.Done?"AdminCheckIcon":"AdminAlertIcon",item.Done?13:14,item.Done?"Success":"Warning")};mark.SetResourceReference(Border.BackgroundProperty,item.Done?"SuccessTint":"WarningTint");row.Children.Add(mark);
+            if(item.Action is{} label&&item.Run is{} run){var action=new Button{Content=label,VerticalAlignment=VerticalAlignment.Center};action.SetResourceReference(StyleProperty,"SubtleButton");action.Click+=(_,_)=>run();DockPanel.SetDock(action,Dock.Right);row.Children.Add(action);}
+            var text=new StackPanel();text.Children.Add(AdminUi.Label(item.Title,"Ink",13,true));var detail=AdminUi.Label(item.Detail,"Muted",11);detail.Margin=new Thickness(0,2,0,0);text.Children.Add(detail);row.Children.Add(text);
+            c.Checklist.Children.Add(line);
+        }
+    }
+    void ChooseBackup(ServerCard c)
+    {
+        var dialog=new OpenFolderDialog{Title="백업 위치 선택 · 외장 드라이브 권장"};if(dialog.ShowDialog(this)!=true)return;
+        c.Backup.Text=Path.Combine(dialog.FolderName,"GyomutalkBackup",c.Service);SaveSettings();Refresh();
     }
 }

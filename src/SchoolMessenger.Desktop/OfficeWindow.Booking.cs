@@ -9,7 +9,7 @@ public sealed partial class OfficeWindow
 {
     Task BookingEditor(JsonElement? existing)
     {
-        body.Children.Clear();Button("예약 목록으로",()=>Load(true));body.Children.Add(Text("특별실 예약 · 1~7교시",22));
+        Page();Button("예약 목록으로",()=>Load(true));body.Children.Add(Text("특별실 예약 · 1~7교시",22));
         var title=Field("예약 제목",existing?.GetProperty("title").GetString()??"");title.MaxLength=200;
         var start=existing is{} value?DateTimeOffset.FromUnixTimeMilliseconds(value.GetProperty("start").GetInt64()).ToOffset(SchoolDay.KoreaOffset):DateTimeOffset.UtcNow.ToOffset(SchoolDay.KoreaOffset).AddDays(1);
         var end=existing is{} last?DateTimeOffset.FromUnixTimeMilliseconds(last.GetProperty("end").GetInt64()).ToOffset(SchoolDay.KoreaOffset):start;
