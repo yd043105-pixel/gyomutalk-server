@@ -23,7 +23,7 @@
 ./scripts/Build-ServerInstaller.ps1
 ```
 
-GitHub Actions의 제품별 검증이 성공하면 Artifacts에서 시험 산출물을 내려받습니다. 현재 모두 1.0.0 시험본이며 정식 Release·자동 공개 배포·자동 업데이트는 활성화하지 않았습니다. Windows 일반 배포용 코드 서명과 Mac Developer ID 서명·공증은 별도 준비가 필요합니다.
+GitHub Actions의 제품별 검증이 성공하면 Artifacts에서 시험 산출물을 내려받습니다. 현재 모두 1.0.0 시험본이며 정식 Release는 아직 발행하지 않았습니다. 정식 Release를 발행하면 PC 프로그램이 서명된 업데이트 피드를 하루 한 번 확인합니다([업데이트 안내](docs/desktop-updates.md)). Windows 일반 배포용 코드 서명과 Mac Developer ID 서명·공증은 별도 준비가 필요합니다.
 
 서버: [gyomutalk-server](https://github.com/yd043105-pixel/gyomutalk-server) / Windows: [gyomutalk-windows](https://github.com/yd043105-pixel/gyomutalk-windows) / Mac: [gyomutalk-mac](https://github.com/yd043105-pixel/gyomutalk-mac)
 
