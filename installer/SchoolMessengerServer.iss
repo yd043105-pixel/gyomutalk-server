@@ -24,7 +24,7 @@ AppName=교무톡 관리자 및 서버
 AppVersion={#AppVersion}
 VersionInfoVersion={#NumericVersion}
 AppPublisher=교무톡 프로젝트
-DefaultDirName={autopf}\YeoyangMessengerServer
+DefaultDirName={autopf}\GyomuTalkServer
 DefaultGroupName=교무톡 관리자 및 서버
 #ifdef InstallerTest
 PrivilegesRequired=lowest
