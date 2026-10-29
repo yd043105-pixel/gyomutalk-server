@@ -1,0 +1,16 @@
+<Project>
+  <PropertyGroup>
+    <!-- Keep every app at 1.0.0 until the school authorizes its first release. -->
+    <Version>1.0.0</Version>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RuntimeFrameworkVersion Condition="'$(MSBuildProjectName)' == 'SchoolMessenger.Server' Or '$(MSBuildProjectName)' == 'SchoolMessenger.AnnouncementServer' Or '$(MSBuildProjectName)' == 'SchoolMessenger.Desktop'">10.0.13</RuntimeFrameworkVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RuntimeIdentifiers Condition="'$(MSBuildProjectName)' == 'SchoolMessenger.Server' Or '$(MSBuildProjectName)' == 'SchoolMessenger.Desktop' Or '$(MSBuildProjectName)' == 'SchoolMessenger.AnnouncementServer'">win-x64</RuntimeIdentifiers>
+    <RuntimeIdentifiers Condition="'$(MSBuildProjectName)' == 'SchoolMessenger.Contracts'">win-x64</RuntimeIdentifiers>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(MSBuildProjectName)' == 'SchoolMessenger.Server' Or '$(MSBuildProjectName)' == 'SchoolMessenger.AnnouncementServer' Or '$(MSBuildProjectName)' == 'SchoolMessenger.Desktop'">
+    <Content Include="$(MSBuildThisFileDirectory)LICENSE;$(MSBuildThisFileDirectory)THIRD-PARTY-NOTICES.md" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

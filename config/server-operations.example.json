@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "schoolId": "",
+  "resourceProfile": "low-memory",
+  "registrationPolicyFile": "",
+  "securityReviewFile": "",
+  "service": "announcements",
+  "executable": "C:\\SchoolMessenger\\announcement-server\\SchoolMessenger.AnnouncementServer.exe",
+  "dataDirectory": "C:\\SchoolMessengerData\\announcements",
+  "backupDirectory": "E:\\SchoolMessengerBackup\\announcements",
+  "certificateThumbprint": "REPLACE_WITH_VALID_CERTIFICATE_THUMBPRINT",
+  "publicHost": "apps.example.invalid",
+  "allowedNetworks": "",
+  "port": 8443,
+  "tunnelOnly": true,
+  "attachmentBackup": true,
+  "feedbackEmailEnabled": false,
+  "automaticBugReportsEnabled": false,
+  "networkIsolationVerified": false,
+  "upsInstalledAndTested": false,
+  "backupDeviceAndEncryptionVerified": false,
+  "alerts": {
+    "enabled": false,
+    "deliveryVerified": false,
+    "smtpHost": "smtp.gmail.com",
+    "smtpPort": 587,
+    "sender": "",
+    "recipient": "",
+    "reminderHours": 6
+  }
+}

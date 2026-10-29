@@ -1,0 +1,70 @@
+<Window x:Class="SchoolMessenger.Desktop.MailboxWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:SchoolMessenger.Desktop"
+ Title="교무톡 · 메시지함" Width="760" Height="640" MinWidth="700" MinHeight="540" Style="{StaticResource SchoolWindow}" WindowStartupLocation="CenterOwner">
+ <DockPanel Background="{DynamicResource Surface}">
+  <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="18,12">
+   <DockPanel><Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Click="NewMessage" FontSize="11"><StackPanel Orientation="Horizontal"><Path Data="{StaticResource MailIcon}" Style="{StaticResource Glyph}" Width="14" Height="14"/><TextBlock Text="새 메시지" Margin="6,0,0,0"/></StackPanel></Button>
+    <TextBlock x:Name="BoxTitle" Text="받은 메시지" FontSize="16" FontWeight="Bold" VerticalAlignment="Center"/>
+   </DockPanel>
+  </Border>
+  <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1"><StackPanel Orientation="Horizontal" Margin="14,0">
+   <Button x:Name="ReceivedTab" Style="{StaticResource TabButton}" Content="받은 메시지" Tag="received" Click="ChangeBox"/><Button x:Name="UnreadTab" Style="{StaticResource TabButton}" Content="미확인" Tag="unread" Click="ChangeBox" Margin="8,0"/><Button x:Name="SentTab" Style="{StaticResource TabButton}" Content="보낸 메시지" Tag="sent" Click="ChangeBox"/>
+  </StackPanel></Border>
+  <Border DockPanel.Dock="Bottom" Background="{DynamicResource Soft}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="12,6"><TextBlock x:Name="ConnectionLabel" FontSize="10" Foreground="{DynamicResource Muted}"/></Border>
+  <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="242"/><ColumnDefinition/></Grid.ColumnDefinitions>
+   <Border Background="{DynamicResource Soft}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,1,0" Padding="9">
+    <DockPanel>
+     <StackPanel DockPanel.Dock="Top" Margin="2,3,2,9">
+      <TextBlock Text="제목·본문·보낸 사람 검색" Foreground="{DynamicResource Muted}" FontSize="10" Margin="0,0,0,5"/><TextBox x:Name="SearchBox" ToolTip="제목·본문·보낸 사람 검색" KeyDown="SearchKeyDown" Padding="7,5"/>
+      <Grid Margin="0,6,0,0"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><DatePicker x:Name="FromDate" ToolTip="시작 날짜" FontSize="10" Margin="0,0,3,0"/><DatePicker x:Name="ToDate" Grid.Column="1" ToolTip="종료 날짜" FontSize="10" Margin="3,0,0,0"/></Grid>
+      <Button Content="검색 · 새로고침" Click="RefreshClick" FontSize="11" Padding="8,6" Margin="0,7,0,0"/>
+     </StackPanel>
+     <StackPanel DockPanel.Dock="Bottom" Margin="2,8,2,0"><TextBlock x:Name="ListHint" Foreground="{DynamicResource Muted}" FontSize="10" TextWrapping="Wrap" Margin="0,0,0,7"/><Button Content="이전 메시지 더 보기" Click="LoadMore" FontSize="10" Padding="6,5"/></StackPanel>
+     <ListBox x:Name="MessageList" Background="Transparent" SelectionChanged="SelectMessage" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+      <ListBox.ItemTemplate><DataTemplate><StackPanel>
+       <TextBlock Text="{Binding DisplayTitle}" ToolTip="{Binding DisplayTitle}" FontWeight="SemiBold" FontSize="12" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" LineHeight="18" MaxHeight="18"/>
+       <TextBlock Text="{Binding Summary}" FontSize="10" Foreground="{DynamicResource Muted}" Margin="0,8,0,0"/>
+       <StackPanel Orientation="Horizontal" Margin="0,7,0,0"><TextBlock Text="{Binding ReadLabel}" Foreground="{DynamicResource Blue}" FontSize="10"/><TextBlock Text="{Binding FilesLabel}" Foreground="{DynamicResource Muted}" FontSize="10" Margin="12,0,0,0"/></StackPanel>
+      </StackPanel></DataTemplate></ListBox.ItemTemplate>
+     </ListBox>
+    </DockPanel>
+   </Border>
+   <Grid Grid.Column="1" Margin="20,18">
+    <Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <TextBlock x:Name="EmptyHint" Text="메시지를 선택하세요.&#10;본문과 첨부파일을 확인할 수 있습니다." Foreground="{DynamicResource Muted}" FontSize="14" VerticalAlignment="Center" HorizontalAlignment="Center" TextAlignment="Center"/>
+    <ScrollViewer x:Name="DetailPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel>
+     <TextBlock x:Name="DetailTitle" FontSize="16" FontWeight="Bold" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Margin="0,0,0,12"/>
+     <Border BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="0,0,0,15" Margin="0,0,0,20"><TextBlock x:Name="DetailMeta" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap"/></Border>
+     <StackPanel x:Name="TaskPrompt" Visibility="Collapsed" Margin="0,0,0,20" AutomationProperties.Name="메시지에서 찾은 할 일">
+      <Path Data="M0,10 L10,0 L20,10 Z" Fill="{DynamicResource Pale}" Width="20" Height="10" Stretch="Fill" HorizontalAlignment="Left" Margin="20,0,0,-1"/>
+      <Border Background="{DynamicResource Pale}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="12" Padding="14">
+       <StackPanel>
+        <TextBlock x:Name="TaskPromptTitle" Text="할 일에 추가할까요?" FontWeight="Bold" FontSize="14" TextWrapping="Wrap"/>
+        <TextBlock Text="내용과 기한을 확인하고 추가할 항목을 선택하세요." Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,5,0,10"/>
+        <ScrollViewer MaxHeight="190" VerticalScrollBarVisibility="Auto"><StackPanel x:Name="TaskCandidateList"/></ScrollViewer>
+        <WrapPanel x:Name="TaskPromptActions" Margin="0,10,0,0">
+         <Button x:Name="AddSuggestedTasks" Content="추가하기" Style="{StaticResource PrimaryButton}" FontSize="11" Click="AddTasks" Padding="12,7" Margin="0,0,8,4"/>
+         <Button Content="추가 안 함" FontSize="11" Click="DismissTasks" Padding="12,7" Margin="0,0,0,4"/>
+        </WrapPanel>
+        <TextBlock x:Name="TaskPromptFeedback" Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap"/>
+       </StackPanel>
+      </Border>
+     </StackPanel>
+     <local:MessageBody x:Name="DetailBody" TextWrapping="Wrap" FontSize="12"/>
+     <Button x:Name="RecallButton" Content="메시지 회수" Click="Recall" Visibility="Collapsed" HorizontalAlignment="Left" FontSize="11" Margin="0,0,0,14"/>
+     <Button x:Name="SubmissionButton" Content="파일 제출 · 현황 보기" Click="OpenSubmission" Visibility="Collapsed" HorizontalAlignment="Left" FontSize="11" Margin="0,0,0,14"/>
+     <TextBlock Text="첨부파일" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,0,9"/>
+     <ItemsControl x:Name="FileList"><ItemsControl.ItemTemplate><DataTemplate><Border Background="{DynamicResource Soft}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="9" Margin="0,0,0,8"><StackPanel>
+      <Button IsEnabled="{Binding Available}" Tag="{Binding}" Click="Download" HorizontalContentAlignment="Left" BorderThickness="0" Background="Transparent" Padding="2,3"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="26"/><ColumnDefinition/></Grid.ColumnDefinitions><Path Data="{StaticResource FileIcon}" Stroke="{DynamicResource Blue}" StrokeThickness="1.5" Width="16" Height="19" Stretch="Uniform"/><TextBlock Grid.Column="1" Text="{Binding Description}" FontSize="11" TextWrapping="Wrap"/></Grid></Button>
+      <TextBlock Text="{Binding Expiry}" Foreground="{DynamicResource Muted}" FontSize="10" TextWrapping="Wrap" Margin="28,4,0,0"/>
+     </StackPanel></Border></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+     <TextBlock Text="수신자 확인 현황" FontWeight="SemiBold" FontSize="12" Margin="0,18,0,7"/>
+     <ItemsControl x:Name="ReceiptList"><ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding Label}" Margin="0,4" Foreground="{DynamicResource Muted}" FontSize="11"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
+    </StackPanel></ScrollViewer>
+    <TextBlock x:Name="StatusLabel" Grid.Row="1" Foreground="#A05B24" TextWrapping="Wrap" FontSize="11" Margin="0,9,0,0"/>
+    <Border Grid.Row="2" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,10,0,0" Margin="0,10,0,0">
+     <Button x:Name="ReplyButton" Content="답장" Click="Reply" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Right" FontSize="12" Padding="18,8" IsEnabled="{Binding IsVisible, ElementName=DetailPanel}"/>
+    </Border>
+   </Grid>
+  </Grid>
+ </DockPanel>
+</Window>

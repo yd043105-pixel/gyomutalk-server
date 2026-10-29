@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>교무톡 교무실 관리</title><link rel="stylesheet" href="admin.css"><script src="/update-notice.js" defer></script><script src="admin.js" defer></script><link rel="stylesheet" href="/update-notice.css"></head>
+<body>
+<aside><div class="brand">교무톡<span>온라인 교무실</span></div><p>교직원 · 서버 관리</p><div class="policy">첨부파일 30일 보관<br>교내망 전용</div></aside>
+<main>
+ <header><div><p class="eyebrow">학교 운영</p><h1>교무실 관리</h1></div><button id="updates" hidden>업데이트 내역</button><button id="logout" hidden>로그아웃</button></header>
+ <p id="notice" role="status" aria-live="polite"></p>
+ <section id="login-panel" class="card narrow"><h2>관리자 로그인</h2><form id="login-form"><label>아이디<input name="username" required autocomplete="username"></label><label>비밀번호<input name="password" type="password" required autocomplete="current-password"></label><button class="primary">로그인</button></form></section>
+ <div id="dashboard" hidden>
+  <section class="card"><div class="section-head"><h2>계정 승인 대기 <span id="pending-count"></span></h2><button id="refresh-registrations">새로고침</button></div><p class="muted">이름과 부서를 확인한 뒤 승인하세요. 승인된 계정은 교직원 권한으로 등록됩니다.</p><p id="pending-empty" class="muted">승인 대기 중인 신청이 없습니다.</p><div class="table-wrap"><table><thead><tr><th>이름</th><th>아이디</th><th>부서</th><th>신청 시각</th><th>처리</th></tr></thead><tbody id="registrations"></tbody></table></div></section>
+  <section class="card"><div class="section-head"><h2>서버 상태</h2><button id="maintenance">파일 정리 · DB 백업</button></div><dl id="status"></dl><p class="muted">DB 백업에는 첨부파일 내용이 포함되지 않습니다. 파일 디스크 장애 시 첨부파일은 복구할 수 없습니다.</p></section>
+  <section class="card"><h2 id="form-title">교직원 등록</h2><form id="user-form" class="user-form"><label>아이디<input name="username" required pattern="[A-Za-z0-9._-]{3,32}" maxlength="32" autocomplete="off"></label><label>이름<input name="name" required maxlength="50"></label><label>부서<input name="department" required maxlength="50"></label><label>비밀번호<input name="password" type="password" minlength="12" maxlength="128" autocomplete="new-password"><small>등록 시 필수. 수정 시 빈칸은 기존 비밀번호 유지.</small></label><label class="check"><input name="isAdmin" type="checkbox">관리자</label><label class="check"><input name="canBroadcast" type="checkbox">전체 발송 허용</label><label class="check"><input name="active" type="checkbox" checked>사용 중</label><div class="actions"><button class="primary">저장</button><button id="cancel-edit" type="button">새 교직원 등록</button></div></form></section>
+  <section class="card"><div class="section-head"><h2>교직원 목록</h2><button id="refresh">새로고침</button></div><div class="table-wrap"><table><thead><tr><th>이름</th><th>아이디</th><th>부서</th><th>권한</th><th>상태</th><th>관리</th></tr></thead><tbody id="users"></tbody></table></div></section>
+ </div>
+</main></body></html>

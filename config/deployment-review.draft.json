@@ -1,0 +1,21 @@
+{
+  "schema": 1,
+  "status": "draft",
+  "school": "",
+  "schoolId": "",
+  "service": "announcements",
+  "basis": "school-education-41-7",
+  "institutionType": "education-site",
+  "reviewAuthority": "",
+  "reviewedAt": "2000-01-01T00:00:00+09:00",
+  "expiresAt": "2000-01-01T00:00:00+09:00",
+  "listenUrls": ["https://127.0.0.1:8443"],
+  "storageCountries": [],
+  "managementCountries": [],
+  "documents": {
+    "decision": {"path": "", "sha256": ""},
+    "education-applicability": {"path": "", "sha256": ""},
+    "security": {"path": "", "sha256": ""}
+  },
+  "externalServices": []
+}

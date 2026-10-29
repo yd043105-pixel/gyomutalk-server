@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms><ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>SchoolMessenger</AssemblyName>
+    <PublishSingleFile>true</PublishSingleFile>
+    <ApplicationIcon>../SchoolMessenger.Shared/Branding/brand_mark.ico</ApplicationIcon>
+    <Product>교무톡</Product><Description>학교에서 직접 운영하는 학교 메신저</Description><Company>교무톡 프로젝트</Company>
+  </PropertyGroup>
+  <ItemGroup><PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" /></ItemGroup>
+  <ItemGroup>
+    <Resource Include="../SchoolMessenger.Shared/Branding/brand_mark.ico" Link="Assets/brand_mark.ico" />
+    <Compile Include="../SchoolMessenger.Contracts/Timetables.cs" Link="Contracts/Timetables.cs" />
+    <Compile Include="../SchoolMessenger.Contracts/Announcements.cs" Link="Contracts/Announcements.cs" />
+    <Compile Include="../SchoolMessenger.Contracts/Counseling.cs" Link="Contracts/Counseling.cs" />
+    <Compile Include="../SchoolMessenger.Contracts/SchoolDay.cs" Link="Contracts/SchoolDay.cs" />
+    <Compile Include="../SchoolMessenger.Contracts/Office.cs" Link="Contracts/Office.cs" />
+    <Compile Include="../SchoolMessenger.Contracts/MessageFormatting.cs" Link="Contracts/MessageFormatting.cs" />
+    <Compile Include="../SchoolMessenger.Contracts/Feedback.cs" Link="Contracts/Feedback.cs" />
+    <Compile Include="../SchoolMessenger.Contracts/Electives.cs" Link="Contracts/Electives.cs" />
+    <Compile Include="../SchoolMessenger.Contracts/RegistrationPolicies.cs" Link="Contracts/RegistrationPolicies.cs" />
+    <Compile Include="../SchoolMessenger.Shared/ReleaseNotice.cs" Link="ReleaseNotice.cs" />
+    <Compile Include="../SchoolMessenger.Shared/FilePolicy.cs" Link="FilePolicy.cs" />
+    <Compile Include="../SchoolMessenger.Shared/MessageText.cs" Link="MessageText.cs" />
+    <Compile Include="../SchoolMessenger.Shared/SchoolDiscovery.cs" Link="SchoolDiscovery.cs" />
+    <Compile Include="../SchoolMessenger.Shared/SchoolDirectory.cs" Link="SchoolDirectory.cs" />
+    <Compile Include="../SchoolMessenger.Shared/SchoolRegistration.cs" Link="SchoolRegistration.cs" />
+    <EmbeddedResource Include="../../config/school-directory.json" LogicalName="SchoolMessenger.SchoolDirectory.json" />
+    <EmbeddedResource Include="../SchoolMessenger.Shared/updates.json" LogicalName="SchoolMessenger.UpdateNotes.json" />
+    <EmbeddedResource Include="../../config/registration-policy.draft.json" LogicalName="SchoolMessenger.RegistrationDraft.json" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,12 @@
+<Window x:Class="SchoolMessenger.Desktop.RegistrationWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ Title="교무톡 · 계정 신청" Width="420" Height="650" MinWidth="380" MinHeight="610" Style="{StaticResource SchoolWindow}" WindowStartupLocation="CenterOwner">
+ <Grid Margin="23,18"><Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
+  <TextBlock Text="계정 신청" FontSize="22" FontWeight="Bold"/><TextBlock Text="관리자가 한 번 승인하면 로그인할 수 있습니다." Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,8,0,18" TextWrapping="Wrap"/>
+  <TextBlock Text="아이디 · 영문·숫자·._- 3~32자" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,0,0,6"/><TextBox x:Name="UsernameBox" MaxLength="32"/>
+  <TextBlock Text="이름" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,12,0,6"/><TextBox x:Name="NameBox" MaxLength="50"/>
+  <TextBlock Text="부서" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,12,0,6"/><TextBox x:Name="DepartmentBox" MaxLength="50"/>
+  <TextBlock Text="비밀번호 · 12~128자" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,12,0,6"/><PasswordBox x:Name="PasswordBox" MaxLength="128"/>
+  <TextBlock Text="비밀번호 확인" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,12,0,6"/><PasswordBox x:Name="ConfirmBox" MaxLength="128"/>
+ <StackPanel x:Name="PolicyPanel" Margin="0,14,0,0"/>
+ </StackPanel></ScrollViewer><StackPanel Grid.Row="1"><TextBlock x:Name="Feedback" Foreground="{DynamicResource Blue}" FontSize="11" TextWrapping="Wrap" Margin="0,12,0,12"/><Button x:Name="SubmitButton" IsEnabled="False" Content="관리자에게 계정 신청" Style="{StaticResource PrimaryButton}" Click="SubmitClick"/><TextBlock Text="승인 전에는 메시지와 교직원 목록에 접근할 수 없습니다." Foreground="{DynamicResource Muted}" FontSize="10" TextWrapping="Wrap" Margin="0,12,0,0"/></StackPanel></Grid>
+</Window>

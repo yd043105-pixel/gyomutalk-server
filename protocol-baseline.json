@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "productVersion": "1.0.0",
+  "schoolDirectorySchema": 1,
+  "schoolDirectoryProduct": "SchoolMessenger.School.1",
+  "sourceCommit": "5ae46521a10c93dcc86cd7790715d5965630d21c",
+  "apiChangedBySplit": false,
+  "note": "API/DTO/session changes require cross-product compatibility verification."
+}

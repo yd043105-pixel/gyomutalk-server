@@ -1,0 +1,14 @@
+# School-owned domain and a locally-managed tunnel; keep credentials outside the package.
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: C:\SchoolMessengerOperations\TUNNEL_UUID.json
+ingress:
+  - hostname: apps.example.invalid
+    path: ^/health/operations(/.*)?$
+    service: http_status:404
+  - hostname: apps.example.invalid
+    service: https://127.0.0.1:8443
+    originRequest:
+      originServerName: apps.example.invalid
+      httpHostHeader: apps.example.invalid
+      noTLSVerify: false
+  - service: http_status:404

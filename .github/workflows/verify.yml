@@ -1,0 +1,55 @@
+name: Server verification
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    env:
+      DOTNET_PROCESSOR_COUNT: '2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.402
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24
+      - name: Build isolated server and administrator sources
+        shell: pwsh
+        run: |
+          foreach ($project in @('Server','AnnouncementServer','Desktop')) {
+            dotnet build "src/SchoolMessenger.$project" -p:RestoreLockedMode=true --nologo -v quiet
+            if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+          }
+          dotnet run --project tests/SchoolDirectoryChecks -p:RestoreLockedMode=true
+          if ($LASTEXITCODE -ne 0) { throw 'School directory verification failed' }
+      - name: Verify school boundaries, review records, accounts and bridge
+        shell: pwsh
+        run: |
+          foreach ($test in @('registration-policy','deployment-review','backend-hardening','announcement-bridge','school-directory-servers','server-manager')) {
+            node "tests/$test.mjs"
+            if ($LASTEXITCODE -ne 0) { throw "Verification failed: $test" }
+          }
+      - name: Build server administrator installer
+        shell: pwsh
+        run: |
+          ./scripts/Build.ps1 -SkipTests
+          ./scripts/Build-ServerInstaller.ps1
+          ./tests/server-installer.ps1 -ShortcutOnly
+          Copy-Item artifacts/yymessenger-1.0.0-server-setup-win-x64.exe artifacts/gyomutalk-server-1.0.0-trial.exe
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: gyomutalk-server-1.0.0-trial
+          path: |
+            artifacts/gyomutalk-server-1.0.0-trial.exe
+            artifacts/SHA256SUMS.txt
+            artifacts/server-launcher-checks.json
+          retention-days: 7
+          if-no-files-found: error
