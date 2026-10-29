@@ -7,6 +7,7 @@ namespace SchoolMessenger.Desktop;
 public partial class MainWindow
 {
     bool updateNoticeOpen;
+    void OpenDesktopUpdates(object sender, RoutedEventArgs e)=>DesktopUpdater.Settings(this);
     void OpenUpdates(object sender, RoutedEventArgs e) => ShowUpdates(true);
 
     void ShowUpdates(bool manual = false)
@@ -91,3 +92,4 @@ public partial class MainWindow
         File.WriteAllText("artifacts/update-notice-check.json", System.Text.Json.JsonSerializer.Serialize(new { confirmed = notice.Sequence, checks = 6 }));
     }
 }
+

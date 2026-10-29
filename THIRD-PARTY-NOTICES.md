@@ -7,3 +7,8 @@
 - 프로젝트 외부 도구·서비스·참고 자료의 이용 조건은 해당 제공자의 조건을 따릅니다. MIT 라이선스가 그 자료의 권리나 서비스 이용 권한을 대신하지 않습니다.
 
 각 학교의 학생·교직원 자료, DB, 비밀키, 개별 운영 설정과 보안 검토 문서는 공개 소스 배포 대상이 아닙니다.
+
+
+## Desktop automatic updates
+
+WinSparkle 0.9.4 — MIT license and bundled third-party notices. Copies of COPYING files are shipped in licenses/WinSparkle. https://github.com/vslavik/winsparkle

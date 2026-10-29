@@ -76,6 +76,13 @@ public sealed partial class LocalServerWindow
             startup.SetEnabled(true);Check(startup.Enabled&&StartupCommand.EndsWith(" --server-manager --startup"),"server manager startup uses a separate current-user entry and returns to the dashboard");startup.SetEnabled(false);Check(!startup.Enabled,"server manager startup can be disabled without changing messenger startup");
             Refresh();Capture("server-manager-running.png");
             foreach(var c in cards){await c.Host.Stop();Check(!c.Host.Running,c.Service+" stops gracefully through a local event without process killing");}
+            foreach(var c in cards)await BackupBeforeUpdate(c);
+            Check(cards.All(c=>Directory.GetFiles(Path.Combine(c.Data.Text,"backups"),"*.db").Length>0),"update preparation creates checked offline database backups for both server roles in their managed retention folders outside the installation directory");
+            File.WriteAllText(Path.Combine(directory,"update-resume.json"),JsonSerializer.Serialize(cards.Select(c=>c.Service)));
+            foreach(var c in cards)c.Auto.IsChecked=false;
+            await ResumeAfterUpdate();await Ready(5080);await Ready(5081);
+            Check(cards.All(c=>c.Host.Running)&&!File.Exists(Path.Combine(directory,"update-resume.json")),"post-update restart restores the previously running roles even when normal automatic startup is off");
+            foreach(var c in cards){await c.Host.Stop();c.Auto.IsChecked=true;}
             await StartSelected();await Ready(5080);await Ready(5081);using(var api=new Api("http://127.0.0.1:5080")){await api.Login("admin",password);Check(true,"automatic start reuses both selected roles and the existing administrator without requesting or resetting a password");}
             foreach(var c in cards)await c.Host.Stop();
             File.WriteAllText(Path.Combine(outputDirectory,"server-manager-checks.json"),JsonSerializer.Serialize(new{checks,realSchoolData=false}));

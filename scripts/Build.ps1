@@ -5,6 +5,7 @@
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
+& (Join-Path $PSScriptRoot 'Install-WinSparkle.ps1')
 $releaseNotes = Get-Content -LiteralPath (Join-Path $projectRoot 'src\SchoolMessenger.Shared\updates.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 if (-not $Version) { $Version = $releaseNotes.version }
 if ($Version -ne $releaseNotes.version) { throw 'Release version must match the bundled updates.json version.' }

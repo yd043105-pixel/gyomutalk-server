@@ -75,3 +75,4 @@ private/
 operations/
 school-evidence/
 .test-services/
+**/__pycache__/

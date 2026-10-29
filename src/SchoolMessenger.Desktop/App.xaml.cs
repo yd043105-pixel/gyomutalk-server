@@ -6,7 +6,7 @@ public partial class App : System.Windows.Application
     readonly System.Threading.Mutex running = new(false, AdministratorMode?@"Local\YeoyangMessengerServerManager.Running":@"Local\YeoyangSchoolMessenger.Running");
     System.Threading.Mutex? serverExclusive;
     bool ownsServer;
-    protected override void OnExit(ExitEventArgs e) { if(ownsServer)serverExclusive?.ReleaseMutex();serverExclusive?.Dispose();running.Dispose();base.OnExit(e); }
+    protected override void OnExit(ExitEventArgs e) { DesktopUpdater.Cleanup();if(ownsServer)serverExclusive?.ReleaseMutex();serverExclusive?.Dispose();running.Dispose();base.OnExit(e); }
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -46,6 +46,7 @@ public partial class App : System.Windows.Application
             MainWindow=new LocalServerWindow();MainWindow.Show();
         }
         else{MainWindow=new MainWindow();MainWindow.Show();}
+        if(MainWindow is not null&&!e.Args.Any(a=>a.StartsWith("--verify",StringComparison.Ordinal)))DesktopUpdater.Start(MainWindow,AdministratorMode);
     }
     void MinimizeWindow(object sender, RoutedEventArgs e) => SystemCommands.MinimizeWindow(Window.GetWindow((DependencyObject)sender));
     void MaximizeWindow(object sender, RoutedEventArgs e)

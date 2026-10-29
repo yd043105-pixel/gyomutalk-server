@@ -1,0 +1,42 @@
+name: Publish signed desktop update
+on:
+  release:
+    types: [published]
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: ${{ !github.event.release.prerelease }}
+    uses: ./.github/workflows/verify.yml
+  publish:
+    needs: verify
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: gyomutalk-server-trial
+          path: artifacts
+      - name: Verify release and prepare signing dependencies
+        shell: pwsh
+        run: |
+          python -m pip install cryptography==46.0.3
+      - name: Sign exact installers and upload feed last
+        shell: pwsh
+        env:
+          UPDATER_ED25519_SEED: ${{ secrets.UPDATER_ED25519_SEED }}
+        run: |
+          $version=[string]([xml](Get-Content Directory.Build.props -Raw)).Project.PropertyGroup.Version
+          $asset="artifacts/gyomutalk-server-$version-setup-win-x64.exe"
+          Copy-Item "artifacts/gyomutalk-server-$version-trial.exe" $asset
+          python scripts/Create-UpdateFeed.py --asset $asset --tag $env:RELEASE_TAG --output artifacts/appcast.xml
+          if ($LASTEXITCODE -ne 0) { throw 'Signing refused' }
+          gh release upload $env:RELEASE_TAG $asset "$asset.sha256" --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw 'Installer upload failed' }
+          gh release upload $env:RELEASE_TAG artifacts/appcast.xml --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw 'Feed upload failed' }

@@ -56,7 +56,7 @@ public sealed partial class LocalServerWindow:Window
         menu.Items.Add("관리자 프로그램 열기",null,(_,_)=>Dispatcher.Invoke(()=>{Show();WindowState=WindowState.Normal;Activate();}));menu.Items.Add("서버 중지 후 프로그램 종료",null,async(_,_)=>await Dispatcher.InvokeAsync(Exit).Task.Unwrap());tray.ContextMenuStrip=menu;tray.DoubleClick+=(_,_)=>Dispatcher.Invoke(()=>{Show();Activate();});
         Closing+=(_,e)=>{if(!quitting){e.Cancel=true;SaveSettings();Hide();_ = SignOutAdministrators();}};Closed+=(_,_)=>{timer.Stop();sessionTimer.Stop();foreach(var source in adminSessions.Values)source.Dispose();tray.Dispose();};
         sessionTimer.Tick+=async(_,_)=>await CheckAdministratorSessions();
-        timer.Tick+=(_,_)=>Refresh();Loaded+=async(_,_)=>{Refresh();timer.Start();sessionTimer.Start();if(!Environment.GetCommandLineArgs().Contains("--verify-server-manager"))await StartSelected();if(cards.All(c=>!c.Host.Installed))await OpenAdministration("members","office");};
+        timer.Tick+=(_,_)=>Refresh();Loaded+=async(_,_)=>{Refresh();timer.Start();sessionTimer.Start();if(!Environment.GetCommandLineArgs().Contains("--verify-server-manager"))await ResumeAfterUpdate();if(cards.All(c=>!c.Host.Installed))await OpenAdministration("members","office");};
     }
     void Refresh()
     {

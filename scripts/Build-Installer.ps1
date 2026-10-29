@@ -6,6 +6,7 @@
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
+& (Join-Path $PSScriptRoot 'Install-WinSparkle.ps1')
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $projectRoot 'artifacts' }
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
