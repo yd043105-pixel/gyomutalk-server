@@ -13,7 +13,8 @@ public static class TaskFeatures
     static readonly Regex Request = new(@"(제출|작성|회신|준비|신청|참석).*(주세요|바랍니다|부탁|하세요|해요|하기|요청)", RegexOptions.NonBacktracking);
     static readonly Regex Ended = new(@"취소|철회|제출\s*완료|제출했|제출하셨|제출하지\s*마|참석하지\s*마", RegexOptions.NonBacktracking);
     static readonly Regex Dates = new(@"(?:(\d{4})\s*년\s*)?(\d{1,2})\s*월\s*(\d{1,2})\s*일|\d{4}-\d{2}-\d{2}|오늘|내일|모레|[월화수목금토일]요일", RegexOptions.NonBacktracking);
-    static readonly Regex DateSuffix = new(@"^\s*(까지|에)\s*", RegexOptions.NonBacktracking);
+    // The date goes together with its particle, wherever it sits in the sentence ("11월 7일까지 제출" -> "제출").
+    static readonly Regex DateWithSuffix = new($@"(?:{Dates})\s*(?:까지|에)?\s*", RegexOptions.NonBacktracking);
     static readonly Regex ObjectAction = new(@"(을|를)\s*(제출|작성|회신|준비|신청|참석)", RegexOptions.NonBacktracking);
     static readonly Regex RequestEnding = new(@"(해\s*주세요|해\s*주시기\s*바랍니다|하시기\s*바랍니다|하세요|\s*바랍니다|\s*부탁드립니다)[.\s]*$", RegexOptions.NonBacktracking);
     public static DateOnly KoreanDate(long instant) => DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeMilliseconds(instant).ToOffset(TimeSpan.FromHours(9)).DateTime);
@@ -42,7 +43,7 @@ public static class TaskFeatures
                     if (year is >= 1 and <= 9999 && month is >= 1 and <= 12 && day >= 1 && day <= DateTime.DaysInMonth(year, month)) due = new DateOnly(year, month, day).ToString("yyyy-MM-dd");
                 }
             }
-            var title = RequestEnding.Replace(ObjectAction.Replace(DateSuffix.Replace(Dates.Replace(sentence, ""), ""), " $2"), "").Trim(' ', '.');
+            var title = RequestEnding.Replace(ObjectAction.Replace(DateWithSuffix.Replace(sentence, ""), " $2"), "").Trim(' ', '.');
             if (title.Length == 0) title = sentence;
             if (title.Length > 120) title = title[..120];
             result.Add(new(title, sentence[..Math.Min(sentence.Length, 2000)], due));

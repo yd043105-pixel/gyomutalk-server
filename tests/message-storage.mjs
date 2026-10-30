@@ -70,4 +70,9 @@ try{
  assert.equal((await sender.request('messages/'+unsaved+'?peek=true')).message.purged,true);
  assert.equal((await sender.request('messages/'+fresh+'?peek=true')).message.body,'최근 본문');
  check('an unsaved body is dropped after 30 days, newer ones are kept');
+
+ await send('담임 선생님께서는 11월 7일까지 학급별 인솔 명단을 제출해 주세요.');
+ const todo=(await recipient.request('todos')).find(t=>t.title.includes('인솔 명단'));
+ assert.equal(todo.title,'담임 선생님께서는 학급별 인솔 명단 제출');assert.match(todo.dueDate??'',/-11-07$/);
+ check('a date in the middle of a request leaves no stray particle in the suggested task title');
 }finally{if(server.exitCode===null){server.kill();await new Promise(r=>server.once('exit',r));}}
