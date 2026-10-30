@@ -49,7 +49,7 @@ public partial class MainWindow : Window
         {
             var file = Path.Combine(LocalDirectory, "preferences.json");
             if (File.Exists(file) && JsonSerializer.Deserialize<Preferences>(File.ReadAllText(file)) is { } preferences)
-            { ServerAddress.Text = preferences.ServerAddress; RestoreSchoolSelection(preferences); UsernameBox.Text = preferences.Username; Quiet.IsChecked = preferences.Quiet; DoNotDisturb.IsChecked = preferences.DoNotDisturb; RememberLogin.IsChecked = preferences.AutoLogin; Favorites = preferences.Favorites.ToHashSet(); Appearance.Apply(preferences.ThemeId, preferences.Glass); SetAutomaticAway(preferences.IdleMinutes); }
+            { ServerAddress.Text = connectedAddress = preferences.ServerAddress; UsernameBox.Text = preferences.Username; Quiet.IsChecked = preferences.Quiet; DoNotDisturb.IsChecked = preferences.DoNotDisturb; RememberLogin.IsChecked = preferences.AutoLogin; Favorites = preferences.Favorites.ToHashSet(); Appearance.Apply(preferences.ThemeId, preferences.Glass); SetAutomaticAway(preferences.IdleMinutes); }
         }
         catch (Exception error) when (error is IOException or JsonException) { LoginError.Text = "설정을 읽지 못했습니다. 서버 주소를 확인하세요."; }
         loginOptionsReady = true;
@@ -73,12 +73,11 @@ public partial class MainWindow : Window
             if(Environment.GetCommandLineArgs().Contains("--verify-admin")){await VerifyAdministratorUi();return;}
             if(Environment.GetCommandLineArgs().Contains("--verify-counseling")){await VerifyCounselingUi();return;}
             if (Environment.GetCommandLineArgs().Contains("--verify-ui")) { await VerifyUi(); return; }
-            if(string.IsNullOrWhiteSpace(ServerAddress.Text))LoginError.Text="학교 검색에서 우리 학교를 선택하세요.";
             if (startup.Enabled) { try { startup.SetEnabled(true); } catch (Exception error) { LoginError.Text = "자동 실행 설정을 갱신하지 못했습니다: " + error.Message; } }
             if (RememberLogin.IsChecked == true) { await TryAutomaticLogin(); if (savedLogin.Exists) timer.Start(); }
         };
     }
-    public void SavePreferences() => File.WriteAllText(Path.Combine(LocalDirectory, "preferences.json"), JsonSerializer.Serialize(new Preferences(ServerAddress.Text, UsernameBox.Text, Quiet.IsChecked, Favorites.ToArray(), DoNotDisturb.IsChecked, RememberLogin.IsChecked == true, Appearance.Selected, Appearance.Glass,AutomaticAwayMinutes,selectedSchool?.Id??"",selectedSchool?.Name??"",selectedSchool?.Region??"")));
+    public void SavePreferences() => File.WriteAllText(Path.Combine(LocalDirectory, "preferences.json"), JsonSerializer.Serialize(new Preferences(ServerAddress.Text, UsernameBox.Text, Quiet.IsChecked, Favorites.ToArray(), DoNotDisturb.IsChecked, RememberLogin.IsChecked == true, Appearance.Selected, Appearance.Glass,AutomaticAwayMinutes)));
     void OpenAppearance(object sender, RoutedEventArgs e) => new AppearanceWindow(this).ShowDialog();
     public void RefreshAppearance()
     {
@@ -103,7 +102,7 @@ public partial class MainWindow : Window
     }
     async void RegisterClick(object sender, RoutedEventArgs e)
     {
-        try { await VerifySelectedSchool(); new RegistrationWindow(ServerAddress.Text) { Owner = this }.ShowDialog(); }
+        try { await RequireServerAddress(); new RegistrationWindow(ServerAddress.Text) { Owner = this }.ShowDialog(); }
         catch (Exception error) { LoginError.Text = error.Message; }
     }
     void StartupChanged(object sender, RoutedEventArgs e)
@@ -140,7 +139,7 @@ public partial class MainWindow : Window
     }
     async Task SignInOnce()
     {
-        await VerifySelectedSchool();
+        await RequireServerAddress();
         if (hub is not null) await hub.DisposeAsync(); Api?.Dispose(); Api = new Api(ServerAddress.Text);
         await Api.Login(UsernameBox.Text.Trim(), PasswordBox.Password, RememberLogin.IsChecked == true); PasswordBox.Clear(); UsernameBox.Text=Api.Session!.User!.Username; SavePreferences();
         if(Api.Session!.User!.ActivationRequired){savedLogin.Clear();new StaffActivationWindow(Api){Owner=this}.ShowDialog();await Api.RefreshSession();throw new InvalidOperationException("계정 활성화 후 다시 로그인하세요.");}
@@ -170,7 +169,7 @@ public partial class MainWindow : Window
         signingIn = true; LoginButton.IsEnabled = false; LoginError.Text = "자동 로그인 중…";
         try
         {
-            await VerifySelectedSchool();
+            await RequireServerAddress();
             Api?.Dispose(); Api = new Api(ServerAddress.Text);
             if (!savedLogin.Restore(Api, UsernameBox.Text.Trim())) { LoginError.Text = "자동 로그인 기간이 끝났습니다. 다시 로그인하세요."; return; }
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -434,13 +433,14 @@ public partial class MainWindow : Window
             if (startup.Enabled) throw new InvalidOperationException("자동 실행 해제 실패");
             ServerAddress.Text = Environment.GetEnvironmentVariable("SCHOOL_UI_SERVER") ?? ServerAddress.Text;
             if(!Uri.TryCreate(ServerAddress.Text,UriKind.Absolute,out var verificationAddress)||!verificationAddress.IsLoopback||verificationAddress.Scheme!="http")throw new InvalidOperationException("화면 검사는 로컬 HTTP 가상 서버만 사용합니다.");
-            foreach(var id in new[]{"UI-SCHOOL-A","UI-SCHOOL-B"})
+            var verificationServer=ServerAddress.Text;
+            foreach(var address in new[]{"https://192.0.2.10:5443","https://192.0.2.11:5443"})
             {
                 PasswordBox.Password="synthetic-not-a-password";RememberLogin.IsChecked=true;Favorites.Add("synthetic-school-member");File.WriteAllText(savedLogin.FilePath,"synthetic-session-marker");
-                SelectSchool(new(id,"합성 학교",id,ServerAddress.Text,""));
-                if(savedLogin.Exists||PasswordBox.Password.Length!=0||RememberLogin.IsChecked==true||Favorites.Count!=0||SchoolSelectionLabel.Text!="합성 학교 · "+id)throw new InvalidOperationException("학교 변경 시 이전 학교 로그인·즐겨찾기 분리 실패");
+                ServerAddress.Text=address;
+                if(savedLogin.Exists||PasswordBox.Password.Length!=0||RememberLogin.IsChecked==true||Favorites.Count!=0)throw new InvalidOperationException("학교 변경 시 이전 학교 로그인·즐겨찾기 분리 실패");
             }
-            selectedSchool=null;SchoolSelectionLabel.Text="기존 학교 연결 · 학교 검색에서 변경";SavePreferences();
+            ServerAddress.Text=verificationServer;SavePreferences();
             UsernameBox.Text = Environment.GetEnvironmentVariable("SCHOOL_UI_USER") ?? "admin";
             RememberLogin.IsChecked = true;
             PasswordBox.Password = Environment.GetEnvironmentVariable("SCHOOL_UI_PASSWORD") ?? ""; await SignIn();
@@ -596,4 +596,4 @@ public partial class MainWindow : Window
         catch (Exception error) { Directory.CreateDirectory("artifacts"); File.WriteAllText("artifacts/ui-error.txt", error.ToString()); exiting = true; System.Windows.Application.Current.Shutdown(1); }
     }
 }
-record Preferences(string ServerAddress, string Username, bool Quiet, string[] Favorites, bool DoNotDisturb = false, bool AutoLogin = false, string ThemeId = "blue", bool Glass = true,int IdleMinutes=5,string SchoolId="",string SchoolLabel="",string SchoolRegion="");
+record Preferences(string ServerAddress, string Username, bool Quiet, string[] Favorites, bool DoNotDisturb = false, bool AutoLogin = false, string ThemeId = "blue", bool Glass = true,int IdleMinutes=5);

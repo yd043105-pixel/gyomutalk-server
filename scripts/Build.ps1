@@ -25,10 +25,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "$project 빌드 실패" }
     }
     if (-not $SkipTests) {
-        & $dotnetExecutable run --project tests\SchoolDirectoryChecks -p:RestoreLockedMode=true
-        if ($LASTEXITCODE -ne 0) { throw 'School directory and school/server identity verification failed' }
-        & (Join-Path $projectRoot 'tests\school-directory-commands.ps1')
-        & (Join-Path $projectRoot 'tests\school-registration-review.ps1')
+        node tests\message-storage.mjs
+        if ($LASTEXITCODE -ne 0) { throw 'PC message storage verification failed' }
         node tests\school-directory-servers.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Separate school server identity and session isolation verification failed' }
         & $dotnetExecutable run --project tests\IdleChecks -p:RestoreLockedMode=true

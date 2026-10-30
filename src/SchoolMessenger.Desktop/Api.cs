@@ -110,7 +110,7 @@ public record MessageItem(string Id, string Title, string Preview, long CreatedA
     public string DisplayTitle => SchoolMessenger.Shared.MessageText.Excerpt(string.IsNullOrWhiteSpace(Title) ? Preview : Title, 200);
     public string FilesLabel => AttachmentCount > 0 ? $"첨부 {AttachmentCount}" : "";
 }
-public record MessageContent(string Id, string SenderId, string SenderName, string Title, string Body, long CreatedAt, SchoolMessenger.Contracts.MessageFormat? Format = null);
+public record MessageContent(string Id, string SenderId, string SenderName, string Title, string Body, long CreatedAt, SchoolMessenger.Contracts.MessageFormat? Format = null, bool Purged = false);
 public record Attachment(string Id, string Name, long Size, long ExpiresAt = 0, bool Expired = false)
 {
     public bool Available => !Expired;

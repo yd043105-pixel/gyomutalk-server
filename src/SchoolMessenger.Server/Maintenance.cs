@@ -71,6 +71,7 @@ public sealed class Maintenance(Store store, IWebHostEnvironment environment, IC
     public void Cleanup()
     {
         lock (AttachmentBackup.Gate) CleanupCore();
+        MessageStorage.Expire(store);
     }
     void CleanupCore()
     {

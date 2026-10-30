@@ -91,10 +91,29 @@ Name: "{commondesktop}\{#DesktopLinkName}"; Filename: "{app}\admin\SchoolMesseng
 Name: "{group}\서버 프로그램 제거"; Filename: "{uninstallexe}"
 
 [Run]
+#ifndef InstallerTest
+; Teacher PCs on the same network reach the server over HTTPS and get its discovery reply (UDP 45983); other networks stay blocked.
+Filename: "{sys}
+etsh.exe"; Parameters: "advfirewall firewall delete rule name=""GyomuTalk Office Server"""; Components: office; Flags: runhidden
+Filename: "{sys}
+etsh.exe"; Parameters: "advfirewall firewall add rule name=""GyomuTalk Office Server"" dir=in action=allow program=""{app}\server\SchoolMessenger.Server.exe"" profile=any remoteip=localsubnet enable=yes"; Components: office; Flags: runhidden
+Filename: "{sys}
+etsh.exe"; Parameters: "advfirewall firewall delete rule name=""GyomuTalk School News Server"""; Components: announcements; Flags: runhidden
+Filename: "{sys}
+etsh.exe"; Parameters: "advfirewall firewall add rule name=""GyomuTalk School News Server"" dir=in action=allow program=""{app}\announcement-server\SchoolMessenger.AnnouncementServer.exe"" profile=any remoteip=localsubnet enable=yes"; Components: announcements; Flags: runhidden
+#endif
 Filename: "{app}\admin\SchoolMessenger.exe"; Parameters: "--server-manager --configure-startup enable --startup-entry-name {#StartupEntryName}"; Components: admin; Tasks: autostart; Flags: runhidden runasoriginaluser
 Filename: "{app}\admin\SchoolMessenger.exe"; Parameters: "--server-manager --configure-startup disable --startup-entry-name {#StartupEntryName}"; Components: admin; Tasks: not autostart; Flags: runhidden runasoriginaluser
 Filename: "{app}\admin\SchoolMessenger.exe"; Parameters: "--server-manager"; Components: admin; Description: "관리자 프로그램 실행"; Flags: nowait postinstall skipifsilent runasoriginaluser
 Filename: "{app}\서버 설치 안내.txt"; Description: "서버 설치·설정 안내 열기"; Flags: shellexec postinstall skipifsilent runasoriginaluser unchecked
+
+#ifndef InstallerTest
+[UninstallRun]
+Filename: "{sys}
+etsh.exe"; Parameters: "advfirewall firewall delete rule name=""GyomuTalk Office Server"""; Components: office; Flags: runhidden; RunOnceId: "Firewall1"
+Filename: "{sys}
+etsh.exe"; Parameters: "advfirewall firewall delete rule name=""GyomuTalk School News Server"""; Components: announcements; Flags: runhidden; RunOnceId: "Firewall2"
+#endif
 
 [InstallDelete]
 Type: files; Name: "{group}\이 PC에서만 시험 서버 켜기.lnk"

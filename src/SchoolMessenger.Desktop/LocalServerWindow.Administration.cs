@@ -44,6 +44,7 @@ public sealed partial class LocalServerWindow
         signOut.Visibility=authenticated?Visibility.Visible:Visibility.Collapsed;
     }
     internal void ShowServerControls()=>SelectCard(cards.First(c=>c.Service==activeService));
+    internal void ShowServer(string service)=>SelectCard(cards.First(c=>c.Service==service));
     async Task<bool> SignInAdministrator(string service,string address,string username,string password,int expectedRevision)
     {
         if(signingIn)return false;signingIn=true;Api? candidate=null;

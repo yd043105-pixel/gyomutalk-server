@@ -52,7 +52,8 @@
   <ScrollViewer x:Name="LoginPanel" Padding="24" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel VerticalAlignment="Center">
    <Image Width="48" Height="48" Source="{StaticResource ProductMark}" HorizontalAlignment="Left" Margin="0,0,0,16" AutomationProperties.Name="교무톡"/>
    <TextBlock Text="온라인 교무실" FontSize="26" FontWeight="Bold"/><TextBlock Text="교직원 로그인" Foreground="{DynamicResource Muted}" Margin="0,9,0,22"/>
-   <TextBlock Text="우리 학교" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,0,7"/><DockPanel><Button x:Name="FindServerButton" DockPanel.Dock="Right" Content="학교 검색" Click="FindServerClick" Margin="7,0,0,0" Padding="9,7"/><TextBox x:Name="SchoolSelectionLabel" IsReadOnly="True" Text="학교를 검색해 선택하세요" ToolTip="학교 이름과 지역을 확인하세요"/></DockPanel>
+   <TextBlock Text="학교 서버 주소" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,0,7"/><DockPanel><Button x:Name="FindServerButton" DockPanel.Dock="Right" Content="교내 자동검색" Click="FindNearbyServerClick" Margin="7,0,0,0" Padding="9,7"/><TextBox x:Name="ServerAddress" TextChanged="ConnectionAddressChanged" AutomationProperties.Name="학교 서버 주소"/></DockPanel>
+   <TextBlock Text="관리자 프로그램의 ‘교사 PC 접속 주소’(예: https://192.168.0.10:5443)를 넣거나 교내 자동검색을 누르세요. 처음 연결할 때 서버 PC에 표시된 연결 확인 코드와 비교합니다." FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"/>
    <TextBlock Text="아이디 · 본인 이름 (동명이인은 학교에서 안내한 이름)" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,15,0,7"/><TextBox x:Name="UsernameBox"/>
    <TextBlock Text="비밀번호" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,15,0,7"/><PasswordBox x:Name="PasswordBox" KeyDown="PasswordKeyDown"/>
    <CheckBox x:Name="AutoStartCheck" Content="Windows 로그인 시 자동 실행" FontSize="11" Margin="0,17,0,0" Checked="StartupChanged" Unchecked="StartupChanged"/>
@@ -60,8 +61,7 @@
    <Button x:Name="LoginButton" Content="로그인" Style="{StaticResource PrimaryButton}" Click="LoginClick" Margin="0,19,0,12" Padding="10,11"/>
    <Button Content="처음 사용하시나요? 계정 신청" FontSize="11" BorderThickness="0" Foreground="{DynamicResource Blue}" Click="RegisterClick" Padding="7" Margin="0,0,0,9"/>
    <Button Content="화면 색상 · 유리 효과" Click="OpenAppearance" FontSize="11" Padding="7" BorderThickness="0" Background="Transparent" Margin="0,0,0,8"/>
-   <Expander Header="연결 도움 · 관리자 안내를 받은 경우" FontSize="11" Margin="0,4,0,10"><StackPanel Margin="0,8,0,0"><TextBlock Text="기존 설치 또는 교내 시험 연결" Foreground="{DynamicResource Muted}" Margin="0,0,0,6"/><DockPanel><Button Content="교내 자동검색" DockPanel.Dock="Right" Click="FindNearbyServerClick" Margin="7,0,0,0"/><TextBox x:Name="ServerAddress" TextChanged="ConnectionAddressChanged"/></DockPanel></StackPanel></Expander>
-   <TextBlock x:Name="LoginError" Foreground="#AD573C" TextWrapping="Wrap"/><TextBlock Text="학교를 선택한 뒤 본인 이름으로 로그인하세요. 학교마다 계정과 자료는 따로 관리됩니다." FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,10,0,0"/>
+   <TextBlock x:Name="LoginError" Foreground="#AD573C" TextWrapping="Wrap"/><TextBlock Text="학교마다 계정과 자료는 따로 관리됩니다." FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,10,0,0"/>
   </StackPanel></ScrollViewer>
  </Grid>
 </Window>

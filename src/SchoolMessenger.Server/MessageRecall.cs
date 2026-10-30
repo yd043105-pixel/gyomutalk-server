@@ -5,10 +5,11 @@ namespace SchoolMessenger.Server;
 public static class MessageRecall
 {
     // The same SQLite write transaction serializes opening a message and recalling it.
-    public static bool Read(SqliteConnection connection,SqliteTransaction tx,string id,string user)
+    public static bool Read(SqliteConnection connection,SqliteTransaction tx,string id,string user,bool markRead=true)
     {
         using var find=Store.Command(connection,"SELECT SenderId FROM Messages WHERE Id=$id AND NOT EXISTS(SELECT 1 FROM MessageRecalls WHERE MessageId=$id) AND (SenderId=$user OR EXISTS(SELECT 1 FROM Recipients WHERE MessageId=$id AND UserId=$user))",tx,("$id",id),("$user",user));
         if(find.ExecuteScalar() is not string sender)return false;
+        if(!markRead)return true;
         using var mark=Store.Command(connection,"UPDATE Recipients SET ReadAt=$now WHERE MessageId=$id AND UserId=$user AND ReadAt IS NULL",tx,("$now",Maintenance.Now),("$id",id),("$user",user));
         if(mark.ExecuteNonQuery()>0)MessageDelivery.Enqueue(connection,tx,"read:"+id+":"+user,sender,"ReadChanged",id,Maintenance.Now);
         return true;

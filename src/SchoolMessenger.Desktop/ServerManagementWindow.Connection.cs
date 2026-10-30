@@ -14,20 +14,6 @@ namespace SchoolMessenger.Desktop;
 
 public sealed partial class ServerManagementWindow
 {
-    async Task ExportSchoolRegistration()
-    {
-        try
-        {
-            var review=await api.Get<JsonElement>("api/admin/deployment-review");
-            if(api.Address.Scheme!="https"||review.GetProperty("state").GetString()!="school-record-checked")throw new InvalidOperationException("학교별 검토 기록을 적용한 운영 HTTPS 서버에서 등록자료를 저장하세요. 시험 서버는 검색 목록에 등록하지 않습니다.");
-            var identity=await api.Get<JsonElement>("server-info");var id=identity.GetProperty("schoolId").GetString();var name=identity.GetProperty("schoolName").GetString();var service=identity.GetProperty("service").GetString();
-            if(string.IsNullOrWhiteSpace(id)||string.IsNullOrWhiteSpace(name)||service is not("office" or "announcements"))throw new InvalidOperationException("학교 식별자와 서버 역할을 확인하세요.");
-            var save=new SaveFileDialog{Title="개발자에게 전달할 학교 검색 등록자료",FileName="school-registration-"+service+".json",Filter="학교 등록자료 (*.json)|*.json"};
-            if(save.ShowDialog(InteractionOwner)!=true)return;
-            File.WriteAllText(save.FileName,JsonSerializer.Serialize(new{schema=1,schoolId=id,schoolName=name,service,address=api.Address.AbsoluteUri},new JsonSerializerOptions{WriteIndented=true}));
-            feedback.Text="등록자료를 저장했습니다. 학교명·학교 식별자·현재 접속 주소만 포함하며 비밀번호·계정 명부는 포함하지 않습니다. 개발자에게 지역과 함께 전달해 등록을 요청하세요. 주소가 다른 교사 PC/앱에서도 연결되는지 확인해야 합니다.";
-        }catch(Exception e){feedback.Text=e.Message;}
-    }
     Window Dialog(string title,StackPanel panel)=>new(){Owner=InteractionOwner,Title=title,Width=580,Height=550,Resources=Resources,Style=(Style)FindResource("SchoolWindow"),WindowStartupLocation=WindowStartupLocation.CenterOwner,Content=new ScrollViewer{Content=panel}};
     async Task OpenDeploymentReview()
     {

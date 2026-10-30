@@ -57,7 +57,9 @@ public sealed partial class LocalServerWindow
         foreach(var service in new[]{"office","announcements"})AddCard(navigation,service);
         void Menu(string label,string page,string icon,string? role=null){var button=new Button{Content=NavigationLabel(label,icon),Uid=page,Margin=new Thickness(0,0,0,1)};NavigationState(button,false);System.Windows.Automation.AutomationProperties.SetName(button,label);button.Click+=async(_,_)=>await OpenAdministration(page,role);navigation.Children.Add(button);administrationNavigation.Add(button);}
         Group("운영");Menu("운영 현황","resources","AdminOverviewIcon");
-        Group("구성원");Menu("교직원·권한","members","AdminPeopleIcon","office");Menu("학급·분반","sections","AdminClassIcon","office");Menu("학생·학부모","portal","AdminStudentIcon","announcements");
+        Group("교직원");Menu("교직원·권한","members","AdminPeopleIcon","office");
+        // Sections hold student accounts, so they sit with the student-parent service they depend on.
+        Group("학생·학부모");Menu("가입·학급 명부","portal","AdminStudentIcon","announcements");Menu("선택과목 분반","sections","AdminClassIcon","office");
         Group("학교 설정");Menu("특별실","rooms","AdminRoomIcon","office");Menu("학사일정","calendar","AdminCalendarIcon","office");Menu("약관·개인정보","policy","AdminDocIcon");
         Group("기록");Menu("오류·의견","feedback","AdminChatIcon");Menu("운영 변경 기록","audit","AdminHistoryIcon","office");
         SelectCard(cards.FirstOrDefault(c=>c.Host.Installed)??cards[0]);
@@ -137,7 +139,7 @@ public sealed partial class LocalServerWindow
         var second=new StackPanel();second.Children.Add(FieldLabel("비밀번호 확인"));second.Children.Add(card.Confirm);Grid.SetColumn(second,2);passwords.Children.Add(second);
         System.Windows.Automation.AutomationProperties.SetName(card.Password,"최초 관리자 비밀번호");System.Windows.Automation.AutomationProperties.SetName(card.Confirm,"비밀번호 확인");
         card.PasswordFields.Children.Add(passwords);var passwordNote=Note("12~128자 · 서버를 처음 만들 때만 입력합니다.");passwordNote.Margin=new Thickness(0,6,0,0);card.PasswordFields.Children.Add(passwordNote);controls.Children.Add(card.TrialFields);
-        Field(card.SimpleFields,"학교 이름",card.School,"교사 메신저의 학교 검색과 화면 제목에 표시됩니다.");
+        Field(card.SimpleFields,"학교 이름",card.School,"교사 메신저의 교내 자동검색 결과와 화면 제목에 표시됩니다.");
         Field(card.SimpleFields,"관리자 아이디",card.AdminUsername,"영문·숫자·._- 3~32자 · 서버를 처음 만들 때 정하고 이후에는 바꿀 수 없습니다.");
         var approval=new DockPanel();var choose=new Button{Content="문서 선택",Margin=new Thickness(8,0,0,0)};DockPanel.SetDock(choose,Dock.Right);approval.Children.Add(choose);approval.Children.Add(card.Approval);choose.Click+=(_,_)=>ChooseApproval(card);
         card.SimpleFields.Children.Add(FieldLabel("학교장 승인(내부결재) 문서"));card.SimpleFields.Children.Add(approval);var approvalNote=Note("결재 문서 파일은 이 PC에만 보관하고 지문(해시)으로 학교 검토 기록을 만듭니다. 1년마다 새 승인 문서로 갱신합니다.");approvalNote.Margin=new Thickness(0,6,0,0);approvalNote.FontSize=11;card.SimpleFields.Children.Add(approvalNote);

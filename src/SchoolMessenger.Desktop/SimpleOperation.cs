@@ -19,7 +19,9 @@ internal static class SimpleOperation
 {
     static readonly JsonSerializerOptions Json=new(JsonSerializerDefaults.Web){WriteIndented=true};
     // 8443 is often taken by Korean security/certificate agents on school PCs, so use a less common port.
-    public static int Port(string service)=>service=="office"?18443:18444;
+    // Verification shifts the ports so a school server already running on this PC is left alone.
+    internal static int PortOffset;
+    public static int Port(string service)=>(service=="office"?18443:18444)+PortOffset;
     public static void EnsurePortFree(int port)
     {
         try{using var probe=new TcpListener(IPAddress.Any,port);probe.Start();probe.Stop();}

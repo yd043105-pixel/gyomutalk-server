@@ -34,9 +34,6 @@
     <Compile Include="../SchoolMessenger.Shared/FilePolicy.cs" Link="FilePolicy.cs" />
     <Compile Include="../SchoolMessenger.Shared/MessageText.cs" Link="MessageText.cs" />
     <Compile Include="../SchoolMessenger.Shared/SchoolDiscovery.cs" Link="SchoolDiscovery.cs" />
-    <Compile Include="../SchoolMessenger.Shared/SchoolDirectory.cs" Link="SchoolDirectory.cs" />
-    <Compile Include="../SchoolMessenger.Shared/SchoolRegistration.cs" Link="SchoolRegistration.cs" />
-    <EmbeddedResource Include="../../config/school-directory.json" LogicalName="SchoolMessenger.SchoolDirectory.json" />
     <EmbeddedResource Include="../SchoolMessenger.Shared/updates.json" LogicalName="SchoolMessenger.UpdateNotes.json" />
     <EmbeddedResource Include="../../config/registration-policy.draft.json" LogicalName="SchoolMessenger.RegistrationDraft.json" />
   </ItemGroup>

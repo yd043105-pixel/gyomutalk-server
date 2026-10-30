@@ -53,8 +53,6 @@ public sealed partial class ServerManagementWindow:Window
         var boot=new Button{Content="서버 PC 재시작 후 자동 구동 설정",HorizontalAlignment=HorizontalAlignment.Left};boot.Click+=(_,_)=>OpenServerStartup();connection.Children.Add(Section("서버 자동 시작",boot));
         var policy=new Button{Content="학교별 약관 · 개인정보 설정 초안",HorizontalAlignment=HorizontalAlignment.Left};policy.Click+=async(_,_)=>{if(InteractionOwner is LocalServerWindow manager)await manager.OpenAdministration("policy");else new SchoolPolicyWindow(InteractionOwner,api).ShowDialog();};school.Children.Add(Section("학교 운영 정책",policy));
         var securityReview=new Button{Content="보안 도입 검토 기록 확인",HorizontalAlignment=HorizontalAlignment.Left};securityReview.Click+=async(_,_)=>await OpenDeploymentReview();school.Children.Add(Section("보안성 검토 · 외부 서비스",securityReview));
-        var directory=new Button{Content="학교 검색 등록자료 저장",HorizontalAlignment=HorizontalAlignment.Left};directory.Click+=async(_,_)=>await ExportSchoolRegistration();school.Children.Add(Section("여러 학교에서 사용 · 학교 검색",directory));
-        var requestSchool=new Button{Content="학교 등록 신청 · 개발자 승인",HorizontalAlignment=HorizontalAlignment.Left};requestSchool.Click+=async(_,_)=>await RequestSchoolRegistration();school.Children.Add(Section("학교 등록 신청",requestSchool));
         if(owner is MainWindow main)
         {
             var actions=new WrapPanel();var accounts=new Button{Content="교직원 계정 · 승인",Margin=new Thickness(0,4,8,8)};accounts.Click+=(_,_)=>new OfficeWindow(main,true).Show();actions.Children.Add(accounts);

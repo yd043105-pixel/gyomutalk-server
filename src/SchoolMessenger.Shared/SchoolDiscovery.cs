@@ -13,13 +13,14 @@ using System.Threading.Tasks;
 
 namespace SchoolMessenger.Shared;
 
-// Discovery is an untrusted hint. TLS and the user's first-server confirmation are still required.
+// Discovery is an untrusted hint. School servers use their own certificate, so a reply only carries its fingerprint;
+// trust still needs the person to compare the connection code on first sign-in.
 public static class SchoolDiscovery
 {
     public const int Port=45983;
     public const string Product="Yeoyang.Office.Discovery.1";
     public record Packet(string Product,string Nonce,string? Address=null);
-    public record Candidate(string Address,string SchoolName,IPAddress Source);
+    public record Candidate(string Address,string SchoolName,IPAddress Source,string Fingerprint);
     static readonly JsonSerializerOptions Json=new(JsonSerializerDefaults.Web);
     public static bool Address(string? text,out Uri? address)
     {
@@ -90,7 +91,10 @@ public static class SchoolDiscovery
             // A peer cannot redirect discovery probes to an unrelated Internet or internal host.
             var addresses=await Dns.GetHostAddressesAsync(address.DnsSafeHost,deadline.Token);
             if(!addresses.Any(a=>a.Equals(source)))return null;
-            using var handler=new SocketsHttpHandler{AllowAutoRedirect=false,UseCookies=false,UseProxy=false,ConnectCallback=async(context,token)=>
+            var fingerprint="";
+            using var handler=new SocketsHttpHandler{AllowAutoRedirect=false,UseCookies=false,UseProxy=false,
+            SslOptions={RemoteCertificateValidationCallback=(_,certificate,_,_)=>{if(certificate is null)return false;fingerprint=Convert.ToHexString(SHA256.HashData(certificate.GetRawCertData()));return true;}},
+            ConnectCallback=async(context,token)=>
             {
                 var socket=new Socket(AddressFamily.InterNetwork,SocketType.Stream,ProtocolType.Tcp);
                 try{await socket.ConnectAsync(source,context.DnsEndPoint.Port,token);return new NetworkStream(socket,true);}catch{socket.Dispose();throw;}
@@ -99,7 +103,7 @@ public static class SchoolDiscovery
             using var response=await http.GetAsync(new Uri(address,"server-info"),deadline.Token);
             if(!response.IsSuccessStatusCode)return null;
             var data=JsonSerializer.Deserialize<Identity>(await response.Content.ReadAsStringAsync(deadline.Token),Json);
-            return data?.Product==Product&&data.SchoolName is{Length:>0 and <=80}&&!data.SchoolName.Any(char.IsControl)?new(address.AbsoluteUri,data.SchoolName,source):null;
+            return data?.Product==Product&&data.SchoolName is{Length:>0 and <=80}&&!data.SchoolName.Any(char.IsControl)?new(address.AbsoluteUri,data.SchoolName,source,fingerprint):null;
         }
         catch(Exception e)when(e is HttpRequestException or OperationCanceledException or SocketException or JsonException){return null;}
     }

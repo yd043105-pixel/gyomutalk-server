@@ -38,7 +38,8 @@ public partial class MailboxWindow : Window
             if (FromDate.SelectedDate is { } from) path += $"&from={new DateTimeOffset(from).ToUnixTimeMilliseconds()}";
             if (ToDate.SelectedDate is { } to) path += $"&to={new DateTimeOffset(to.AddDays(1)).ToUnixTimeMilliseconds() - 1}";
             if (personId is not null) path += "&person=" + Uri.EscapeDataString(personId);
-            var rows = await Api.Get<MessageItem[]>(path);
+            var rows = (await Api.Get<MessageItem[]>(path)).Select(Local).ToList();
+            if (!more && SearchBox.Text.Trim() is { Length: > 0 } query) rows.AddRange(LocalMatches(query).Where(m => rows.All(r => r.Id != m.Id)));
             // A list refresh started earlier must not clear or replace a message the user just opened.
             if(detailsOpening>0||selectionVersion!=taskPromptVersion||detail?.Message.Id!=selected)return;
             rendering = true;
@@ -53,6 +54,20 @@ public partial class MailboxWindow : Window
             StatusLabel.Text = "";
         }
         finally { refreshing = false; rendering = false; }
+    }
+    // The server drops a body once every PC saved it, so previews and search fall back to this PC's copies.
+    MessageItem Local(MessageItem row) => row.Preview.Length == 0 && main.Archive.Load(row.Id) is { } copy ? row with { Preview = SchoolMessenger.Shared.MessageText.Excerpt(copy.Message.Body) } : row;
+    IEnumerable<MessageItem> LocalMatches(string query)
+    {
+        var me = Api!.Session!.User!.Id;
+        long from = FromDate.SelectedDate is { } a ? new DateTimeOffset(a).ToUnixTimeMilliseconds() : 0, to = ToDate.SelectedDate is { } b ? new DateTimeOffset(b.AddDays(1)).ToUnixTimeMilliseconds() - 1 : long.MaxValue;
+        foreach (var copy in main.Archive.Search(query))
+        {
+            var m = copy.Message; var mine = copy.Recipients.FirstOrDefault(r => r.Id == me);
+            var fits = box switch { "sent" => m.SenderId == me, "conversation" => m.SenderId == personId || copy.Recipients.Any(r => r.Id == personId), "unread" => mine is { ReadAt: null }, _ => mine is not null };
+            if (fits && m.CreatedAt >= from && m.CreatedAt <= to)
+                yield return new MessageItem(m.Id, m.Title, SchoolMessenger.Shared.MessageText.Excerpt(m.Body), m.CreatedAt, m.SenderName, mine?.ReadAt, copy.Recipients.Length, copy.Recipients.Count(r => r.ReadAt is not null), copy.Attachments.Length, m.SenderId);
+        }
     }
     async Task OpenDetail(string id, bool markRead = true)
     {
@@ -70,12 +85,13 @@ public partial class MailboxWindow : Window
             opened = await Api.Get<Detail>($"api/messages/{id}");
         }
         if (version != taskPromptVersion) return;
-        detail = opened;
+        try { detail = main.Archive.Merge(opened); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException) { detail = opened; StatusLabel.Text = "이 PC에 메시지를 저장하지 못했습니다. 디스크 공간과 권한을 확인하세요."; }
+        if (detail.Message.Purged) detail = detail with { Message = detail.Message with { Body = "이 메시지 본문은 받은 PC에만 저장됩니다. 이 PC에는 사본이 없습니다." } };
         DetailTitle.Text = SchoolMessenger.Shared.MessageText.Excerpt(detail.Message.Title, 200);
         DetailTitle.Visibility = detail.Message.Title == SchoolMessenger.Shared.MessageText.Excerpt(detail.Message.Body, 80) ? Visibility.Collapsed : Visibility.Visible;
         DetailMeta.Text = $"{detail.Message.SenderName}   ·   {DateTimeOffset.FromUnixTimeMilliseconds(detail.Message.CreatedAt).ToLocalTime():yyyy.MM.dd HH:mm}   ·   수신 {detail.Recipients.Length}명";
         DetailBody.SetFormattedText(detail.Message.Body, detail.Message.Format);
-        try{main.Archive.Save(detail);}catch(Exception error)when(error is IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException){StatusLabel.Text="메시지는 서버에 보관됐지만 PC 암호화 사본을 저장하지 못했습니다.";}
         RecallButton.Visibility=detail.Message.SenderId==Api.Session!.User!.Id?Visibility.Visible:Visibility.Collapsed;
         RecallButton.IsEnabled=detail.Recipients.Any(r=>r.ReadAt is null);
         RecallButton.ToolTip="안 읽은 수신자가 한 명 이상 남아 있으면 회수할 수 있습니다.";

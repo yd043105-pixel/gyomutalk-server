@@ -52,8 +52,7 @@ public sealed partial class LocalServerWindow
         var backup=c.Backup.Text.Trim().Length>0?c.Backup.Text:SimpleOperation.DefaultBackup(c.SimpleData.Text,c.Service);var same=SimpleOperation.SameDrive(c.SimpleData.Text,backup);
         items.Add((!same,"백업 위치",same?"서버와 같은 드라이브에 있습니다. 외장 드라이브를 권장합니다.":backup,"위치 변경",()=>ChooseBackup(c)));
         items.Add((c.Ups.IsChecked==true,"정전 대비(UPS)",c.Ups.IsChecked==true?"UPS 설치·시험을 확인했습니다.":"정전 때 서버 PC가 안전하게 꺼지도록 UPS를 연결하세요.",c.Ups.IsChecked==true?null:"확인함",()=>{c.Ups.IsChecked=true;SaveSettings();Refresh();}));
-        items.Add((Initialized(c),"Windows 방화벽",Initialized(c)?"처음 시작할 때 ‘개인 네트워크’ 허용을 확인했습니다.":"처음 시작할 때 방화벽 창이 뜨면 ‘개인 네트워크’에 허용하세요.",null,null));
-        items.Add((false,"장애 알림 메일","선택 사항 · 서버가 멈추면 관리자에게 메일로 알립니다.","안내",OpenGuide));
+        items.Add((true,"Windows 방화벽","설치할 때 같은 학교망(로컬 서브넷)의 접속만 허용했습니다.",null,null));
         // Rebuilt only when something changed so a click is never lost to the 3-second refresh.
         var key=string.Join("|",items.Select(i=>i.Done+i.Title+i.Detail));if(key==c.ChecklistKey)return;c.ChecklistKey=key;
         c.Checklist.Children.Clear();var open=items.Count(i=>!i.Done);AdminUi.SetBadge(c.ChecklistBadge,open==0?"모두 확인됨":open+"건 확인 필요",open==0?"Success":"Warning");

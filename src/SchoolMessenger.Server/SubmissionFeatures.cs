@@ -195,7 +195,7 @@ public sealed class SubmissionReminders(Store store, IWebHostEnvironment environ
             if (day < TaskFeatures.KoreanDate(target.Deadline).AddDays(-2)) continue;
             var id = Guid.NewGuid().ToString("N");
             var body = $"[시스템 자동 알림]\n‘{target.Title}’ 파일이 아직 제출되지 않았습니다.\n마감: {TaskFeatures.KoreanDate(target.Deadline):yyyy-MM-dd}\n‘파일 제출 · 현황 보기’에서 원본 요청을 확인하고 파일을 올려 주세요.";
-            using var insert = Store.Command(connection, "INSERT INTO Messages VALUES($id,$owner,$client,'system-reminder',$title,$body,$now)", transaction, ("$id", id), ("$owner", target.Owner), ("$client", "reminder:" + id), ("$title", "[자동 알림] " + target.Title), ("$body", body), ("$now", now)); insert.ExecuteNonQuery();
+            using var insert = Store.Command(connection, "INSERT INTO Messages(Id,SenderId,ClientId,Fingerprint,Title,Body,CreatedAt) VALUES($id,$owner,$client,'system-reminder',$title,$body,$now)", transaction, ("$id", id), ("$owner", target.Owner), ("$client", "reminder:" + id), ("$title", "[자동 알림] " + target.Title), ("$body", body), ("$now", now)); insert.ExecuteNonQuery();
             using var recipient = Store.Command(connection, "INSERT INTO Recipients(MessageId,UserId) VALUES($id,$user)", transaction, ("$id", id), ("$user", target.User)); recipient.ExecuteNonQuery();
             using var reminder = Store.Command(connection, "INSERT INTO SubmissionReminders VALUES($request,$user,$day,$message)", transaction, ("$request", target.Request), ("$user", target.User), ("$day", day.ToString("yyyy-MM-dd")), ("$message", id)); reminder.ExecuteNonQuery();
             MessageDelivery.Enqueue(connection,transaction,"message:"+id+":"+target.User,target.User,"NewMessage",id,now);

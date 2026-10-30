@@ -17,7 +17,7 @@ public sealed partial class LocalServerWindow
     {
         var checks=new List<string>();Directory.CreateDirectory(outputDirectory);
         void Check(bool condition,string text){if(!condition)throw new InvalidOperationException(text);checks.Add(text);}
-        var card=cards.First(c=>c.Service=="office");var address="https://127.0.0.1:"+SimpleOperation.Port("office");var password="Simple-"+Guid.NewGuid().ToString("N");
+        SimpleOperation.PortOffset=1000;var card=cards.First(c=>c.Service=="office");var address="https://127.0.0.1:"+SimpleOperation.Port("office");var password="Simple-"+Guid.NewGuid().ToString("N");
         SimpleOperation.Bind="127.0.0.1";CertificatePins.UseFolder(Path.Combine(directory,"client"));
         try
         {

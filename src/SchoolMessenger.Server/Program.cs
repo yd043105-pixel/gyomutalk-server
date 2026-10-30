@@ -96,6 +96,7 @@ builder.Services.AddRateLimiter(o =>
 
 var app = builder.Build();
 var store = app.Services.GetRequiredService<Store>();
+MessageStorage.Migrate(store);
 var resources=new ServerResources(store.Root,"School",store.Open,builder.Configuration,app.Environment.IsDevelopment());
 var scheduled=app.Services.GetRequiredService<ScheduledMessages>();scheduled.Initialize();
 scheduled.Deliver=async(request,sender)=>
@@ -427,7 +428,7 @@ IResult SendStoredMessage(SendMessage request, HttpContext c, IHubContext<Messag
         if (total > 209_715_200) return Error("메시지당 첨부 합계는 200MB입니다.", 413);
         id = Guid.NewGuid().ToString("N");
         var now = Maintenance.Now;
-        using (var insert = Store.Command(connection, "INSERT INTO Messages VALUES($id,$sender,$client,$fingerprint,$title,$body,$now)", transaction,
+        using (var insert = Store.Command(connection, "INSERT INTO Messages(Id,SenderId,ClientId,Fingerprint,Title,Body,CreatedAt) VALUES($id,$sender,$client,$fingerprint,$title,$body,$now)", transaction,
             ("$id", id), ("$sender", sender.Id), ("$client", request.ClientId), ("$fingerprint", fingerprint), ("$title", request.Title.Trim()), ("$body", request.Body), ("$now", now))) insert.ExecuteNonQuery();
         if (request.Format is not null)
         {
@@ -488,13 +489,14 @@ api.MapGet("/messages", (HttpContext c, string? box, string? q, string? person, 
     }, ("$user", UserId(c)), ("$q", q ?? ""), ("$person", person ?? ""), ("$from", from ?? 0), ("$to", to ?? long.MaxValue), ("$offset", Math.Clamp(offset ?? 0, 0, 1_000_000)));
     return Results.Ok(rows);
 });
-api.MapGet("/messages/{id}", (string id, HttpContext c) =>
+api.MapGet("/messages/{id}", (string id, bool? peek, HttpContext c) =>
 {
-    using(var opened=store.Open())using(var tx=opened.BeginTransaction()){if(!MessageRecall.Read(opened,tx,id,UserId(c)))return Results.NotFound();tx.Commit();}
+    // peek lets a PC save its copy of a new message without marking it read.
+    using(var opened=store.Open())using(var tx=opened.BeginTransaction()){if(!MessageRecall.Read(opened,tx,id,UserId(c),peek!=true))return Results.NotFound();tx.Commit();}
     var messages = store.Query("""
         SELECT m.Id,m.SenderId,u.Name,m.Title,m.Body,m.CreatedAt,f.Payload FROM Messages m JOIN Users u ON u.Id=m.SenderId LEFT JOIN MessageFormats f ON f.MessageId=m.Id
         WHERE m.Id=$id AND (m.SenderId=$user OR EXISTS(SELECT 1 FROM Recipients WHERE MessageId=m.Id AND UserId=$user))
-        """, r => new { id = r.GetString(0), senderId = r.GetString(1), senderName = r.GetString(2), title = r.GetString(3), body = r.GetString(4), createdAt = r.GetInt64(5), format = r.IsDBNull(6) ? null : JsonSerializer.Deserialize<MessageFormat>(r.GetString(6)) }, ("$id", id), ("$user", UserId(c)));
+        """, r => new { id = r.GetString(0), senderId = r.GetString(1), senderName = r.GetString(2), title = r.GetString(3), body = r.GetString(4), createdAt = r.GetInt64(5), format = r.IsDBNull(6) ? null : JsonSerializer.Deserialize<MessageFormat>(r.GetString(6)), purged = r.GetString(4).Length == 0 }, ("$id", id), ("$user", UserId(c)));
     if (messages.Count == 0) return Results.NotFound();
     var attachments = store.Query("SELECT Id,Name,Size,ExpiresAt,DeletedAt FROM Attachments WHERE MessageId=$id", r => new
     { id = r.GetString(0), name = r.GetString(1), size = r.GetInt64(2), expiresAt = r.GetInt64(3), expired = r.GetInt64(3) <= Maintenance.Now || !r.IsDBNull(4) }, ("$id", id));
@@ -543,6 +545,7 @@ TaskFeatures.Map(api, store);
 SubmissionFeatures.Map(api, store, app.Configuration, app.Environment);
 scheduled.Map(api);
 MessageRecall.Map(api,store);
+MessageStorage.Map(api,store);
 adminApi.MapGet("/registrations", () => store.PendingRegistrations().Select(r => new { r.Id, r.Username, r.Name, r.Department, r.CreatedAt }));
 adminApi.MapPost("/registrations/{id}/approve", (string id) => DecideRegistration(id, true));
 adminApi.MapPost("/registrations/{id}/reject", (string id) => DecideRegistration(id, false));
@@ -597,7 +600,7 @@ adminApi.MapGet("/status", (Maintenance maintenance, Presence presence) =>
     return Results.Ok(new { online = presence.Connections.Values.Distinct().Count(), users = store.Users().Count(u => u.Active),
         filesBytes = Directory.EnumerateFiles(store.Files).Sum(f => new FileInfo(f).Length), freeBytes = drive.AvailableFreeSpace,
         maintenance.LastCleanup, maintenance.LastBackup, maintenance.LastError,
-        attachmentBackup = store.AttachmentBackupEnabled, retentionDays = 30, messageRetention = "자동 삭제 없음: 학교 보관 정책 확정 필요" });
+        attachmentBackup = store.AttachmentBackupEnabled, retentionDays = 30, messageRetention = "각 PC에 저장 · 모두 저장하면 서버 본문 삭제(최대 30일)" });
 });
 adminApi.MapPost("/maintenance", (Maintenance maintenance) => { maintenance.Cleanup(); maintenance.Backup(); return Results.Ok(); });
 app.MapHub<MessageHub>("/hub", options => options.CloseOnAuthenticationExpiration = true);

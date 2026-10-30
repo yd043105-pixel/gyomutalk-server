@@ -109,7 +109,7 @@ public sealed class WorkWindow : Window
             detail.Children.Add(Text(String(original, "evidence"), 12));
             var counter=Text(Deadline(String(original,"dueDate"),String(original,"status"),KoreanToday),14);counter.Tag="deadline-counter";detail.Children.Add(counter);
             if (String(original, "sourceId") is { Length: > 0 } source)
-                detail.Children.Add(Action("원본 메시지 보기", async () => { var originalMessage = await api.Get<Detail>($"api/messages/{source}"); var window = new Window { Owner = this, Title = originalMessage.Message.Title, Width = 550, Height = 450, Style=(Style)FindResource("SchoolWindow"), Content = new ScrollViewer { Content = Text(originalMessage.Message.Body), Margin = new Thickness(20) } }; window.Show(); }));
+                detail.Children.Add(Action("원본 메시지 보기", async () => { var originalMessage = main.Archive.Merge(await api.Get<Detail>($"api/messages/{source}")); var window = new Window { Owner = this, Title = originalMessage.Message.Title, Width = 550, Height = 450, Style=(Style)FindResource("SchoolWindow"), Content = new ScrollViewer { Content = Text(originalMessage.Message.Body), Margin = new Thickness(20) } }; window.Show(); }));
         }
         var title = new TextBox { MaxLength = 200, Text = item is { } t ? String(t, "title") : "", Margin = new Thickness(0, 0, 0, 12) };
         var due = new DatePicker { Margin = new Thickness(0, 0, 0, 12) };

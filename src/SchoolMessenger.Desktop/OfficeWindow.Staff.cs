@@ -132,7 +132,76 @@ public sealed partial class OfficeWindow
     }
     async Task Audit()
     {
-        Page();Button("계정 관리로",Administration);body.Children.Add(Text("최근 운영 변경 기록 · 최대 200건",20));
-        var rows=await api.Get<JsonElement>("api/admin/office/audit");foreach(var row in rows.EnumerateArray()){var time=DateTimeOffset.FromUnixTimeMilliseconds(row.GetProperty("createdAt").GetInt64()).ToOffset(TimeSpan.FromHours(9));body.Children.Add(Text(time.ToString("yyyy-MM-dd HH:mm")+" · "+row.GetProperty("actor").GetString()+" · "+row.GetProperty("action").GetString()+"\n대상: "+row.GetProperty("resourceId").GetString(),12));}
+        var rows=await api.Get<JsonElement>("api/admin/office/audit");Page(false);
+        Heading("운영 변경 기록","관리자가 바꾼 계정·권한·학교 설정의 최근 운영 변경 기록입니다. 최대 200건까지 보입니다.",null,Embedded?null:("교직원 등록 · 승인",Administration));
+        var list=new StackPanel();
+        foreach(var row in rows.EnumerateArray())
+        {
+            var line=new DockPanel();var time=AdminUi.Label(DateTimeOffset.FromUnixTimeMilliseconds(row.GetProperty("createdAt").GetInt64()).ToOffset(TimeSpan.FromHours(9)).ToString("yyyy.MM.dd HH:mm"),"Faint",11);time.VerticalAlignment=VerticalAlignment.Center;DockPanel.SetDock(time,Dock.Right);line.Children.Add(time);
+            var text=new StackPanel{Margin=new Thickness(0,0,12,0)};text.Children.Add(AdminUi.Label(Value(row,"actor")+" · "+Value(row,"action"),"Ink",13,true));text.Children.Add(AdminUi.Label("대상 "+Value(row,"resourceId"),"Muted",11));line.Children.Add(text);
+            var item=new Border{Child=line,Padding=new Thickness(16,10,16,10),BorderThickness=new Thickness(0,0,0,1)};item.SetResourceReference(Border.BorderBrushProperty,"Line");list.Children.Add(item);
+        }
+        if(rows.GetArrayLength()==0){var none=AdminUi.Label("아직 기록이 없습니다.","Muted",13);none.Margin=new Thickness(16,20,16,20);list.Children.Add(none);}
+        var card=AdminUi.Card(list,0);card.ClipToBounds=true;body.Children.Add(card);
+    }
+    // Inside the administrator program the rail already links every page, so only the way back is shown.
+    bool Embedded=>InteractionOwner is LocalServerWindow;
+    void Heading(string title,string description,UIElement? action=null,(string Label,Func<Task> Open)? back=null)
+    {
+        if(back is{} link){var b=new Button{Content="← "+link.Label,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(-8,0,0,6)};b.SetResourceReference(StyleProperty,"SubtleButton");b.Click+=async(_,_)=>await Run(link.Open);body.Children.Add(b);}
+        var heading=new DockPanel{Margin=new Thickness(0,0,0,16)};
+        if(action is not null){DockPanel.SetDock(action,Dock.Right);if(action is FrameworkElement e)e.VerticalAlignment=VerticalAlignment.Bottom;heading.Children.Add(action);}
+        var text=new StackPanel();text.Children.Add(AdminUi.Heading(title,22));var detail=AdminUi.Label(description,"Muted",13);detail.Margin=new Thickness(0,4,0,0);text.Children.Add(detail);heading.Children.Add(text);body.Children.Add(heading);
+    }
+    async Task Administration()
+    {
+        var pending=await api.Get<JsonElement>("api/admin/registrations");
+        Page(false);
+        Heading("교직원 등록 · 승인","새 교직원 계정을 미리 만들거나, 교직원이 보낸 가입 신청을 승인합니다.",null,("교직원 목록",StaffList));
+        if(!Embedded)
+        {
+            // The teacher messenger has no rail, so its administrators get the other pages as a single row of links.
+            var links=new WrapPanel{Margin=new Thickness(0,-6,0,16)};
+            foreach(var (label,open) in new (string,Func<Task>)[]{("학사일정 · 특별실 예약",()=>Load(false)),("특별실 목록",async()=>{setup=await api.Get<JsonElement>("api/office/setup");await Rooms();}),("선택과목 분반",Sections),("학생·학부모",()=>{new PortalAdministrationWindow(InteractionOwner).Show();return Task.CompletedTask;}),("운영 변경 기록",Audit)})
+            {var link=new Button{Content=label,Margin=new Thickness(0,0,6,6)};link.SetResourceReference(StyleProperty,"Chip");link.Click+=async(_,_)=>await Run(open);links.Children.Add(link);}
+            body.Children.Add(links);
+        }
+        var recovery=new StackPanel();body.Children.Add(recovery);await RecoveryReview.Add(recovery,api,InteractionOwner,Administration);
+        var content=new Grid();content.ColumnDefinitions.Add(new ColumnDefinition());content.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(16)});content.ColumnDefinitions.Add(new ColumnDefinition());content.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});content.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});body.Children.Add(content);
+        // New account form.
+        var form=new StackPanel();form.Children.Add(AdminUi.Heading("새 교직원 등록"));var note=AdminUi.Label("최초 비밀번호는 12345678입니다. 첫 로그인 때 활성화 번호를 넣고 개인 비밀번호로 바꿉니다.","Muted",12);note.Margin=new Thickness(0,4,0,16);form.Children.Add(note);
+        var fields=new Grid();fields.ColumnDefinitions.Add(new ColumnDefinition());fields.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(12)});fields.ColumnDefinitions.Add(new ColumnDefinition());form.Children.Add(fields);
+        TextBox Input(string label,int index,int maxLength,string? hint=null)
+        {
+            if(index%2==0)fields.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
+            var cell=new StackPanel{Margin=new Thickness(0,0,0,12)};var caption=AdminUi.Label(label,"Muted",12);caption.Margin=new Thickness(0,0,0,6);cell.Children.Add(caption);
+            var box=new TextBox{MaxLength=maxLength,ToolTip=hint};AutomationProperties.SetName(box,label);cell.Children.Add(box);Grid.SetRow(cell,index/2);Grid.SetColumn(cell,index%2==0?0:2);fields.Children.Add(cell);return box;
+        }
+        var name=Input("이름",0,40);var login=Input("로그인 아이디",1,40,"기본은 본인 이름입니다. 동명이인은 이름.2처럼 구분하세요.");name.TextChanged+=(_,_)=>login.Text=name.Text.Trim();
+        var department=Input("부서",2,60);var position=Input("직책",3,50,"예: 교무부장, 담임");var ip=Input("좌석 IP · 선택",4,15,"교사 PC 자동 로그인용 IPv4입니다. 아이디가 아니며 휴대폰 로그인에는 쓰지 않습니다.");
+        var register=new Button{Content="등록하고 활성화 번호 받기",HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,4,0,0)};register.SetResourceReference(StyleProperty,"PrimaryButton");form.Children.Add(register);
+        register.Click+=async(_,_)=>await Run(async()=>
+        {
+            var value=await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff",new StaffAccountRequest(login.Text.Trim(),name.Text,department.Text,ip.Text,"12345678",position.Text,true));
+            MessageBox.Show(InteractionOwner,"개별 전달할 활성화 번호:\n"+value.GetProperty("activationCode").GetString()+"\n유효 기간: 7일. 번호는 이 화면에서만 표시됩니다.","교직원 등록");var added=name.Text.Trim();await Administration();error.Text=added+" 님을 등록했습니다.";
+        });
+        var formCard=AdminUi.Card(form);formCard.VerticalAlignment=VerticalAlignment.Top;content.Children.Add(formCard);
+        // Sign-up requests waiting for approval.
+        var requests=new StackPanel();var top=new DockPanel{Margin=new Thickness(0,0,0,12)};var count=AdminUi.Badge(pending.GetArrayLength()+"건",pending.GetArrayLength()>0?"Warning":"Neutral",false);DockPanel.SetDock(count,Dock.Right);top.Children.Add(count);top.Children.Add(AdminUi.Heading("가입 신청"));requests.Children.Add(top);
+        foreach(var request in pending.EnumerateArray())
+        {
+            var row=new DockPanel{Margin=new Thickness(0,0,0,10)};var id=Value(request,"id");var who=Value(request,"name");
+            var approve=new Button{Content="승인",Margin=new Thickness(6,0,0,0)};approve.SetResourceReference(StyleProperty,"PrimaryButton");AutomationProperties.SetName(approve,who+" 신청 승인");
+            var reject=new Button{Content="반려",Margin=new Thickness(6,0,0,0)};AutomationProperties.SetName(reject,who+" 신청 반려");
+            approve.Click+=async(_,_)=>await Run(async()=>{await api.Send<JsonElement>(HttpMethod.Post,"api/admin/registrations/"+id+"/approve");await Administration();error.Text=who+" 님의 가입을 승인했습니다.";});
+            reject.Click+=async(_,_)=>await Run(async()=>{if(MessageBox.Show(InteractionOwner,who+" 님의 가입 신청을 반려할까요?","가입 신청 반려",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;await api.Send<JsonElement>(HttpMethod.Post,"api/admin/registrations/"+id+"/reject");await Administration();});
+            foreach(var b in new[]{reject,approve}){DockPanel.SetDock(b,Dock.Right);row.Children.Add(b);}
+            row.Children.Add(AdminUi.Avatar(who));var text=new StackPanel{Margin=new Thickness(10,0,8,0),VerticalAlignment=VerticalAlignment.Center};text.Children.Add(AdminUi.Label(who,"Ink",13,true));
+            var created=request.TryGetProperty("createdAt",out var at)&&at.ValueKind==JsonValueKind.Number?DateTimeOffset.FromUnixTimeMilliseconds(at.GetInt64()).ToOffset(TimeSpan.FromHours(9)).ToString("M월 d일 신청"):"";
+            text.Children.Add(AdminUi.Label(string.Join(" · ",new[]{Value(request,"department"),"아이디 "+Value(request,"username"),created}.Where(v=>v.Length>0)),"Muted",11));row.Children.Add(text);requests.Children.Add(row);
+        }
+        if(pending.GetArrayLength()==0)requests.Children.Add(AdminUi.Label("대기 중인 가입 신청이 없습니다. 교직원이 교사 메신저에서 ‘계정 신청’을 보내면 여기에 표시됩니다.","Muted",12));
+        var requestCard=AdminUi.Card(requests);requestCard.VerticalAlignment=VerticalAlignment.Top;content.Children.Add(requestCard);
+        content.SizeChanged+=(_,_)=>{var wide=content.ActualWidth>=760;Grid.SetColumn(requestCard,wide?2:0);Grid.SetRow(requestCard,wide?0:1);Grid.SetColumnSpan(formCard,wide?1:3);Grid.SetColumnSpan(requestCard,wide?1:3);requestCard.Margin=new Thickness(0,wide?0:16,0,0);};
     }
 }

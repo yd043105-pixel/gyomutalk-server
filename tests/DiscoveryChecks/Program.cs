@@ -31,8 +31,14 @@ async Task<(SchoolDiscovery.Candidate[] Found,int Connections)> SearchFake(strin
             using var socket=await tcp.AcceptTcpClientAsync(stop.Token);Interlocked.Increment(ref connections);
             using var rsa=RSA.Create(2048);var request=new CertificateRequest("CN=localhost",rsa,HashAlgorithmName.SHA256,RSASignaturePadding.Pkcs1);
             var names=new SubjectAlternativeNameBuilder();names.AddDnsName("localhost");request.CertificateExtensions.Add(names.Build());
-            using var cert=request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1),DateTimeOffset.UtcNow.AddHours(1));
+            using var created=request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1),DateTimeOffset.UtcNow.AddHours(1));
+            // SChannel cannot serve an ephemeral key, so the certificate goes through PFX like the real server's.
+            using var cert=X509CertificateLoader.LoadPkcs12(created.Export(X509ContentType.Pfx),null);
             using var tls=new SslStream(socket.GetStream());await tls.AuthenticateAsServerAsync(new SslServerAuthenticationOptions{ServerCertificate=cert},stop.Token);
+            // Answer like a school server so the hint can be listed with its certificate fingerprint.
+            var buffer=new byte[4096];var read=0;while(!System.Text.Encoding.ASCII.GetString(buffer,0,read).Contains("\r\n\r\n")&&read<buffer.Length)read+=await tls.ReadAsync(buffer.AsMemory(read),stop.Token);
+            var body=System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new{product=SchoolDiscovery.Product,schoolName="가상 학교"}));
+            await tls.WriteAsync(System.Text.Encoding.ASCII.GetBytes("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: "+body.Length+"\r\nConnection: close\r\n\r\n").Concat(body).ToArray(),stop.Token);
         }
         catch(Exception e)when(e is OperationCanceledException or System.Security.Authentication.AuthenticationException or IOException or SocketException){}
     });
@@ -45,5 +51,5 @@ async Task<(SchoolDiscovery.Candidate[] Found,int Connections)> SearchFake(strin
 }
 var mismatch=await SearchFake("https",true);Require(mismatch.Found.Length==0&&mismatch.Connections==0,"mismatched nonce caused a connection");checks.Add("An unrelated nonce never causes an HTTPS connection");
 var plain=await SearchFake("http",false);Require(plain.Found.Length==0&&plain.Connections==0,"plaintext discovery caused a connection");checks.Add("Plain HTTP hints are ignored without contacting their advertised service");
-var selfSigned=await SearchFake("https",false);Require(selfSigned.Found.Length==0&&selfSigned.Connections==1,"untrusted certificate was accepted or TLS verification never ran");checks.Add("Untrusted TLS certificates are rejected with normal certificate verification enabled");
+var selfSigned=await SearchFake("https",false);Require(selfSigned.Found.Length==1&&selfSigned.Found[0].Fingerprint.Length==64&&selfSigned.Connections==1,"a school server with its own certificate was not offered with its fingerprint: found="+selfSigned.Found.Length+" connections="+selfSigned.Connections);checks.Add("A school server with its own certificate is offered with its fingerprint for the connection-code check, never trusted");
 Console.WriteLine(JsonSerializer.Serialize(new{checks,loopbackOnly=true,trustStoreChanged=false}));
