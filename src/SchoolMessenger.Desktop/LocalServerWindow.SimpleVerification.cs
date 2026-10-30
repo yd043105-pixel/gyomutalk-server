@@ -68,7 +68,7 @@ public sealed partial class LocalServerWindow
     }
     void SaveCapture(string path)
     {
-        UpdateLayout();var image=new System.Windows.Media.Imaging.RenderTargetBitmap((int)ActualWidth,(int)ActualHeight,96,96,System.Windows.Media.PixelFormats.Pbgra32);image.Render(this);
+        UpdateLayout();var s=MainWindow.CaptureScale;var image=new System.Windows.Media.Imaging.RenderTargetBitmap((int)(ActualWidth*s),(int)(ActualHeight*s),96*s,96*s,System.Windows.Media.PixelFormats.Pbgra32);image.Render(this);
         var encoder=new System.Windows.Media.Imaging.PngBitmapEncoder();encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(image));using var file=File.Create(path);encoder.Save(file);
     }
     sealed record SchoolPinsProbe(string Address,string Other)

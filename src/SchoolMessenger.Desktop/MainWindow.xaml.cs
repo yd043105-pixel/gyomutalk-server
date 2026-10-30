@@ -407,6 +407,8 @@ public partial class MainWindow : Window
     { if (!exiting) { e.Cancel = true; Hide(); } else { timer.Stop(); tray.Dispose(); SavePreferences(); } }
     async void CloseApp() { if (remote is not null) { await remote.DisposeAsync(); remote = null; } exiting = true; Close(); }
     void ExitApp(object sender, RoutedEventArgs e) => CloseApp();
+    // Screenshots for the download site set SCHOOL_UI_SCALE=2 so text stays sharp when shown large.
+    internal static readonly double CaptureScale = double.TryParse(Environment.GetEnvironmentVariable("SCHOOL_UI_SCALE"), out var scale) && scale is > 0 and <= 4 ? scale : 1;
     static void SavePreview(Window window, string path)
     {
         window.UpdateLayout(); var content = (FrameworkElement)VisualTreeHelper.GetChild(window, 0);
@@ -418,7 +420,7 @@ public partial class MainWindow : Window
             draw.DrawRectangle(window.Background, null, new Rect(0, 0, width, height));
             draw.DrawRectangle(new VisualBrush(content), null, new Rect(content.Margin.Left, content.Margin.Top, content.ActualWidth, content.ActualHeight));
         }
-        var bitmap = new RenderTargetBitmap((int)width, (int)height, 96, 96, PixelFormats.Pbgra32); bitmap.Render(visual);
+        var bitmap = new RenderTargetBitmap((int)(width * CaptureScale), (int)(height * CaptureScale), 96 * CaptureScale, 96 * CaptureScale, PixelFormats.Pbgra32); bitmap.Render(visual);
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); using var output = File.Create(path); encoder.Save(output);
     }
     async Task VerifyUi()
@@ -570,13 +572,13 @@ public partial class MainWindow : Window
             ((System.Windows.Controls.Button)inbox.Template.FindName("CloseAction", inbox)).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             for (var i = 0; i < 20 && inbox.IsVisible; i++) await Task.Delay(25);
             if (inbox.IsVisible) throw new InvalidOperationException("제목줄 닫기 버튼 실패");
-            var compose = new ComposeWindow(this, people, null, "Windows 앱 전송 검증",people.Select(p=>p.Id).Take(2).ToArray()); compose.Show();
-            compose.BodyBox.Text = "교사용 프로그램의 작성 창에서 실제로 전송한 검증 메시지입니다.";compose.VerifyEditor(); SavePreview(compose, Path.Combine(directory, "compose-preview.png"));
+            var compose = new ComposeWindow(this, people, null, "학년 협의회 일정 안내",people.Select(p=>p.Id).Take(2).ToArray()); compose.Show();
+            compose.BodyBox.Text = "다음 주 화요일 7교시에 학년 협의회가 있습니다. 협의 안건을 미리 보내 주세요.";compose.VerifyEditor(); SavePreview(compose, Path.Combine(directory, "compose-preview.png"));
             compose.ScheduleSend.IsChecked=true;SavePreview(compose,Path.Combine(directory,"scheduled-compose-preview.png"));compose.ScheduleSend.IsChecked=false;
             compose.SendButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             for (var i = 0; i < 100 && compose.IsVisible; i++) await Task.Delay(100);
             if (compose.IsVisible) throw new InvalidOperationException("작성 창 전송 실패: " + compose.Feedback.Text);
-            if (!(await Api.Get<MessageItem[]>("api/messages?box=sent")).Any(m => m.Title == "Windows 앱 전송 검증")) throw new InvalidOperationException("전송 기록 없음");
+            if (!(await Api.Get<MessageItem[]>("api/messages?box=sent")).Any(m => m.Title == "학년 협의회 일정 안내")) throw new InvalidOperationException("전송 기록 없음");
             var recallCheck=OpenMailbox("sent");await recallCheck.VerifyRecallState();recallCheck.Close();
             var registration = new RegistrationWindow(ServerAddress.Text) { Owner = this }; registration.Show();
             await registration.PolicyReady;

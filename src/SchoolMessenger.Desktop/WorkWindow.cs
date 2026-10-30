@@ -232,12 +232,12 @@ public sealed class WorkWindow : Window
         view="submission-requests";await Reload();directAdd.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         for(var i=0;i<100&&busy;i++)await Task.Delay(50);
         if(busy||view!="todos"||!detail.Children.OfType<TextBox>().Any())throw new InvalidOperationException("제출 탭에서 할 일 직접 추가 전환 실패");
-        detail.Children.OfType<TextBox>().Single().Text = "Windows 업무 창에서 등록한 할 일";
+        detail.Children.OfType<TextBox>().Single().Text = "학급 상담 기록 정리";
         detail.Children.OfType<Button>().Single(b => b.Content?.ToString() == "저장").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         for (var i = 0; i < 100 && busy; i++) await Task.Delay(50);
-        if (busy || !(await api.Get<JsonElement[]>("api/todos")).Any(t => String(t, "title") == "Windows 업무 창에서 등록한 할 일")) throw new InvalidOperationException("Windows 할 일 창 등록 실패: " + feedback.Text);
+        if (busy || !(await api.Get<JsonElement[]>("api/todos")).Any(t => String(t, "title") == "학급 상담 기록 정리")) throw new InvalidOperationException("Windows 할 일 창 등록 실패: " + feedback.Text);
         await Reload();
-        var saved = (await api.Get<JsonElement[]>("api/todos")).First(t => String(t, "title") == "Windows 업무 창에서 등록한 할 일");
+        var saved = (await api.Get<JsonElement[]>("api/todos")).First(t => String(t, "title") == "학급 상담 기록 정리");
         Todo(saved);
     }
     sealed record SubmissionPacket(string ClientId, string[] AttachmentIds);

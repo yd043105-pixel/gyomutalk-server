@@ -26,7 +26,7 @@ public sealed partial class LocalServerWindow
         }
         void Capture(string name,Window? target=null)
         {
-            target??=this;target.UpdateLayout();var image=new RenderTargetBitmap((int)target.ActualWidth,(int)target.ActualHeight,96,96,PixelFormats.Pbgra32);image.Render(target);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(image));using var stream=File.Create(Path.Combine(outputDirectory,name));encoder.Save(stream);
+            target??=this;target.UpdateLayout();var s=MainWindow.CaptureScale;var image=new RenderTargetBitmap((int)(target.ActualWidth*s),(int)(target.ActualHeight*s),96*s,96*s,PixelFormats.Pbgra32);image.Render(target);var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(image));using var stream=File.Create(Path.Combine(outputDirectory,name));encoder.Save(stream);
         }
         try
         {

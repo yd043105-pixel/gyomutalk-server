@@ -36,19 +36,19 @@ public partial class MainWindow
     {
         var other = people.First(p => p.Id != Api!.Session!.User!.Id);
         var work = new WorkWindow(this); work.Show(); await work.Verify(); SavePreview(work, Path.Combine(directory, "tasks-preview.png"));
-        var collection = new ComposeWindow(this, people, other.Id, "Windows 제출 요청 검증"); collection.Show(); collection.BodyBox.Text = "점검 자료를 제출해 주세요."; collection.CollectFiles.IsChecked = true; collection.SubmissionDate.SelectedDate = DateTime.Today.AddDays(7);
+        var collection = new ComposeWindow(this, people, other.Id, "학급별 체험학습 인솔 명단 제출"); collection.Show(); collection.BodyBox.Text = "학급별 인솔 명단을 제출해 주세요."; collection.CollectFiles.IsChecked = true; collection.SubmissionDate.SelectedDate = DateTime.Today.AddDays(7);
         collection.SendButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
         JsonElement[] collectionRequests = [];
-        for (var i = 0; i < 100; i++) { collectionRequests = await Api!.Get<JsonElement[]>("api/submission-requests"); if (collectionRequests.Any(r => r.GetProperty("title").GetString() == "Windows 제출 요청 검증")) break; await Task.Delay(50); }
-        var collectionId = collectionRequests.FirstOrDefault(r => r.GetProperty("title").GetString() == "Windows 제출 요청 검증");
+        for (var i = 0; i < 100; i++) { collectionRequests = await Api!.Get<JsonElement[]>("api/submission-requests"); if (collectionRequests.Any(r => r.GetProperty("title").GetString() == "학급별 체험학습 인솔 명단 제출")) break; await Task.Delay(50); }
+        var collectionId = collectionRequests.FirstOrDefault(r => r.GetProperty("title").GetString() == "학급별 체험학습 인솔 명단 제출");
         if (collectionId.ValueKind == JsonValueKind.Undefined) throw new InvalidOperationException("Windows 쪽지 제출 요청 생성 실패");
         await work.Submission(Environment.GetEnvironmentVariable("YY_SUBMISSION_PREVIEW_ID")??collectionId.GetProperty("id").GetString()!); SavePreview(work, Path.Combine(directory, "submissions-preview.png")); work.Close();
         var chat = new ChatWindow(this, people); chat.Show();
-        await chat.CreateRoom([other.Id], "UI 검증 대화방");
+        await chat.CreateRoom([other.Id], "1학년 담임 협의");
         for (var i = 0; i < 30 && chat.RoomId is null; i++) await Task.Delay(50);
-        chat.BodyBox.Text = "교직원 채팅 창에서 실제로 보낸 대화입니다."; await chat.SendMessage();
+        chat.BodyBox.Text = "내일 조회 때 체험학습 안내문을 같이 나눠 주세요."; await chat.SendMessage();
         var entries = await Api!.Get<ChatEntry[]>($"api/chats/{chat.RoomId}/messages");
-        if (!entries.Any(m => m.Body.Contains("실제로 보낸"))) throw new InvalidOperationException("채팅 UI 전송 실패");
+        if (!entries.Any(m => m.Body.Contains("체험학습 안내문"))) throw new InvalidOperationException("채팅 UI 전송 실패");
         SavePreview(chat, Path.Combine(directory, "chat-preview.png")); chat.Close();
         var survey = new SurveyWindow(this, people, [Api.Session!.User!.Id]); survey.Show();
         survey.TitleBox.Text = "교무회의 시간 조사"; survey.DescriptionBox.Text = "회의 시간을 선택해 주세요.";
