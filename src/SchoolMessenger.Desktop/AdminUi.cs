@@ -9,13 +9,13 @@ namespace SchoolMessenger.Desktop;
 // Small building blocks of the administrator design (AdminTheme.xaml): badges, avatars, icons and cards.
 static class AdminUi
 {
-    public static TextBlock Label(string text,string brush="Muted",double size=12,bool strong=false)
+    public static TextBlock Label(string text,string brush="Muted",double size=13,bool strong=false)
     {
         var label=new TextBlock{Text=text,FontSize=size,TextWrapping=TextWrapping.Wrap,FontWeight=strong?FontWeights.SemiBold:FontWeights.Normal};
         label.SetResourceReference(TextBlock.ForegroundProperty,brush);return label;
     }
     public static TextBlock Heading(string text,double size=15){var heading=Label(text,"Ink",size);heading.FontWeight=FontWeights.Bold;return heading;}
-    public static TextBlock Group(string text){var group=Label(text,"Faint",11,true);group.Margin=new Thickness(0,0,0,8);return group;}
+    public static TextBlock Group(string text){var group=Label(text,"Faint",12,true);group.Margin=new Thickness(0,0,0,8);return group;}
     public static Border Card(UIElement child,double padding=20)
     {
         var card=new Border{Child=child,Padding=new Thickness(padding),CornerRadius=new CornerRadius(10),BorderThickness=new Thickness(1)};
@@ -26,7 +26,7 @@ static class AdminUi
     {
         var row=new StackPanel{Orientation=Orientation.Horizontal};
         if(dot)row.Children.Add(new Ellipse{Width=6,Height=6,Margin=new Thickness(0,0,5,0),VerticalAlignment=VerticalAlignment.Center});
-        row.Children.Add(new TextBlock{Text=text,FontSize=11,FontWeight=FontWeights.SemiBold,VerticalAlignment=VerticalAlignment.Center});
+        row.Children.Add(new TextBlock{Text=text,FontSize=12,FontWeight=FontWeights.SemiBold,VerticalAlignment=VerticalAlignment.Center});
         var badge=new Border{Child=row,Padding=new Thickness(8,3,8,3),CornerRadius=new CornerRadius(11),HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Center};
         SetBadge(badge,text,tone);return badge;
     }

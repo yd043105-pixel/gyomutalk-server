@@ -5,7 +5,7 @@ using static SchoolMessenger.AnnouncementServer.PortalSecurity;
 
 namespace SchoolMessenger.AnnouncementServer;
 
-public record InviteRegistration(string? Code,string? Username,string? Password,string? Name=null,string? Role=null,string? ClassId=null,int? StudentNumber=null,SchoolMessenger.Contracts.RegistrationAcceptance? Agreement=null);
+public record InviteRegistration(string? Code,string? Username,string? Password,string? Name=null,string? Role=null,string? ClassId=null,int? StudentNumber=null,SchoolMessenger.Contracts.RegistrationAcceptance? Agreement=null,string? GuardianInvite=null);
 record NewClass(string? Name,int Grade);
 record NewPerson(string? Name,string? Role,string? ClassId,string? InternalUserId,string[]? ClassIds,bool CanBroadcast);
 record UpdatePerson(string? Name,bool Active,string? ClassId,string[]? ClassIds,bool CanBroadcast);

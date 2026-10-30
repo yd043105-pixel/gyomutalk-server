@@ -15,7 +15,7 @@ public sealed partial class LocalServerWindow
 {
     readonly Dictionary<string,Api> adminSessions=new();
     readonly Grid administrationView=new();
-    readonly TextBlock adminIdentity=Note("관리자 로그인이 필요합니다."),adminRole=AdminUi.Label("","Faint",11);
+    readonly TextBlock adminIdentity=Note("관리자 로그인이 필요합니다."),adminRole=AdminUi.Label("","Faint",12);
     readonly Border adminAvatar=AdminUi.Avatar("관");
     readonly Button signOut=new(){Content="이 서버 로그아웃",Visibility=Visibility.Collapsed};
     readonly List<Button> administrationNavigation=new();
@@ -137,7 +137,7 @@ public sealed partial class LocalServerWindow
         var content=new StackPanel{MaxWidth=560,HorizontalAlignment=HorizontalAlignment.Left};
         var title=Text(RoleName(service)+" 관리자 로그인",22);title.FontWeight=FontWeights.Bold;content.Children.Add(title);
         var intro=Note("구성원과 학교 설정을 바꾸려면 이 서버의 관리자 계정으로 로그인하세요.");intro.Margin=new Thickness(0,0,0,18);content.Children.Add(intro);
-        StackPanel Field(string label,FrameworkElement input){var field=new StackPanel{Margin=new Thickness(0,0,0,14)};var caption=AdminUi.Label(label,"Muted",12,true);caption.Margin=new Thickness(0,0,0,6);field.Children.Add(caption);field.Children.Add(input);content.Children.Add(field);return field;}
+        StackPanel Field(string label,FrameworkElement input){var field=new StackPanel{Margin=new Thickness(0,0,0,14)};var caption=AdminUi.Label(label,"Muted",13,true);caption.Margin=new Thickness(0,0,0,6);field.Children.Add(caption);field.Children.Add(input);content.Children.Add(field);return field;}
         var card=cards.First(c=>c.Service==service);var local=card.Host.Installed&&card.Activated;
         var address=new TextBox{Text=local&&card.Mode.SelectedIndex==0?(service=="office"?"http://localhost:5080":"http://localhost:5081"):local&&Simple(card)?"https://localhost:"+SimpleOperation.Port(service):"",MinWidth=360,ToolTip="학교에서 안내한 해당 서버의 HTTPS 주소"};
         var addressField=Field("서버 주소",address);
@@ -145,8 +145,8 @@ public sealed partial class LocalServerWindow
         if(local&&address.Text.Length>0)
         {
             addressField.Visibility=Visibility.Collapsed;
-            var here=new DockPanel{Margin=new Thickness(0,0,0,14)};var other=new Button{Content="다른 서버 주소 입력",FontSize=12};other.SetResourceReference(StyleProperty,"SubtleButton");DockPanel.SetDock(other,Dock.Right);here.Children.Add(other);
-            var where=AdminUi.Label("이 PC에서 실행 중인 "+RoleName(service)+" 서버","Ink",13,true);where.VerticalAlignment=VerticalAlignment.Center;here.Children.Add(where);content.Children.Add(here);
+            var here=new DockPanel{Margin=new Thickness(0,0,0,14)};var other=new Button{Content="다른 서버 주소 입력",FontSize=13};other.SetResourceReference(StyleProperty,"SubtleButton");DockPanel.SetDock(other,Dock.Right);here.Children.Add(other);
+            var where=AdminUi.Label("이 PC에서 실행 중인 "+RoleName(service)+" 서버","Ink",14,true);where.VerticalAlignment=VerticalAlignment.Center;here.Children.Add(where);content.Children.Add(here);
             other.Click+=(_,_)=>{here.Visibility=Visibility.Collapsed;addressField.Visibility=Visibility.Visible;address.Focus();};
         }
         var username=new TextBox{Text=local&&Simple(card)&&card.AdminUsername.Text.Trim().Length>0?card.AdminUsername.Text.Trim():"admin"};Field("관리자 아이디",username);

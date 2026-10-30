@@ -61,7 +61,7 @@ public sealed partial class LocalServerWindow
             var item=items[i];var row=new DockPanel();var line=new Border{Child=row,Padding=new Thickness(0,10,0,10),BorderThickness=new Thickness(0,0,0,i==items.Count-1?0:1)};line.SetResourceReference(Border.BorderBrushProperty,"Line");
             var mark=new Border{Width=24,Height=24,CornerRadius=new CornerRadius(12),Margin=new Thickness(0,0,12,0),VerticalAlignment=VerticalAlignment.Top,Child=AdminUi.Icon(item.Done?"AdminCheckIcon":"AdminAlertIcon",item.Done?13:14,item.Done?"Success":"Warning")};mark.SetResourceReference(Border.BackgroundProperty,item.Done?"SuccessTint":"WarningTint");row.Children.Add(mark);
             if(item.Action is{} label&&item.Run is{} run){var action=new Button{Content=label,VerticalAlignment=VerticalAlignment.Center};action.SetResourceReference(StyleProperty,"SubtleButton");action.Click+=(_,_)=>run();DockPanel.SetDock(action,Dock.Right);row.Children.Add(action);}
-            var text=new StackPanel();text.Children.Add(AdminUi.Label(item.Title,"Ink",13,true));var detail=AdminUi.Label(item.Detail,"Muted",11);detail.Margin=new Thickness(0,2,0,0);text.Children.Add(detail);row.Children.Add(text);
+            var text=new StackPanel();text.Children.Add(AdminUi.Label(item.Title,"Ink",14,true));var detail=AdminUi.Label(item.Detail,"Muted",12);detail.Margin=new Thickness(0,2,0,0);text.Children.Add(detail);row.Children.Add(text);
             c.Checklist.Children.Add(line);
         }
     }

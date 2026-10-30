@@ -14,7 +14,7 @@ namespace SchoolMessenger.Desktop;
 
 public sealed partial class LocalServerWindow
 {
-    readonly TextBlock railSchool=AdminUi.Label("","Ink",13,true),railStatus=AdminUi.Label("");
+    readonly TextBlock railSchool=AdminUi.Label("","Ink",14,true),railStatus=AdminUi.Label("");
     readonly Ellipse railDot=new(){Width=7,Height=7,Margin=new Thickness(0,0,6,0),VerticalAlignment=VerticalAlignment.Center};
     static Border Surface(UIElement child,Thickness? padding=null)=>AdminUi.Card(child,padding?.Left??22);
     static TextBlock Note(string value)=>AdminUi.Label(value);
@@ -45,14 +45,14 @@ public sealed partial class LocalServerWindow
         var links=new WrapPanel{Margin=new Thickness(0,6,0,0)};
         void Link(string label,Action action){var link=new Button{Content=label,FontWeight=FontWeights.Normal};link.SetResourceReference(StyleProperty,"SubtleButton");link.SetResourceReference(Control.ForegroundProperty,"Muted");link.Click+=(_,_)=>action();links.Children.Add(link);}
         Link("업데이트 확인",()=>DesktopUpdater.Settings(this));Link("운영 안내",OpenGuide);bottom.Children.Add(links);
-        autoProgram.Content=AdminUi.Label("Windows 로그인 시 자동 실행","Muted",11);autoProgram.Margin=new Thickness(8,2,0,0);bottom.Children.Add(autoProgram);
+        autoProgram.Content=AdminUi.Label("Windows 로그인 시 자동 실행","Muted",12);autoProgram.Margin=new Thickness(8,2,0,0);bottom.Children.Add(autoProgram);
         DockPanel.SetDock(bottom,Dock.Bottom);side.Children.Add(bottom);
         var navigation=new StackPanel();side.Children.Add(new ScrollViewer{Content=navigation,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled});
         var rail=new Border{Child=side,BorderThickness=new Thickness(0,0,1,0)};rail.SetResourceReference(Border.BackgroundProperty,"Rail");rail.SetResourceReference(Border.BorderBrushProperty,"Line");layout.Children.Add(rail);
         var main=new DockPanel{Margin=new Thickness(32,26,32,14)};Grid.SetColumn(main,1);layout.Children.Add(main);
-        var footer=AdminUi.Label("창을 닫아도 서버는 알림 영역에서 계속 실행됩니다. 관리 계정은 로그아웃됩니다.","Faint",11);footer.Margin=new Thickness(0,12,0,0);DockPanel.SetDock(footer,Dock.Bottom);main.Children.Add(footer);
+        var footer=AdminUi.Label("창을 닫아도 서버는 알림 영역에서 계속 실행됩니다. 관리 계정은 로그아웃됩니다.","Faint",12);footer.Margin=new Thickness(0,12,0,0);DockPanel.SetDock(footer,Dock.Bottom);main.Children.Add(footer);
         var views=new Grid();views.Children.Add(serverViews);views.Children.Add(administrationView);main.Children.Add(views);
-        void Group(string label){var text=AdminUi.Label(label,"Faint",11,true);text.Margin=new Thickness(10,10,0,3);navigation.Children.Add(text);}
+        void Group(string label){var text=AdminUi.Label(label,"Faint",12,true);text.Margin=new Thickness(10,10,0,3);navigation.Children.Add(text);}
         Group("서버");
         foreach(var service in new[]{"office","announcements"})AddCard(navigation,service);
         void Menu(string label,string page,string icon,string? role=null){var button=new Button{Content=NavigationLabel(label,icon),Uid=page,Margin=new Thickness(0,0,0,1)};NavigationState(button,false);System.Windows.Automation.AutomationProperties.SetName(button,label);button.Click+=async(_,_)=>await OpenAdministration(page,role);navigation.Children.Add(button);administrationNavigation.Add(button);}
@@ -68,7 +68,7 @@ public sealed partial class LocalServerWindow
     {
         var row=new Grid();row.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(26)});row.ColumnDefinitions.Add(new ColumnDefinition());row.ColumnDefinitions.Add(new ColumnDefinition{Width=GridLength.Auto});
         var glyph=AdminUi.Icon(icon);glyph.HorizontalAlignment=HorizontalAlignment.Left;row.Children.Add(glyph);
-        var text=new TextBlock{Text=label,FontSize=12,FontWeight=FontWeights.Medium,VerticalAlignment=VerticalAlignment.Center,TextTrimming=TextTrimming.CharacterEllipsis};Grid.SetColumn(text,1);row.Children.Add(text);return row;
+        var text=new TextBlock{Text=label,FontSize=13,FontWeight=FontWeights.Medium,VerticalAlignment=VerticalAlignment.Center,TextTrimming=TextTrimming.CharacterEllipsis};Grid.SetColumn(text,1);row.Children.Add(text);return row;
     }
     static void NavigationState(Button button,bool selected)
     {
@@ -91,7 +91,7 @@ public sealed partial class LocalServerWindow
     {
         var card=new ServerCard(service,new LocalServerProcess(root,service));cards.Add(card);var office=service=="office";
         var label=office?"교내 업무 서버":"학생·학부모 소식 서버";var navContent=NavigationLabel(office?"교내 업무":"학생·학부모 소식",office?"AdminServerIcon":"AdminStudentIcon");
-        card.NavigationStatus.FontSize=11;card.NavigationStatus.FontWeight=FontWeights.Medium;card.NavigationStatus.Margin=new Thickness(4,0,0,0);card.NavigationStatus.VerticalAlignment=VerticalAlignment.Center;Grid.SetColumn(card.NavigationStatus,2);navContent.Children.Add(card.NavigationStatus);
+        card.NavigationStatus.FontSize=12;card.NavigationStatus.FontWeight=FontWeights.Medium;card.NavigationStatus.Margin=new Thickness(4,0,0,0);card.NavigationStatus.VerticalAlignment=VerticalAlignment.Center;Grid.SetColumn(card.NavigationStatus,2);navContent.Children.Add(card.NavigationStatus);
         card.Navigation.Content=navContent;card.Navigation.Margin=new Thickness(0,0,0,1);card.Navigation.Click+=(_,_)=>SelectCard(card);navigation.Children.Add(card.Navigation);
         System.Windows.Automation.AutomationProperties.SetName(card.Navigation,label+" 서버 선택");
         foreach(var height in new[]{GridLength.Auto,GridLength.Auto,new GridLength(1,GridUnitType.Star)})card.View.RowDefinitions.Add(new RowDefinition{Height=height});serverViews.Children.Add(card.View);
@@ -99,10 +99,10 @@ public sealed partial class LocalServerWindow
         var header=new DockPanel{Margin=new Thickness(0,0,0,16)};
         var actions=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Bottom};card.Start.SetResourceReference(StyleProperty,"PrimaryButton");card.Admin.Content="관리자 로그인";
         foreach(var button in new[]{card.Start,card.Stop,card.Admin}){button.Margin=new Thickness(8,0,0,0);actions.Children.Add(button);}DockPanel.SetDock(actions,Dock.Right);header.Children.Add(actions);
-        var heading=new StackPanel();heading.Children.Add(AdminUi.Heading(label,22));var sub=AdminUi.Label(office?"교직원 메신저와 교사용 앱의 업무를 연결합니다.":"학생·학부모 앱으로 학교 공지와 가정통신문을 전달합니다.","Muted",13);sub.Margin=new Thickness(0,4,0,0);heading.Children.Add(sub);header.Children.Add(heading);card.View.Children.Add(header);
+        var heading=new StackPanel();heading.Children.Add(AdminUi.Heading(label,22));var sub=AdminUi.Label(office?"교직원 메신저와 교사용 앱의 업무를 연결합니다.":"학생·학부모 앱으로 학교 공지와 가정통신문을 전달합니다.","Muted",14);sub.Margin=new Thickness(0,4,0,0);heading.Children.Add(sub);header.Children.Add(heading);card.View.Children.Add(header);
         // Status card: badge, mode and the connection details teachers need.
         var status=new StackPanel();var line=new StackPanel{Orientation=Orientation.Horizontal};
-        card.Status.FontSize=11;card.Status.FontWeight=FontWeights.SemiBold;card.Status.Margin=new Thickness(0);card.Status.VerticalAlignment=VerticalAlignment.Center;
+        card.Status.FontSize=12;card.Status.FontWeight=FontWeights.SemiBold;card.Status.Margin=new Thickness(0);card.Status.VerticalAlignment=VerticalAlignment.Center;
         var badgeRow=new StackPanel{Orientation=Orientation.Horizontal};badgeRow.Children.Add(new Ellipse{Width=6,Height=6,Margin=new Thickness(0,0,5,0),VerticalAlignment=VerticalAlignment.Center});badgeRow.Children.Add(card.Status);
         card.StatusBadge.Child=badgeRow;card.StatusBadge.Padding=new Thickness(8,3,8,3);card.StatusBadge.CornerRadius=new CornerRadius(11);card.StatusBadge.VerticalAlignment=VerticalAlignment.Center;line.Children.Add(card.StatusBadge);
         card.Summary.Margin=new Thickness(10,0,0,0);card.Summary.VerticalAlignment=VerticalAlignment.Center;line.Children.Add(card.Summary);status.Children.Add(line);
@@ -111,10 +111,10 @@ public sealed partial class LocalServerWindow
         StackPanel Column(int index,string title,TextBlock value,string note,Func<string>? copy)
         {
             var column=new StackPanel();var holder=new Border{Child=column,Padding=new Thickness(index==0?0:20,0,12,0),BorderThickness=new Thickness(index==0?0:1,0,0,0)};holder.SetResourceReference(Border.BorderBrushProperty,"Line");Grid.SetColumn(holder,index);card.ConnectionPanel.Children.Add(holder);
-            column.Children.Add(AdminUi.Label(title,"Faint",11,true));
+            column.Children.Add(AdminUi.Label(title,"Faint",12,true));
             var row=new DockPanel{Margin=new Thickness(0,6,0,6)};if(copy is not null){var button=AdminUi.CopyButton(copy,title);DockPanel.SetDock(button,Dock.Right);row.Children.Add(button);}
             value.VerticalAlignment=VerticalAlignment.Center;row.Children.Add(value);column.Children.Add(row);
-            if(note.Length>0)column.Children.Add(AdminUi.Label(note,"Muted",11));return column;
+            if(note.Length>0)column.Children.Add(AdminUi.Label(note,"Muted",12));return column;
         }
         foreach(var code in new[]{card.AddressValue,card.Connection}){code.FontFamily=new FontFamily("Cascadia Mono, Consolas");code.FontSize=14;code.FontWeight=FontWeights.SemiBold;code.Margin=new Thickness(0);code.TextTrimming=TextTrimming.CharacterEllipsis;code.TextWrapping=TextWrapping.NoWrap;code.SetResourceReference(TextBlock.ForegroundProperty,"Ink");}
         Column(0,"교사 PC 접속 주소",card.AddressValue,"교사 PC 메신저가 같은 학교망에서 자동으로 찾습니다.",()=>card.AddressValue.Text);
@@ -142,7 +142,7 @@ public sealed partial class LocalServerWindow
         Field(card.SimpleFields,"학교 이름",card.School,"교사 메신저의 교내 자동검색 결과와 화면 제목에 표시됩니다.");
         Field(card.SimpleFields,"관리자 아이디",card.AdminUsername,"영문·숫자·._- 3~32자 · 서버를 처음 만들 때 정하고 이후에는 바꿀 수 없습니다.");
         var approval=new DockPanel();var choose=new Button{Content="문서 선택",Margin=new Thickness(8,0,0,0)};DockPanel.SetDock(choose,Dock.Right);approval.Children.Add(choose);approval.Children.Add(card.Approval);choose.Click+=(_,_)=>ChooseApproval(card);
-        card.SimpleFields.Children.Add(FieldLabel("학교장 승인(내부결재) 문서"));card.SimpleFields.Children.Add(approval);var approvalNote=Note("결재 문서 파일은 이 PC에만 보관하고 지문(해시)으로 학교 검토 기록을 만듭니다. 1년마다 새 승인 문서로 갱신합니다.");approvalNote.Margin=new Thickness(0,6,0,0);approvalNote.FontSize=11;card.SimpleFields.Children.Add(approvalNote);
+        card.SimpleFields.Children.Add(FieldLabel("학교장 승인(내부결재) 문서"));card.SimpleFields.Children.Add(approval);var approvalNote=Note("결재 문서 파일은 이 PC에만 보관하고 지문(해시)으로 학교 검토 기록을 만듭니다. 1년마다 새 승인 문서로 갱신합니다.");approvalNote.Margin=new Thickness(0,6,0,0);approvalNote.FontSize=12;card.SimpleFields.Children.Add(approvalNote);
         var detail=new StackPanel();Field(detail,"서버 데이터 위치",card.SimpleData,"계정·메시지·첨부가 저장됩니다.");Field(detail,"백업 위치",card.Backup,"비워 두면 다른 드라이브를 자동으로 고릅니다. 외장 드라이브를 권장합니다.");
         detail.Children.Add(card.Ups);card.Ups.Margin=new Thickness(0,12,0,0);card.Ups.Click+=(_,_)=>{SaveSettings();Refresh();};
         card.SimpleFields.Children.Add(new Expander{Header="자세한 설정",Content=detail,Margin=new Thickness(0,12,0,4)});
@@ -150,7 +150,7 @@ public sealed partial class LocalServerWindow
         foreach(var box in new[]{card.School,card.AdminUsername,card.SimpleData,card.Backup})box.LostFocus+=(_,_)=>{SaveSettings();Refresh();};
         card.ProductionFields.Margin=new Thickness(0,12,0,0);card.ProductionFields.Children.Add(Note("계정·HTTPS 인증서·백업을 준비한 운영 설정을 선택하세요. 도입·운영 내부결재 승인 문서는 학교에 보관하고, 적용되는 학운위 심의·보안 검토를 확인하세요. 승인 문서는 공개 설치본에 넣지 않습니다."));card.Config.Margin=new Thickness(0,8,0,0);card.ProductionFields.Children.Add(card.Config);
         var select=new Button{Content="운영 설정 파일 선택",HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,8,0,0)};select.Click+=(_,_)=>{var dialog=new OpenFileDialog{Filter="운영 설정 (*.json)|*.json",CheckFileExists=true};if(dialog.ShowDialog(this)==true){card.Config.Text=dialog.FileName;SaveSettings();Refresh();}};card.ProductionFields.Children.Add(select);controls.Children.Add(card.ProductionFields);
-        var autoText=new StackPanel();autoText.Children.Add(AdminUi.Label("자동 시작","Ink",13,true));autoText.Children.Add(AdminUi.Label("관리자 프로그램을 열면 이 서버도 함께 시작합니다."));
+        var autoText=new StackPanel();autoText.Children.Add(AdminUi.Label("자동 시작","Ink",14,true));autoText.Children.Add(AdminUi.Label("관리자 프로그램을 열면 이 서버도 함께 시작합니다."));
         card.Auto.Content=autoText;card.Auto.SetResourceReference(StyleProperty,"Switch");card.Auto.Margin=new Thickness(0,14,0,4);card.Auto.BorderThickness=new Thickness(0,1,0,0);card.Auto.Padding=new Thickness(0,12,0,0);card.Auto.ToolTip="시험 서버의 최초 설정을 완료한 후 선택할 수 있습니다.";System.Windows.Automation.AutomationProperties.SetName(card.Auto,"관리 프로그램을 열면 이 서버도 자동 시작");controls.Children.Add(card.Auto);card.Auto.Click+=(_,_)=>SaveSettings();
         var path=new StackPanel();path.Children.Add(card.Data);var dataNote=Note("시험 데이터의 저장 위치입니다. 운영 저장 위치는 운영 설정에서 지정합니다.");dataNote.Margin=new Thickness(0,6,0,0);path.Children.Add(dataNote);var advanced=new Expander{Header="데이터 저장 위치",Content=path,Margin=new Thickness(0,6,0,8)};controls.Children.Add(advanced);
         card.Mode.SelectionChanged+=(_,_)=>{Refresh();SaveSettings();};card.Data.TextChanged+=(_,_)=>Refresh();
@@ -186,7 +186,7 @@ public sealed partial class LocalServerWindow
         {
             var list=new StackPanel();list.Children.Add(AdminUi.Group("설치 전에 준비할 것"));
             foreach(var item in new[]{"학부모 휴대폰이 학교 밖에서 접속할 주소(도메인 또는 터널)","학생·학부모 개인정보 수집·이용 동의 절차","학교장 승인 문서 (교내 업무 서버와 같은 문서 사용 가능)"})
-            {var row=new DockPanel{Margin=new Thickness(0,0,0,6)};var mark=AdminUi.Icon("AdminCheckIcon",14,"News");mark.Margin=new Thickness(0,0,8,0);row.Children.Add(mark);row.Children.Add(AdminUi.Label(item,"Ink",12));list.Children.Add(row);}
+            {var row=new DockPanel{Margin=new Thickness(0,0,0,6)};var mark=AdminUi.Icon("AdminCheckIcon",14,"News");mark.Margin=new Thickness(0,0,8,0);row.Children.Add(mark);row.Children.Add(AdminUi.Label(item,"Ink",13));list.Children.Add(row);}
             var box=new Border{Child=list,Padding=new Thickness(18,14,18,10),CornerRadius=new CornerRadius(8),Margin=new Thickness(0,16,0,0)};box.SetResourceReference(Border.BackgroundProperty,"Subtle");content.Children.Add(box);
         }
         var buttons=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,18,0,0)};
@@ -198,7 +198,7 @@ public sealed partial class LocalServerWindow
     static void Field(StackPanel panel,string label,TextBox box,string note)
     {
         System.Windows.Automation.AutomationProperties.SetName(box,label);
-        panel.Children.Add(FieldLabel(label));panel.Children.Add(box);var hint=Note(note);hint.Margin=new Thickness(0,6,0,0);hint.FontSize=11;panel.Children.Add(hint);
+        panel.Children.Add(FieldLabel(label));panel.Children.Add(box);var hint=Note(note);hint.Margin=new Thickness(0,6,0,0);hint.FontSize=12;panel.Children.Add(hint);
     }
     void OpenGuide()
     {

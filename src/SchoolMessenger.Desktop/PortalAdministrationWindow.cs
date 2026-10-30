@@ -41,7 +41,7 @@ public sealed partial class PortalAdministrationWindow:Window
     Button Row(string title,string detail,UIElement? side,Func<Task> open)
     {
         var row=new DockPanel();if(side is not null){DockPanel.SetDock(side,Dock.Right);row.Children.Add(side);}
-        var text=new StackPanel{VerticalAlignment=VerticalAlignment.Center};text.Children.Add(AdminUi.Label(title,"Ink",13,true));if(detail.Length>0)text.Children.Add(AdminUi.Label(detail,"Muted",11));row.Children.Add(text);
+        var text=new StackPanel{VerticalAlignment=VerticalAlignment.Center};text.Children.Add(AdminUi.Label(title,"Ink",14,true));if(detail.Length>0)text.Children.Add(AdminUi.Label(detail,"Muted",12));row.Children.Add(text);
         var line=new Button{Content=row};line.SetResourceReference(StyleProperty,"TableRow");AutomationProperties.SetName(line,title);line.Click+=async(_,_)=>await Run(open);return line;
     }
     static string Role(string? role)=>role switch{"student"=>"학생","parent"=>"보호자","teacher"=>"교사","admin"=>"관리자",_=>role??""};
@@ -62,7 +62,7 @@ public sealed partial class PortalAdministrationWindow:Window
         Button? logout=null;
         if(workspaceSignOut is null){logout=new Button{Content="로그아웃",VerticalAlignment=VerticalAlignment.Bottom};logout.Click+=async(_,_)=>await Run(async()=>{try{await api!.Send<JsonElement>(HttpMethod.Post,"api/logout");}finally{api!.Dispose();api=null;Login();}});}
         var heading=new DockPanel{Margin=new Thickness(0,0,0,16)};if(logout is not null){DockPanel.SetDock(logout,Dock.Right);heading.Children.Add(logout);}
-        var intro=new StackPanel();intro.Children.Add(AdminUi.Heading("가입·학급 명부",22));var description=AdminUi.Label("학생·보호자 가입을 승인하고, 학급 명부와 보호자 연결을 관리합니다.","Muted",13);description.Margin=new Thickness(0,4,0,0);intro.Children.Add(description);heading.Children.Add(intro);body.Children.Add(heading);
+        var intro=new StackPanel();intro.Children.Add(AdminUi.Heading("가입·학급 명부",22));var description=AdminUi.Label("학생·보호자 가입을 승인하고, 학급 명부와 보호자 연결을 관리합니다.","Muted",14);description.Margin=new Thickness(0,4,0,0);intro.Children.Add(description);heading.Children.Add(intro);body.Children.Add(heading);
         await RecoveryReview.Add(body,api!,InteractionOwner,Load);
         var tasks=new StackPanel();
         tasks.Children.Add(Row("학급·학교 명부 등록","학급을 만들고 학생·보호자·교사를 명부에 올립니다.",null,Directory));
@@ -79,7 +79,7 @@ public sealed partial class PortalAdministrationWindow:Window
             var active=person.GetProperty("active").GetBoolean();
             accounts.Children.Add(Row(person.GetProperty("name").GetString()!,Role(person.GetProperty("role").GetString()),AdminUi.Badge(active?"사용 중":"승인 대기·중지",active?"Success":"Warning"),()=>Person(person)));
         }
-        if(people.Length==0){var none=AdminUi.Label("아직 가입한 계정이 없습니다. ‘학급·학교 명부 등록’으로 시작하세요.","Muted",13);none.Margin=new Thickness(16,20,16,20);accounts.Children.Add(none);}
+        if(people.Length==0){var none=AdminUi.Label("아직 가입한 계정이 없습니다. ‘학급·학교 명부 등록’으로 시작하세요.","Muted",14);none.Margin=new Thickness(16,20,16,20);accounts.Children.Add(none);}
         var accountCard=AdminUi.Card(accounts,0);accountCard.ClipToBounds=true;body.Children.Add(accountCard);
     }
     async Task Person(JsonElement person)

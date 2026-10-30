@@ -48,7 +48,7 @@ public sealed partial class LocalServerWindow:Window
         public bool Busy;
         // Dashboard pieces from the administrator design: status badge, connection columns, checklist card and the not-installed state.
         public Border StatusBadge=new(),StatusCard=new(),Empty=new(),ChecklistCard=new(),SettingsCard=new(),ChecklistBadge=AdminUi.Badge("","Neutral",false);
-        public TextBlock Summary=AdminUi.Label(""),AddressValue=new(),SchoolValue=AdminUi.Heading(""),SchoolNote=AdminUi.Label(""),EmptyNote=AdminUi.Label("","Muted",13);
+        public TextBlock Summary=AdminUi.Label(""),AddressValue=new(),SchoolValue=AdminUi.Heading(""),SchoolNote=AdminUi.Label(""),EmptyNote=AdminUi.Label("","Muted",14);
         public Grid ConnectionPanel=new(),DetailsGrid=new();
         public string ChecklistKey="";
     }

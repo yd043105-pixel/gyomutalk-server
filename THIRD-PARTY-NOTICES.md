@@ -12,3 +12,7 @@
 ## Desktop automatic updates
 
 WinSparkle 0.9.4 — MIT license and bundled third-party notices. Copies of COPYING files are shipped in licenses/WinSparkle. https://github.com/vslavik/winsparkle
+
+## Guardian invite QR codes
+
+QRCoder 1.6.0 (school news server) — MIT license. https://github.com/codebude/QRCoder

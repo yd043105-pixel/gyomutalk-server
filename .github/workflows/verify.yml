@@ -41,7 +41,7 @@ jobs:
       - name: Verify school boundaries, review records, accounts and bridge
         shell: pwsh
         run: |
-          foreach ($test in @('registration-policy','deployment-review','backend-hardening','message-storage','announcement-bridge','school-directory-servers','server-manager')) {
+          foreach ($test in @('registration-policy','deployment-review','backend-hardening','message-storage','guardian-invite','announcement-bridge','school-directory-servers','server-manager')) {
             node "tests/$test.mjs"
             if ($LASTEXITCODE -ne 0) { throw "Verification failed: $test" }
           }

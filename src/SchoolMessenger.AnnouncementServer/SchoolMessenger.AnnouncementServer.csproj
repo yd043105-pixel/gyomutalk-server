@@ -4,6 +4,7 @@
     <Compile Include="../SchoolMessenger.Shared/RegistrationPolicy.cs" Link="RegistrationPolicy.cs" />
     <EmbeddedResource Include="../../config/registration-policy.draft.json" LogicalName="SchoolMessenger.RegistrationDraft.json" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <PackageReference Include="QRCoder" Version="1.6.0" />
     <ProjectReference Include="../SchoolMessenger.Contracts/SchoolMessenger.Contracts.csproj" />
     <Compile Include="../SchoolMessenger.Shared/FilePolicy.cs" Link="FilePolicy.cs" />
     <Compile Include="../SchoolMessenger.Shared/TimetableData.cs" Link="TimetableData.cs" />

@@ -13,6 +13,12 @@
           "SQLitePCLRaw.core": "2.1.12"
         }
       },
+      "QRCoder": {
+        "type": "Direct",
+        "requested": "[1.6.0, )",
+        "resolved": "1.6.0",
+        "contentHash": "XmPA81eo+oRxBuyVdswsSkTGTE1d3thfF11Z1PdD7oB56A6HU4G4AAOdySmGRMb/cljwlFTMWUtosGEnwpS6GA=="
+      },
       "Microsoft.Data.Sqlite.Core": {
         "type": "Transitive",
         "resolved": "10.0.12",

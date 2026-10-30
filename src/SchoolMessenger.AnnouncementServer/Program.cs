@@ -162,6 +162,7 @@ PortalSections.Map(api,admin,app.MapGroup("/bridge"),store);
 PortalElectives.Initialize(store);
 PortalElectives.Map(api,app.MapGroup("/bridge"),store);
 PortalEnrollment.Map(app,api,admin,store,protection);
+PortalGuardianInvites.Map(app,api,store);
 PortalNotices.Map(api,app.MapGroup("/bridge"),store,app.Configuration,app.Environment);
 PortalTimetables.Map(api,app.MapGroup("/bridge"),store);
 PortalCounseling.Map(api,app.MapGroup("/bridge"),store);

@@ -89,7 +89,7 @@ public sealed partial class OfficeWindow:Window
         Grid Pair(StackPanel form,string first,string firstValue,string second,string secondValue,out TextBox a,out TextBox b)
         {
             var grid=new Grid();grid.ColumnDefinitions.Add(new ColumnDefinition());grid.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(12)});grid.ColumnDefinitions.Add(new ColumnDefinition());
-            TextBox Cell(string label,string value,int column){var cell=new StackPanel{Margin=new Thickness(0,0,0,12)};var caption=AdminUi.Label(label,"Muted",12);caption.Margin=new Thickness(0,0,0,6);cell.Children.Add(caption);var box=new TextBox{Text=value};System.Windows.Automation.AutomationProperties.SetName(box,label);cell.Children.Add(box);Grid.SetColumn(cell,column);grid.Children.Add(cell);return box;}
+            TextBox Cell(string label,string value,int column){var cell=new StackPanel{Margin=new Thickness(0,0,0,12)};var caption=AdminUi.Label(label,"Muted",13);caption.Margin=new Thickness(0,0,0,6);cell.Children.Add(caption);var box=new TextBox{Text=value};System.Windows.Automation.AutomationProperties.SetName(box,label);cell.Children.Add(box);Grid.SetColumn(cell,column);grid.Children.Add(cell);return box;}
             a=Cell(first,firstValue,0);b=Cell(second,secondValue,2);form.Children.Add(grid);return grid;
         }
         var add=new StackPanel();add.Children.Add(AdminUi.Group("새 특별실"));Pair(add,"특별실 이름","","위치","",out var name,out var location);
@@ -105,7 +105,7 @@ public sealed partial class OfficeWindow:Window
             save.Click+=async(_,_)=>await Run(async()=>{await api.Send<JsonElement>(HttpMethod.Post,"api/office/rooms/"+row.GetProperty("id").GetString(),new OfficeRoomRequest(roomName.Text,roomLocation.Text,active.IsChecked==true,row.GetProperty("revision").GetInt32()));setup=await api.Get<JsonElement>("api/office/setup");await Rooms();});
             var card=AdminUi.Card(form);card.Margin=new Thickness(0,0,0,12);body.Children.Add(card);
         }
-        if(rooms.Length==0){var none=AdminUi.Label("아직 등록한 특별실이 없습니다.","Muted",13);body.Children.Add(AdminUi.Card(none));}
+        if(rooms.Length==0){var none=AdminUi.Label("아직 등록한 특별실이 없습니다.","Muted",14);body.Children.Add(AdminUi.Card(none));}
         return Task.CompletedTask;
     }
 }
