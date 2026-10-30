@@ -125,8 +125,8 @@ public sealed partial class LocalServerWindow
             var view=(FrameworkElement)controller.Content;controller.Content=null;view.Resources=controller.Resources;
             administrationController=controller;
             controller.Closed+=(_,_)=>{if(!closingPage&&ReferenceEquals(administrationController,controller))_ = SignOutAdministrator(role);};
-            // Office pages draw their own cards; the members page sits directly on the canvas.
-            administrationView.Children.Add(controller is ServerManagementWindow or OfficeWindow?view:Surface(view,new Thickness(0)));
+            // Office and student-parent pages draw their own cards; overview pages sit directly on the canvas.
+            administrationView.Children.Add(controller is ServerManagementWindow or OfficeWindow or PortalAdministrationWindow?view:Surface(view,new Thickness(0)));
         }
         catch(ApiRequestException e)when(e.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden){await SignOutAdministrator(role);}
         catch(Exception e){if(revision==viewRevision){var panel=new StackPanel();panel.Children.Add(Note(e.Message));var retry=new Button{Content="다시 연결",HorizontalAlignment=HorizontalAlignment.Left};retry.Click+=async(_,_)=>await OpenAdministration(page,role);panel.Children.Add(retry);administrationView.Children.Add(Surface(panel));}}

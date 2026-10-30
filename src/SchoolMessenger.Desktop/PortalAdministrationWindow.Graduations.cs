@@ -10,7 +10,7 @@ public sealed partial class PortalAdministrationWindow
 {
     async Task Graduations()
     {
-        body.Children.Clear();Button("명부로",Load);
+        Page();Back();
         body.Children.Add(Text("학교가 확정한 졸업 대상과 처리 시각을 등록하세요. 그 시각부터 로그인을 차단하고 학생 개인정보를 자동 파기합니다. 다른 재학 자녀가 없는 학부모도 함께 탈퇴합니다. 처리 후 복구할 수 없습니다."));
         var status=await api!.Get<JsonElement>("api/admin/graduations");
         body.Children.Add(Text("백업·교내 서버 파기 확인 대기: "+status.GetProperty("pendingErasure").GetInt32()+"건"));

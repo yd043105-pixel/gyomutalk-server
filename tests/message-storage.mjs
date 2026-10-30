@@ -71,8 +71,17 @@ try{
  assert.equal((await sender.request('messages/'+fresh+'?peek=true')).message.body,'최근 본문');
  check('an unsaved body is dropped after 30 days, newer ones are kept');
 
+ // Requests as they appear in real office notices; the server dates them in Korean time.
+ const kst=new Date(Date.now()+9*3_600_000),day=n=>new Date(kst.getTime()+n*86_400_000).toISOString().slice(0,10);
+ const monday=-((kst.getUTCDay()+6)%7);
  await send('담임 선생님께서는 11월 7일까지 학급별 인솔 명단을 제출해 주세요.');
- const todo=(await recipient.request('todos')).find(t=>t.title.includes('인솔 명단'));
- assert.equal(todo.title,'담임 선생님께서는 학급별 인솔 명단 제출');assert.match(todo.dueDate??'',/-11-07$/);
- check('a date in the middle of a request leaves no stray particle in the suggested task title');
+ await send('내일 오후 3시에 교무회의가 있습니다. 각 부서에서는 안건을 준비해 주세요.');
+ await send('다음 주 수요일까지 과학실을 열어 주세요.\n11월 19일(목) 오후 2시까지 행정실로 서류를 보내 주세요.\n자세한 내용은 첨부 파일을 참고하시기 바랍니다.');
+ const todos=await recipient.request('todos'),due=title=>todos.find(t=>t.title===title)?.dueDate,titles=todos.map(t=>t.title).join(' / ');
+ assert.match(due('학급별 인솔 명단 제출')??'',/-11-07$/,titles);
+ assert.equal(due('안건 준비'),day(1),titles);
+ assert.equal(due('과학실 열기'),day(monday+9),titles);
+ assert.match(due('행정실로 서류 보내기')??'',/-11-19$/,titles);
+ assert.ok(!todos.some(t=>t.title.includes('참고')),titles);
+ check('task suggestions drop the addressee, take a date from the previous sentence and understand next week');
 }finally{if(server.exitCode===null){server.kill();await new Promise(r=>server.once('exit',r));}}
