@@ -52,7 +52,7 @@
      <local:MessageBody x:Name="DetailBody" TextWrapping="Wrap" FontSize="12"/>
      <Button x:Name="RecallButton" Content="메시지 회수" Click="Recall" Visibility="Collapsed" HorizontalAlignment="Left" FontSize="11" Margin="0,0,0,14"/>
      <Button x:Name="SubmissionButton" Content="파일 제출 · 현황 보기" Click="OpenSubmission" Visibility="Collapsed" HorizontalAlignment="Left" FontSize="11" Margin="0,0,0,14"/>
-     <TextBlock Text="첨부파일" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,0,9"/>
+     <TextBlock x:Name="AttachmentHeader" Text="첨부파일" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,0,9"/>
      <ItemsControl x:Name="FileList"><ItemsControl.ItemTemplate><DataTemplate><Border Background="{DynamicResource Soft}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="9" Margin="0,0,0,8"><StackPanel>
       <Button IsEnabled="{Binding Available}" Tag="{Binding}" Click="Download" HorizontalContentAlignment="Left" BorderThickness="0" Background="Transparent" Padding="2,3"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="26"/><ColumnDefinition/></Grid.ColumnDefinitions><Path Data="{StaticResource FileIcon}" Stroke="{DynamicResource Blue}" StrokeThickness="1.5" Width="16" Height="19" Stretch="Uniform"/><TextBlock Grid.Column="1" Text="{Binding Description}" FontSize="11" TextWrapping="Wrap"/></Grid></Button>
       <TextBlock Text="{Binding Expiry}" Foreground="{DynamicResource Muted}" FontSize="10" TextWrapping="Wrap" Margin="28,4,0,0"/>
@@ -62,7 +62,7 @@
     </StackPanel></ScrollViewer>
     <TextBlock x:Name="StatusLabel" Grid.Row="1" Foreground="#A05B24" TextWrapping="Wrap" FontSize="11" Margin="0,9,0,0"/>
     <Border Grid.Row="2" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="0,10,0,0" Margin="0,10,0,0">
-     <Button x:Name="ReplyButton" Content="답장" Click="Reply" Style="{StaticResource PrimaryButton}" HorizontalAlignment="Right" FontSize="12" Padding="18,8" IsEnabled="{Binding IsVisible, ElementName=DetailPanel}"/>
+     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"><Button Content="전달" Click="Forward" FontSize="12" Padding="14,8" Margin="0,0,8,0" IsEnabled="{Binding IsVisible, ElementName=DetailPanel}"/><Button x:Name="ReplyButton" Content="답장" Click="Reply" Style="{StaticResource PrimaryButton}" FontSize="12" Padding="18,8" IsEnabled="{Binding IsVisible, ElementName=DetailPanel}"/></StackPanel>
     </Border>
    </Grid>
   </Grid>

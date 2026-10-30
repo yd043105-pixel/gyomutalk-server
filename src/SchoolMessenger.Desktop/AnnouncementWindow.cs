@@ -20,7 +20,7 @@ public sealed class AnnouncementWindow:Window
     bool busy;
     object? pending;
     public AnnouncementWindow(MainWindow main)
-    {
+    { StatusTone.Watch(feedback);
         api=main.Api!;Owner=main;Resources=main.Resources;Title="교무톡 · 가정통신문";Width=760;Height=720;MinWidth=620;MinHeight=500;
         Style=(Style)FindResource("SchoolWindow");WindowStartupLocation=WindowStartupLocation.CenterOwner;Content=new ScrollViewer{Content=body};
         Loaded+=async(_,_)=>await Run(Load);

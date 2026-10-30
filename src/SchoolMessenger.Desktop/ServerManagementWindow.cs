@@ -17,7 +17,7 @@ public sealed partial class ServerManagementWindow:Window
     readonly Api api;readonly StackPanel body=new(){Margin=new Thickness(22)};
     readonly DockPanel hostView=new();
     readonly TextBlock hardware=Label("서버 정보 확인 중"),traffic=Label(""),storage=Label(""),settings=Label(""),feedback=Label("");
-    readonly TextBlock cpu=Label("샘플 수집 중",24),memory=Label("샘플 수집 중",24),process=Label("확인 중",24);
+    readonly TextBlock cpu=Label("측정 중",24),memory=Label("측정 중",24),process=Label("확인 중",24);
     readonly TextBlock memoryNote=Label("",12),processNote=Label("",12);
     readonly ProgressBar cpuBar=new(){Maximum=100,Height=8},memoryBar=new(){Maximum=100,Height=8};
     readonly ComboBox profile=new(){ItemsSource=new[]{"저부하 · 8GB 서버 권장","일반 · 부하 검증 후 사용"},SelectedIndex=0};
@@ -82,7 +82,7 @@ public sealed partial class ServerManagementWindow:Window
         card.SetResourceReference(Border.BackgroundProperty,"Surface");card.SetResourceReference(Border.BorderBrushProperty,"Line");value.FontWeight=FontWeights.Bold;Grid.SetColumn(card,column);grid.Children.Add(card);
     }
     static string Bytes(double value)=>value>=1073741824?(value/1073741824).ToString("0.0")+" GB":(value/1048576).ToString("0.0")+" MB";
-    static string Rate(JsonElement sample,string name)=>sample.GetProperty(name).ValueKind==JsonValueKind.Number?(sample.GetProperty(name).GetDouble()/1024).ToString("0.0")+" KB/s":"수집 중";
+    static string Rate(JsonElement sample,string name)=>sample.GetProperty(name).ValueKind==JsonValueKind.Number?(sample.GetProperty(name).GetDouble()/1024).ToString("0.0")+" KB/s":"측정 중";
     public async Task Refresh(bool manual)
     {
         if(busy)return;busy=true;apply.IsEnabled=false;
@@ -90,11 +90,14 @@ public sealed partial class ServerManagementWindow:Window
         {
             var data=await api.Get<JsonElement>("api/admin/server-resources");var sample=data.GetProperty("sample");var limits=data.GetProperty("limits");var active=data.GetProperty("active");
             var total=sample.GetProperty("totalMemoryBytes").GetDouble();var available=sample.GetProperty("availableMemoryBytes").GetDouble();
-            var systemCpu=sample.GetProperty("systemCpuPercent");cpu.Text=systemCpu.ValueKind==JsonValueKind.Number?systemCpu.GetDouble().ToString("0.0")+"%":"수집 중";cpuBar.Value=systemCpu.ValueKind==JsonValueKind.Number?systemCpu.GetDouble():0;
-            memoryBar.Value=total>0?100*(total-available)/total:0;memory.Text=total>0?memoryBar.Value.ToString("0.0")+"%":"확인 불가";memoryNote.Text=total>0?Bytes(total-available)+" / "+Bytes(total):"";process.Text=Bytes(sample.GetProperty("processMemoryBytes").GetDouble());processNote.Text="CPU "+(sample.GetProperty("processCpuPercent").ValueKind==JsonValueKind.Number?sample.GetProperty("processCpuPercent").GetDouble().ToString("0.0")+"%":"수집 중");
+            var systemCpu=sample.GetProperty("systemCpuPercent");cpu.Text=systemCpu.ValueKind==JsonValueKind.Number?systemCpu.GetDouble().ToString("0.0")+"%":"측정 중";cpu.ToolTip=systemCpu.ValueKind==JsonValueKind.Number?null:"서버가 10초마다 측정합니다. 잠시 후 표시됩니다.";cpuBar.Value=systemCpu.ValueKind==JsonValueKind.Number?systemCpu.GetDouble():0;
+            memoryBar.Value=total>0?100*(total-available)/total:0;memory.Text=total>0?memoryBar.Value.ToString("0.0")+"%":"확인 불가";memoryNote.Text=total>0?Bytes(total-available)+" / "+Bytes(total):"";process.Text=Bytes(sample.GetProperty("processMemoryBytes").GetDouble());processNote.Text="CPU "+(sample.GetProperty("processCpuPercent").ValueKind==JsonValueKind.Number?sample.GetProperty("processCpuPercent").GetDouble().ToString("0.0")+"%":"측정 중");
             hardware.Text=sample.GetProperty("os").GetString()+"\n"+sample.GetProperty("processor").GetString()+" · 논리 프로세서 "+sample.GetProperty("logicalProcessors")+"개\n서버 IPv4: "+string.Join(", ",sample.GetProperty("addresses").EnumerateArray().Select(a=>a.GetString()));
             traffic.Text="PC 네트워크 송신 "+Rate(sample,"networkSendBytesPerSecond")+" · 수신 "+Rate(sample,"networkReceiveBytesPerSecond")+"\n상태 수집: "+data.GetProperty("sampledAt").GetDateTimeOffset().ToLocalTime().ToString("HH:mm:ss")+" · 10초 간격 · 관리자 창 활성 시 갱신";
-            storage.Text="데이터 저장 위치: "+sample.GetProperty("dataDirectory").GetString()+"\n첨부 사용량 "+Bytes(sample.GetProperty("filesBytes").GetDouble())+" · 디스크 여유 "+Bytes(sample.GetProperty("freeBytes").GetDouble());
+            var folder=sample.GetProperty("dataDirectory").GetString()??"";storage.ToolTip=folder;
+            // The full path is long and personal to this PC; the last folders say enough, the tooltip has the rest.
+            var parts=folder.Split(System.IO.Path.DirectorySeparatorChar,StringSplitOptions.RemoveEmptyEntries);var shown=parts.Length>3?"…"+System.IO.Path.DirectorySeparatorChar+string.Join(System.IO.Path.DirectorySeparatorChar,parts[^2..]):folder;
+            storage.Text="데이터 저장 위치: "+shown+"\n첨부 사용량 "+Bytes(sample.GetProperty("filesBytes").GetDouble())+" · 디스크 여유 "+Bytes(sample.GetProperty("freeBytes").GetDouble());
             settings.Text="동시 업로드 "+limits.GetProperty("uploads")+"건 · 다운로드 "+limits.GetProperty("downloads")+"건 · ZIP "+limits.GetProperty("zip")+"건\n진행 중: 업로드 "+active.GetProperty("uploads")+" · 다운로드 "+active.GetProperty("downloads")+" · ZIP "+active.GetProperty("zips")+"\n파일당 전송 속도: "+(limits.GetProperty("downloadBytesPerSecond").GetInt32()>0?Bytes(limits.GetProperty("downloadBytesPerSecond").GetDouble())+"/초":"별도 제한 없음")+"\n공지 이미지 200KB · 최대 5장 · 파일 보관 30일\n저부하 모드: 여유 RAM 512MB 미만, 서버 RAM 768MB 초과 또는 CPU 평균 85% 이상이면 새 파일 작업은 잠시 대기합니다.";
             if(!loaded){profile.SelectedIndex=data.GetProperty("profile").GetString()=="low-memory"?0:1;loaded=true;}
             Ready=true;apply.IsEnabled=true;if(manual)feedback.Text="최신 상태를 확인했습니다.";

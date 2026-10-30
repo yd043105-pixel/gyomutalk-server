@@ -18,7 +18,7 @@ public partial class RegistrationWindow : Window
     internal Task PolicyReady{get;}
     public RegistrationWindow(string address)
     {
-        api = new Api(address); InitializeComponent();
+        api = new Api(address); InitializeComponent(); StatusTone.Watch(Feedback); Height = Math.Min(Height, SystemParameters.WorkArea.Height - 40);
         Closed += (_, _) => { PasswordBox.Clear(); ConfirmBox.Clear(); api.Dispose(); };
         PolicyReady=LoadPolicies();
     }

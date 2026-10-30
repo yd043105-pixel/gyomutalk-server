@@ -9,15 +9,6 @@
    <GeometryDrawing Brush="White" Geometry="M38 44h34c11 0 19 8 19 19v17c0 11-8 19-19 19H53l-18 13V98c-10-1-16-8-16-18V63c0-11 8-19 19-19Z"/>
    <GeometryDrawing Geometry="M38 64h33M38 78h21"><GeometryDrawing.Pen><Pen Brush="#245BC6" Thickness="7" StartLineCap="Round" EndLineCap="Round"/></GeometryDrawing.Pen></GeometryDrawing>
   </DrawingGroup></DrawingImage.Drawing></DrawingImage>
-  <Style TargetType="ContextMenu">
-   <Setter Property="Background" Value="{DynamicResource Glass}"/><Setter Property="Foreground" Value="{DynamicResource Ink}"/>
-   <Setter Property="BorderBrush" Value="{DynamicResource Line}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="4"/>
-   <Setter Property="HasDropShadow" Value="True"/>
-  </Style>
-  <Style TargetType="MenuItem">
-   <Setter Property="FontFamily" Value="Malgun Gothic"/><Setter Property="FontSize" Value="12"/>
-   <Setter Property="Foreground" Value="{DynamicResource Ink}"/><Setter Property="Padding" Value="8,5"/>
-  </Style>
   <Style x:Key="SchoolWindow" TargetType="Window">
    <Setter Property="Icon" Value="/Assets/brand_mark.ico"/>
    <Setter Property="FontFamily" Value="Malgun Gothic"/><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="{DynamicResource Ink}"/><Setter Property="Background" Value="{DynamicResource Canvas}"/>

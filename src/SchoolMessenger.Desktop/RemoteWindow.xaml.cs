@@ -10,7 +10,7 @@ public partial class RemoteWindow : Window
     readonly RemoteClient client;
     bool updating, closing;
     long lastMove;
-    public RemoteWindow(MainWindow main, RemoteClient client) { this.client = client; Owner = main; InitializeComponent(); }
+    public RemoteWindow(MainWindow main, RemoteClient client) { this.client = client; Owner = main; InitializeComponent(); StatusTone.Watch(Feedback); }
     public void Update(RemoteOffer offer)
     {
         var host = client.IsHost; var active = offer.State == "active";

@@ -17,9 +17,9 @@ public partial class MailboxWindow : Window
     public MailboxWindow(MainWindow main, string box = "received", Person? person = null)
     {
         this.main = main; this.box = person is null ? box : "conversation"; personId = person?.Id;
-        Owner = main; Resources = main.Resources; InitializeComponent();
+        Owner = main; Resources = main.Resources; InitializeComponent(); StatusTone.Watch(StatusLabel);
         MessageList.ItemsSource = messages;
-        Title = person is null ? "온라인 교무실 · 메시지함" : person.Name + " · 메시지 관리함";
+        Title = person is null ? "교무톡 · 메시지함" : person.Name + " · 주고받은 메시지";
         BoxTitle.Text = person is null ? box switch { "sent" => "보낸 메시지", "unread" => "미확인 메시지", _ => "받은 메시지" } : person.Name + " 관련 메시지"; UpdateTabs();
         Loaded += async (_, _) => await Reload();
         Closed += (_, _) => ResetTaskPrompt();
@@ -107,6 +107,7 @@ public partial class MailboxWindow : Window
         await main.UpdateUnread();
         if (version != taskPromptVersion) return;
         FileList.ItemsSource = detail.Attachments; ReceiptList.ItemsSource = detail.Recipients;
+        AttachmentHeader.Visibility = detail.Attachments.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         EmptyHint.Visibility = Visibility.Collapsed; DetailPanel.Visibility = Visibility.Visible;
         await LoadTaskPrompt(id);
         }
@@ -143,6 +144,12 @@ public partial class MailboxWindow : Window
     async void Reply(object sender, RoutedEventArgs e)
     {
         if (detail is not null) await main.WriteMessage(detail.Message.SenderId, "답장: " + detail.Message.Title);
+    }
+    // Forwarding starts a new message with the original text; attachments stay with the original and are not re-sent.
+    async void Forward(object sender, RoutedEventArgs e)
+    {
+        if (detail is null) return; var m = detail.Message;
+        await main.WriteMessage(title: "전달: " + m.Title, forwardBody: string.Join(Environment.NewLine, "", "", "---------- 전달한 메시지 ----------", "보낸 사람: " + m.SenderName, "제목: " + m.Title, "", m.Body));
     }
     async void Recall(object sender,RoutedEventArgs e)
     {

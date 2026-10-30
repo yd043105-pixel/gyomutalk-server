@@ -83,13 +83,29 @@ public sealed partial class OfficeWindow:Window
     }
     Task Rooms()
     {
-        Page();Button("예약 목록으로",()=>Load(true));if(administration&&!Embedded)Button("교직원 등록 · 승인",Administration);var name=Field("특별실 이름");var location=Field("위치");Button("특별실 추가",async()=>{await api.Send<JsonElement>(HttpMethod.Post,"api/office/rooms",new OfficeRoomRequest(name.Text,location.Text));setup=await api.Get<JsonElement>("api/office/setup");await Rooms();});
-        foreach(var row in setup.GetProperty("rooms").EnumerateArray())
+        Page(false);
+        Heading("특별실","교사가 예약하는 특별실을 추가하고, 이름·위치와 예약 허용 여부를 바꿉니다.",null,Embedded?null:("예약 목록",()=>Load(true)));
+        // Two inputs side by side on a card, like the section editor.
+        Grid Pair(StackPanel form,string first,string firstValue,string second,string secondValue,out TextBox a,out TextBox b)
         {
-            body.Children.Add(Text("특별실 설정",18));var roomName=Field("이름",row.GetProperty("name").GetString()!);roomName.MaxLength=80;var roomLocation=Field("위치",row.GetProperty("location").GetString()!);roomLocation.MaxLength=100;
-            var active=new CheckBox{Content="신규 예약 허용 · 해제해도 기존 예약 기록 유지",IsChecked=row.GetProperty("active").GetBoolean(),Margin=new Thickness(0,8,0,8)};body.Children.Add(active);
-            Button("특별실 설정 저장",async()=>{await api.Send<JsonElement>(HttpMethod.Post,"api/office/rooms/"+row.GetProperty("id").GetString(),new OfficeRoomRequest(roomName.Text,roomLocation.Text,active.IsChecked==true,row.GetProperty("revision").GetInt32()));setup=await api.Get<JsonElement>("api/office/setup");await Rooms();});
+            var grid=new Grid();grid.ColumnDefinitions.Add(new ColumnDefinition());grid.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(12)});grid.ColumnDefinitions.Add(new ColumnDefinition());
+            TextBox Cell(string label,string value,int column){var cell=new StackPanel{Margin=new Thickness(0,0,0,12)};var caption=AdminUi.Label(label,"Muted",12);caption.Margin=new Thickness(0,0,0,6);cell.Children.Add(caption);var box=new TextBox{Text=value};System.Windows.Automation.AutomationProperties.SetName(box,label);cell.Children.Add(box);Grid.SetColumn(cell,column);grid.Children.Add(cell);return box;}
+            a=Cell(first,firstValue,0);b=Cell(second,secondValue,2);form.Children.Add(grid);return grid;
         }
+        var add=new StackPanel();add.Children.Add(AdminUi.Group("새 특별실"));Pair(add,"특별실 이름","","위치","",out var name,out var location);
+        var create=new Button{Content="특별실 추가",HorizontalAlignment=HorizontalAlignment.Left};create.SetResourceReference(StyleProperty,"PrimaryButton");create.Click+=async(_,_)=>await Run(async()=>{await api.Send<JsonElement>(HttpMethod.Post,"api/office/rooms",new OfficeRoomRequest(name.Text,location.Text));setup=await api.Get<JsonElement>("api/office/setup");await Rooms();});add.Children.Add(create);
+        var addCard=AdminUi.Card(add);addCard.Margin=new Thickness(0,0,0,16);body.Children.Add(addCard);
+        var rooms=setup.GetProperty("rooms").EnumerateArray().ToArray();
+        body.Children.Add(AdminUi.Group("등록된 특별실 "+rooms.Length+"곳"));
+        foreach(var row in rooms)
+        {
+            var form=new StackPanel();Pair(form,"이름",row.GetProperty("name").GetString()!,"위치",row.GetProperty("location").GetString()!,out var roomName,out var roomLocation);roomName.MaxLength=80;roomLocation.MaxLength=100;
+            var footer=new DockPanel();var save=new Button{Content="저장"};DockPanel.SetDock(save,Dock.Right);footer.Children.Add(save);
+            var active=new CheckBox{Content="새 예약 받기 · 꺼도 지난 예약 기록은 남습니다",IsChecked=row.GetProperty("active").GetBoolean(),VerticalAlignment=VerticalAlignment.Center};footer.Children.Add(active);form.Children.Add(footer);
+            save.Click+=async(_,_)=>await Run(async()=>{await api.Send<JsonElement>(HttpMethod.Post,"api/office/rooms/"+row.GetProperty("id").GetString(),new OfficeRoomRequest(roomName.Text,roomLocation.Text,active.IsChecked==true,row.GetProperty("revision").GetInt32()));setup=await api.Get<JsonElement>("api/office/setup");await Rooms();});
+            var card=AdminUi.Card(form);card.Margin=new Thickness(0,0,0,12);body.Children.Add(card);
+        }
+        if(rooms.Length==0){var none=AdminUi.Label("아직 등록한 특별실이 없습니다.","Muted",13);body.Children.Add(AdminUi.Card(none));}
         return Task.CompletedTask;
     }
 }

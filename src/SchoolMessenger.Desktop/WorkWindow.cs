@@ -16,7 +16,7 @@ public sealed class WorkWindow : Window
     readonly MainWindow main;
     readonly Api api;
     readonly ListBox list = new();
-    readonly Button todosTab,submissionsTab,directAdd;
+    readonly Button todosTab,submissionsTab,directAdd,more;
     readonly StackPanel detail = new() { Margin = new Thickness(24) };
     readonly TextBlock feedback = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(16, 8, 16, 10) };
     readonly Dictionary<string, SubmissionPacket> pending = new();
@@ -29,7 +29,7 @@ public sealed class WorkWindow : Window
     static DateOnly KoreanToday=>DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(9)).DateTime);
     string? requestedId;
     public WorkWindow(MainWindow main, string? requestId = null)
-    {
+    { StatusTone.Watch(feedback);
         this.main = main; api = main.Api!; Owner = main; Resources = main.Resources;
         Title = "교무톡 · 할 일과 파일 제출"; Width = 860; Height = 650; MinWidth = 650; MinHeight = 500;
         Style = (Style)FindResource("SchoolWindow"); WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -42,7 +42,7 @@ public sealed class WorkWindow : Window
         submissionsTab=Action("파일 제출 · 수합", async () => { view = "submission-requests"; offset = 0; detail.Children.Clear(); await Reload(); });navigation.Children.Add(submissionsTab);
         navigation.Children.Add(Action("새로고침", Reload));
         directAdd=Action("할 일 직접 추가", async () => { view="todos";offset=0;await Reload();Todo(null); });navigation.Children.Add(directAdd);
-        navigation.Children.Add(Action("다음 목록", async () => { offset += 100; detail.Children.Clear(); await Reload(); }));
+        more=Action("다음 100개 보기", async () => { offset += 100; detail.Children.Clear(); await Reload(); });more.Visibility=Visibility.Collapsed;navigation.Children.Add(more);
         heading.Children.Add(navigation); DockPanel.SetDock(heading, Dock.Top); layout.Children.Add(heading);
         DockPanel.SetDock(feedback, Dock.Bottom); layout.Children.Add(feedback);
         var grid = new Grid(); grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280) }); grid.ColumnDefinitions.Add(new ColumnDefinition());
@@ -82,7 +82,7 @@ public sealed class WorkWindow : Window
         var previous = (list.SelectedItem as WorkRow)?.Value.GetProperty("id").GetString();
         var rows = await api.Get<JsonElement[]>($"api/{view}?offset={offset}");
         if (currentView != view) return;
-        feedback.Text="";
+        feedback.Text="";more.Visibility=rows.Length==100?Visibility.Visible:Visibility.Collapsed;
         rendering = true;
         try { displayedDay=KoreanToday;list.ItemsSource = rows.Select(v => new WorkRow(v, v.GetProperty("title").GetString()!.ReplaceLineEndings(" "), currentView == "todos" ? Status(v.GetProperty("status").GetString()!) + " · " + Deadline(String(v,"dueDate"),String(v,"status"),displayedDay) : v.GetProperty("ownerName").GetString() + " · " + v.GetProperty("submittedCount").GetInt32() + "/" + v.GetProperty("targetCount").GetInt32() + "명 제출")).ToArray(); list.SelectedItem = list.Items.Cast<WorkRow>().FirstOrDefault(r => r.Value.GetProperty("id").GetString() == previous); }
         finally { rendering = false; }
@@ -137,6 +137,8 @@ public sealed class WorkWindow : Window
         if (mine)
         {
             var actions=new WrapPanel();actions.Children.Add(Action("파일 일괄 다운로드 (ZIP)", async () => { var dialog = new Microsoft.Win32.SaveFileDialog { FileName = "제출파일.zip", Filter = "ZIP 파일|*.zip" }; if (dialog.ShowDialog(this) == true) await api.DownloadPath($"api/submission-requests/{id}/zip", dialog.FileName); },true));
+            var waiting=targets.Where(t=>!t.GetProperty("exempt").GetBoolean()&&t.GetProperty("submittedAt").ValueKind==JsonValueKind.Null).Select(t=>String(t,"id")).ToArray();
+            if (!closed && waiting.Length>0) actions.Children.Add(Action($"미제출자 {waiting.Length}명에게 알림", async () => { var title=String(request,"title");var due=DateTimeOffset.FromUnixTimeMilliseconds(request.GetProperty("deadline").GetInt64()).ToOffset(TimeSpan.FromHours(9)).ToString("M월 d일 HH:mm"); await main.WriteMessage(title: "제출 안내: "+title, recipients: waiting, body: $"‘{title}’ 제출 마감은 {due}입니다. 아직 제출하지 않으셨다면 교무톡의 ‘할 일과 파일 제출’에서 제출해 주세요."); }));
             if (!closed) actions.Children.Add(Action("요청 종료", async () => { if (System.Windows.MessageBox.Show(this, "새 제출과 자동 알림을 종료할까요?", "제출 요청 종료", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return; await api.Send<JsonElement>(HttpMethod.Post, $"api/submission-requests/{id}/close"); await Submission(id); }));detail.Children.Add(actions);
         }
         var targetGrid=new WrapPanel{ItemWidth=126,HorizontalAlignment=HorizontalAlignment.Stretch,Tag="submission-targets"};targetsPanel=targetGrid;
@@ -149,6 +151,7 @@ public sealed class WorkWindow : Window
             var targetDetails=new StackPanel();var header=new Grid{ColumnDefinitions={new(){Width=new GridLength(12)},new(),new(){Width=GridLength.Auto}}};
             var indicator=new System.Windows.Shapes.Ellipse{Width=6,Height=6,HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Center};indicator.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,exempt?"Muted":submitted?"Blue":"Line");header.Children.Add(indicator);
             var label=Text(name,12);label.SetResourceReference(TextBlock.ForegroundProperty,"Ink");label.FontWeight=FontWeights.SemiBold;label.TextWrapping=TextWrapping.NoWrap;label.TextTrimming=TextTrimming.CharacterEllipsis;label.Margin=new Thickness(0);label.VerticalAlignment=VerticalAlignment.Center;Grid.SetColumn(label,1);header.Children.Add(label);targetDetails.Children.Add(header);
+            if(String(target,"department") is {Length:>0} department){var unit=Text(department,10);unit.Margin=new Thickness(12,2,0,0);unit.TextTrimming=TextTrimming.CharacterEllipsis;unit.TextWrapping=TextWrapping.NoWrap;targetDetails.Children.Add(unit);}
             foreach (var file in target.GetProperty("files").EnumerateArray())
             {
                 var attachment = file.Deserialize<Attachment>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!;

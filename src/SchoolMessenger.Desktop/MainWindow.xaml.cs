@@ -32,7 +32,7 @@ public partial class MainWindow : Window
     ServerManagementWindow? administratorWindow;
     public MainWindow()
     {
-        InitializeComponent();
+        InitializeComponent(); StatusTone.Watch(StatusLabel);
         CertificatePins.UseFolder(LocalDirectory);
         InitializeActivity();
         InitializeNavigation();
@@ -51,9 +51,11 @@ public partial class MainWindow : Window
             if (File.Exists(file) && JsonSerializer.Deserialize<Preferences>(File.ReadAllText(file)) is { } preferences)
             { ServerAddress.Text = connectedAddress = preferences.ServerAddress; UsernameBox.Text = preferences.Username; Quiet.IsChecked = preferences.Quiet; DoNotDisturb.IsChecked = preferences.DoNotDisturb; RememberLogin.IsChecked = preferences.AutoLogin; Favorites = preferences.Favorites.ToHashSet(); Appearance.Apply(preferences.ThemeId, preferences.Glass); SetAutomaticAway(preferences.IdleMinutes); }
         }
-        catch (Exception error) when (error is IOException or JsonException) { LoginError.Text = "설정을 읽지 못했습니다. 서버 주소를 확인하세요."; }
+        catch (Exception error) when (error is IOException or JsonException) { LoginMessage("설정을 읽지 못했습니다. 서버 주소를 확인하세요."); }
         loginOptionsReady = true;
-        tray = new System.Windows.Forms.NotifyIcon { Icon = Branding.TrayIcon, Text = "교무톡 · 온라인 교무실", Visible = true };
+        // First run: look for the school server on the LAN so the teacher only picks it and confirms the code.
+        if (string.IsNullOrWhiteSpace(ServerAddress.Text) && !Environment.GetCommandLineArgs().Any(x => x.StartsWith("--", StringComparison.Ordinal))) Loaded += async (_, _) => await FindSchoolServer();
+        tray = new System.Windows.Forms.NotifyIcon { Icon = Branding.TrayIcon, Text = "교무톡", Visible = true };
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("교무실 열기", null, (_, _) => Dispatcher.Invoke(ShowWindow));
         menu.Items.Add("종료", null, (_, _) => Dispatcher.Invoke(CloseApp)); tray.ContextMenuStrip = menu;
@@ -63,7 +65,7 @@ public partial class MainWindow : Window
             if (Workspace.Visibility != Visibility.Visible) { if (RememberLogin.IsChecked == true) await TryAutomaticLogin(); return; }
             if (Api is null || refreshing) return;
             await Api.RefreshSession();
-            if (Api.Session?.User is null) { await Disconnect(); LoginError.Text = "로그인 만료. 다시 로그인하세요."; return; }
+            if (Api.Session?.User is null) { await Disconnect(); LoginMessage("로그인 만료. 다시 로그인하세요."); return; }
             await Refresh();
             if (hub?.State == HubConnectionState.Disconnected) await ConnectNotifications();
         });
@@ -73,7 +75,7 @@ public partial class MainWindow : Window
             if(Environment.GetCommandLineArgs().Contains("--verify-admin")){await VerifyAdministratorUi();return;}
             if(Environment.GetCommandLineArgs().Contains("--verify-counseling")){await VerifyCounselingUi();return;}
             if (Environment.GetCommandLineArgs().Contains("--verify-ui")) { await VerifyUi(); return; }
-            if (startup.Enabled) { try { startup.SetEnabled(true); } catch (Exception error) { LoginError.Text = "자동 실행 설정을 갱신하지 못했습니다: " + error.Message; } }
+            if (startup.Enabled) { try { startup.SetEnabled(true); } catch (Exception error) { LoginMessage("자동 실행 설정을 갱신하지 못했습니다: " + error.Message); } }
             if (RememberLogin.IsChecked == true) { await TryAutomaticLogin(); if (savedLogin.Exists) timer.Start(); }
         };
     }
@@ -103,7 +105,7 @@ public partial class MainWindow : Window
     async void RegisterClick(object sender, RoutedEventArgs e)
     {
         try { await RequireServerAddress(); new RegistrationWindow(ServerAddress.Text) { Owner = this }.ShowDialog(); }
-        catch (Exception error) { LoginError.Text = error.Message; }
+        catch (Exception error) { LoginMessage(error.Message); }
     }
     void StartupChanged(object sender, RoutedEventArgs e)
     {
@@ -114,15 +116,15 @@ public partial class MainWindow : Window
         catch (Exception error)
         {
             AutoStartCheck.IsChecked = AutoStartMenu.IsChecked = !enabled;
-            LoginError.Text = StatusLabel.Text = "자동 실행 설정 실패: " + error.Message;
+            StatusLabel.Text = "자동 실행 설정 실패: " + error.Message; LoginMessage(StatusLabel.Text);
         }
         finally { startupReady = true; }
     }
     async void LoginClick(object sender, RoutedEventArgs e)
     {
         if (signingIn||findingServer) return; signingIn = true;
-        LoginButton.IsEnabled = false; LoginError.Text = "연결 중…";
-        try { await SignIn(); } catch (Exception error) { LoginError.Text = error.Message; }
+        LoginButton.IsEnabled = false; LoginMessage("연결 중…",false);
+        try { await SignIn(); } catch (Exception error) { LoginMessage(error.Message); }
         finally { LoginButton.IsEnabled = true; signingIn = false; }
     }
     async Task SignIn()
@@ -152,7 +154,7 @@ public partial class MainWindow : Window
         if(Api?.Session?.User?.ActivationRequired==true){savedLogin.Clear();new StaffActivationWindow(Api){Owner=this}.ShowDialog();throw new InvalidOperationException("계정 활성화 후 다시 로그인하세요.");}
         if(Api?.Session?.User?.PasswordChangeRequired==true){savedLogin.Clear();ShowPasswordChange(true);throw new InvalidOperationException("개인 비밀번호로 변경한 뒤 다시 로그인하세요.");}
         var user = Api!.Session!.User!; IdentityLabel.Text = user.Name + " 선생님"; IdentityDepartment.Text = string.Join(" · ",new[]{user.Department,user.Position}.Where(s=>s.Length>0)); archive=null;
-        schoolName=(await Api.Get<SchoolMessenger.Contracts.RegistrationPolicySet>("api/registration/policy")).Operator;Title=schoolName+" · 온라인 교무실";
+        schoolName=(await Api.Get<SchoolMessenger.Contracts.RegistrationPolicySet>("api/registration/policy")).Operator;Title=schoolName+" · 교무톡";
         AdminButton.Visibility = user.IsAdmin ? Visibility.Visible : Visibility.Collapsed;
         Workspace.Visibility = Visibility.Visible; LoginPanel.Visibility = Visibility.Collapsed;
         knownTimetables.Clear();
@@ -166,20 +168,20 @@ public partial class MainWindow : Window
     async Task TryAutomaticLogin()
     {
         if (signingIn || !savedLogin.Exists || RememberLogin.IsChecked != true) return;
-        signingIn = true; LoginButton.IsEnabled = false; LoginError.Text = "자동 로그인 중…";
+        signingIn = true; LoginButton.IsEnabled = false; LoginMessage("자동 로그인 중…",false);
         try
         {
             await RequireServerAddress();
             Api?.Dispose(); Api = new Api(ServerAddress.Text);
-            if (!savedLogin.Restore(Api, UsernameBox.Text.Trim())) { LoginError.Text = "자동 로그인 기간이 끝났습니다. 다시 로그인하세요."; return; }
+            if (!savedLogin.Restore(Api, UsernameBox.Text.Trim())) { LoginMessage("자동 로그인 기간이 끝났습니다. 다시 로그인하세요."); return; }
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             await Api.RefreshSession(timeout.Token);
-            if (Api.Session?.User is null) { savedLogin.Clear(); timer.Stop(); LoginError.Text = "계정이 변경되었거나 자동 로그인이 만료되었습니다. 다시 로그인하세요."; return; }
-            await EnterWorkspace(); LoginError.Text = "";
+            if (Api.Session?.User is null) { savedLogin.Clear(); timer.Stop(); LoginMessage("계정이 변경되었거나 자동 로그인이 만료되었습니다. 다시 로그인하세요."); return; }
+            await EnterWorkspace(); LoginMessage("",false);
         }
         catch (Exception error) when (error is System.Security.Cryptography.CryptographicException or JsonException)
-        { savedLogin.Clear(); timer.Stop(); LoginError.Text = "저장된 자동 로그인 정보를 읽지 못했습니다. 다시 로그인하세요."; }
-        catch (Exception error) { LoginError.Text = "학교 서버 연결을 기다리는 중입니다. 30초 후 다시 시도합니다. " + error.Message; }
+        { savedLogin.Clear(); timer.Stop(); LoginMessage("저장된 자동 로그인 정보를 읽지 못했습니다. 다시 로그인하세요."); }
+        catch (Exception error) { LoginMessage("학교 서버 연결을 기다리는 중입니다. 30초 후 다시 시도합니다. " + error.Message); }
         finally { LoginButton.IsEnabled = true; signingIn = false; }
     }
     public MessageArchive Archive=>archive??=new MessageArchive(LocalDirectory,Api!);
@@ -302,19 +304,19 @@ public partial class MainWindow : Window
         var menu = new ContextMenu();
         menu.Items.Add(new MenuItem { Header = person.Presence, IsEnabled = false });
         menu.Items.Add(new Separator());
-        void Add(string text, RoutedEventHandler action) { var key = text.StartsWith("메시지 보내기") ? "MailIcon" : text.StartsWith("파일") ? "FileIcon" : text.StartsWith("메시지 관리") ? "HistoryIcon" : text.StartsWith("사용자") ? "UserIcon" : "StarIcon"; var icon = new System.Windows.Shapes.Path { Data = (Geometry)FindResource(key), StrokeThickness = 1.5, Stretch = Stretch.Uniform, Width = 15, Height = 15 }; icon.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "Blue"); var item = new MenuItem { Header = text, Icon = icon }; item.Click += action; menu.Items.Add(item); }
-        Add("메시지 보내기(_M)", async (_, _) => await WriteMessage(person.Id));
-        Add("파일 보내기(_F)", async (_, _) => await WriteMessage(person.Id, filesOnly: true));
-        Add("채팅하기(_C)", (_, _) => OpenChat([person.Id]));
-        Add("설문 보내기(_V)", (_, _) => OpenSurvey([person.Id]));
+        void Add(string text, RoutedEventHandler action) { var key = text.StartsWith("메시지 보내기") ? "MailIcon" : text.StartsWith("파일") ? "FileIcon" : text.StartsWith("채팅") ? "ChatIcon" : text.StartsWith("설문") ? "SurveyIcon" : text.StartsWith("원격") ? "RemoteIcon" : text.StartsWith("주고받은") ? "HistoryIcon" : text.StartsWith("사용자") ? "UserIcon" : "StarIcon"; var icon = new System.Windows.Shapes.Path { Data = (Geometry)FindResource(key), StrokeThickness = 1.5, Stretch = Stretch.Uniform, Width = 15, Height = 15 }; icon.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "Blue"); var item = new MenuItem { Header = text, Icon = icon }; item.Click += action; menu.Items.Add(item); }
+        Add("메시지 보내기", async (_, _) => await WriteMessage(person.Id));
+        Add("파일 보내기", async (_, _) => await WriteMessage(person.Id, filesOnly: true));
+        Add("채팅하기", (_, _) => OpenChat([person.Id]));
+        Add("설문 보내기", (_, _) => OpenSurvey([person.Id]));
         if (person.Online && person.Id != Api?.Session?.User?.Id)
         {
             Add("원격 지원하기", async (_, _) => await Run(() => RequestRemote(person.Id, false)));
             Add("원격 지원받기", async (_, _) => await Run(() => RequestRemote(person.Id, true)));
         }
         menu.Items.Add(new Separator());
-        Add("메시지 관리함(_H)", (_, _) => OpenMailbox("conversation", person));
-        Add("사용자 정보보기(_I)", (_, _) => System.Windows.MessageBox.Show(this, $"이름: {person.Name}\n부서: {person.Department}\n직책: {person.Position}\n상태: {person.Presence}", "사용자 정보", MessageBoxButton.OK, MessageBoxImage.Information));
+        Add("주고받은 메시지", (_, _) => OpenMailbox("conversation", person));
+        Add("사용자 정보", (_, _) => System.Windows.MessageBox.Show(this, $"이름: {person.Name}\n부서: {person.Department}\n직책: {person.Position}\n상태: {person.Presence}", "사용자 정보", MessageBoxButton.OK, MessageBoxImage.Information));
         menu.Items.Add(new Separator());
         Add(Favorites.Contains(person.Id) ? "즐겨찾기 해제" : "즐겨찾기 추가", (_, _) => { if (!Favorites.Add(person.Id)) Favorites.Remove(person.Id); SavePreferences(); RenderTree(); });
         return menu;
@@ -331,16 +333,17 @@ public partial class MainWindow : Window
     void ToggleFavorites(object sender, RoutedEventArgs e) { favoritesOnly = !favoritesOnly; UpdateNavigation(); }
     async void Compose(object sender, RoutedEventArgs e) => await WriteMessage();
     async void SendFilesClick(object sender, RoutedEventArgs e) => await WriteMessage(filesOnly: true);
-    public async Task WriteMessage(string? recipient = null, string? title = null, bool filesOnly = false)
+    public async Task WriteMessage(string? recipient = null, string? title = null, bool filesOnly = false, string? forwardBody = null, string[]? recipients = null, string? body = null)
     {
         await Run(async () =>
         {
             if (Api is null) return;
-            var selected = recipient is null ? selectedPeople.ToArray() : new[] { recipient };
-            if (selected.Length == 0 && (OrganizationTree.SelectedItem as TreeViewItem)?.Tag is Person person) selected = [person.Id];
+            var selected = recipients ?? (forwardBody is not null ? [] : recipient is null ? selectedPeople.ToArray() : new[] { recipient });
+            if (selected.Length == 0 && forwardBody is null && (OrganizationTree.SelectedItem as TreeViewItem)?.Tag is Person person) selected = [person.Id];
             var contacts = await Api.Get<Person[]>("api/users");
             var dialog = new ComposeWindow(this, contacts, recipient, title ?? (filesOnly ? "파일 전달" : null), selected);
             if (filesOnly) { dialog.BodyBox.Text = "첨부파일을 전달합니다."; dialog.Loaded += (_, _) => dialog.ChooseFiles(); }
+            if ((forwardBody ?? body) is { } text) dialog.BodyBox.Text = text;
             dialog.ShowDialog(); SavePreferences(); await Refresh();
         });
     }
@@ -390,10 +393,10 @@ public partial class MainWindow : Window
     async void Logout(object sender, RoutedEventArgs e)
         => await SignOut();
     async Task SignOut()
-    { try { if (Api is not null) await Api.Send<JsonElement>(HttpMethod.Post, "api/logout"); } catch (Exception error) { LoginError.Text = error.Message; } finally { RememberLogin.IsChecked = false; await Disconnect(); } }
+    { try { if (Api is not null) await Api.Send<JsonElement>(HttpMethod.Post, "api/logout"); } catch (Exception error) { LoginMessage(error.Message); } finally { RememberLogin.IsChecked = false; await Disconnect(); } }
     async Task Disconnect()
     {
-        schoolName="학교";Title="교무톡 · 온라인 교무실";
+        schoolName="학교";Title="교무톡";
         savedLogin.Clear();
         ElectivesButton.Visibility=Visibility.Collapsed;
         if (remote is not null) { await remote.DisposeAsync(); remote = null; }
@@ -401,7 +404,7 @@ public partial class MainWindow : Window
         if (hub is not null) { await hub.DisposeAsync(); hub = null; } Api?.Dispose(); Api = null;
         OrganizationTree.Items.Clear(); people = []; selectedPeople.Clear(); Workspace.Visibility = Visibility.Collapsed; LoginPanel.Visibility = Visibility.Visible;
     }
-    void Notify() { if (DoNotDisturb.IsChecked) return; notificationTarget = "message"; tray.ShowBalloonTip(5000, "온라인 교무실", "새 업무 메시지가 도착했습니다.", System.Windows.Forms.ToolTipIcon.Info); if (!Quiet.IsChecked) System.Media.SystemSounds.Asterisk.Play(); }
+    void Notify() { if (DoNotDisturb.IsChecked) return; notificationTarget = "message"; tray.ShowBalloonTip(5000, "교무톡", "새 업무 메시지가 도착했습니다.", System.Windows.Forms.ToolTipIcon.Info); if (!Quiet.IsChecked) System.Media.SystemSounds.Asterisk.Play(); }
     void ShowWindow() { Show(); WindowState = WindowState.Normal; Activate(); }
     void WindowClosing(object? sender, CancelEventArgs e)
     { if (!exiting) { e.Cancel = true; Hide(); } else { timer.Stop(); tray.Dispose(); SavePreferences(); } }

@@ -30,9 +30,9 @@ public sealed partial class OfficeWindow
         var add=new Button{Content=AdminUi.IconLabel("AdminPlusIcon","교직원 등록"),VerticalAlignment=VerticalAlignment.Bottom,ToolTip="교직원 사전 등록 · 가입 승인"};add.SetResourceReference(StyleProperty,"PrimaryButton");AutomationProperties.SetName(add,"교직원 등록 · 승인");add.Click+=async(_,_)=>await Run(Administration);DockPanel.SetDock(add,Dock.Right);heading.Children.Add(add);
         var introduction=new StackPanel();introduction.Children.Add(AdminUi.Heading("교직원·권한",22));var description=AdminUi.Label("교직원 계정과 학교 업무 권한을 한 곳에서 관리합니다.","Muted",13);description.Margin=new Thickness(0,4,0,0);introduction.Children.Add(description);heading.Children.Add(introduction);body.Children.Add(heading);
         // Toolbar: search and status filters; the sign-up filter opens the approval page.
-        var toolbar=new DockPanel{Margin=new Thickness(0,0,0,16)};var count=AdminUi.Label("","Faint");count.VerticalAlignment=VerticalAlignment.Center;DockPanel.SetDock(count,Dock.Right);toolbar.Children.Add(count);
+        var toolbar=new DockPanel{Margin=new Thickness(0,0,0,16)};var count=AdminUi.Label("","Faint");count.Margin=new Thickness(2,8,0,0);DockPanel.SetDock(count,Dock.Bottom);toolbar.Children.Add(count);
         var tools=new WrapPanel();toolbar.Children.Add(tools);body.Children.Add(toolbar);
-        var searchBox=new Grid{Width=300,Margin=new Thickness(0,0,8,0)};var search=new TextBox{Padding=new Thickness(32,6,8,6),ToolTip="이름 · 부서 · 아이디 · 좌석 IP 검색"};AutomationProperties.SetName(search,"교직원 검색");searchBox.Children.Add(search);
+        var searchBox=new Grid{Width=240,Margin=new Thickness(0,0,8,6)};var search=new TextBox{Padding=new Thickness(32,6,8,6),ToolTip="이름 · 부서 · 아이디 · 좌석 IP 검색"};AutomationProperties.SetName(search,"교직원 검색");searchBox.Children.Add(search);
         var glass=AdminUi.Icon("AdminSearchIcon",15,"Faint");glass.HorizontalAlignment=HorizontalAlignment.Left;glass.Margin=new Thickness(10,0,0,0);glass.IsHitTestVisible=false;searchBox.Children.Add(glass);
         var hint=AdminUi.Label("이름 · 부서 · 좌석 IP 검색","Faint",12);hint.IsHitTestVisible=false;hint.Margin=new Thickness(33,0,0,0);hint.VerticalAlignment=VerticalAlignment.Center;searchBox.Children.Add(hint);tools.Children.Add(searchBox);
         var rows=new StackPanel();var panel=new Border();var chips=new List<Button>();
@@ -49,7 +49,7 @@ public sealed partial class OfficeWindow
         // Table and detail panel; the panel drops below the table on narrow windows.
         var content=new Grid();content.ColumnDefinitions.Add(new ColumnDefinition());content.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(16)});content.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(340)});content.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});content.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});body.Children.Add(content);
         var table=new StackPanel();
-        Grid Columns(){var grid=new Grid();foreach(var width in new[]{new GridLength(1.3,GridUnitType.Star),new GridLength(1,GridUnitType.Star),new GridLength(1.4,GridUnitType.Star),new GridLength(88)})grid.ColumnDefinitions.Add(new ColumnDefinition{Width=width});return grid;}
+        Grid Columns(){var grid=new Grid();foreach(var width in new[]{new GridLength(1.3,GridUnitType.Star),new GridLength(1,GridUnitType.Star),new GridLength(1.4,GridUnitType.Star),new GridLength(88)})grid.ColumnDefinitions.Add(new ColumnDefinition{Width=width});grid.ColumnDefinitions[0].MinWidth=140;return grid;}
         var labels=Columns();var titles=new[]{"이름","부서 · 직책","업무 권한","상태"};for(var i=0;i<titles.Length;i++){var text=AdminUi.Label(titles[i],"Muted",11,true);Grid.SetColumn(text,i);labels.Children.Add(text);}
         var header=new Border{Child=labels,Padding=new Thickness(16,11,16,11),BorderThickness=new Thickness(0,0,0,1)};header.SetResourceReference(Border.BackgroundProperty,"Subtle");header.SetResourceReference(Border.BorderBrushProperty,"Line");table.Children.Add(header);table.Children.Add(rows);
         var tableCard=AdminUi.Card(table,0);tableCard.ClipToBounds=true;tableCard.VerticalAlignment=VerticalAlignment.Top;content.Children.Add(tableCard);
@@ -169,7 +169,7 @@ public sealed partial class OfficeWindow
         var recovery=new StackPanel();body.Children.Add(recovery);await RecoveryReview.Add(recovery,api,InteractionOwner,Administration);
         var content=new Grid();content.ColumnDefinitions.Add(new ColumnDefinition());content.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(16)});content.ColumnDefinitions.Add(new ColumnDefinition());content.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});content.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});body.Children.Add(content);
         // New account form.
-        var form=new StackPanel();form.Children.Add(AdminUi.Heading("새 교직원 등록"));var note=AdminUi.Label("최초 비밀번호는 12345678입니다. 첫 로그인 때 활성화 번호를 넣고 개인 비밀번호로 바꿉니다.","Muted",12);note.Margin=new Thickness(0,4,0,16);form.Children.Add(note);
+        var form=new StackPanel();form.Children.Add(AdminUi.Heading("새 교직원 등록"));var note=AdminUi.Label("첫 로그인은 공통 초기 비밀번호(12345678)와 등록 후 받는 활성화 번호를 함께 넣어야 합니다. 활성화 번호는 본인에게만 전달하세요. 로그인하면 바로 개인 비밀번호로 바꿉니다.","Muted",12);note.Margin=new Thickness(0,4,0,16);form.Children.Add(note);
         var fields=new Grid();fields.ColumnDefinitions.Add(new ColumnDefinition());fields.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(12)});fields.ColumnDefinitions.Add(new ColumnDefinition());form.Children.Add(fields);
         TextBox Input(string label,int index,int maxLength,string? hint=null)
         {
@@ -178,7 +178,7 @@ public sealed partial class OfficeWindow
             var box=new TextBox{MaxLength=maxLength,ToolTip=hint};AutomationProperties.SetName(box,label);cell.Children.Add(box);Grid.SetRow(cell,index/2);Grid.SetColumn(cell,index%2==0?0:2);fields.Children.Add(cell);return box;
         }
         var name=Input("이름",0,40);var login=Input("로그인 아이디",1,40,"기본은 본인 이름입니다. 동명이인은 이름.2처럼 구분하세요.");name.TextChanged+=(_,_)=>login.Text=name.Text.Trim();
-        var department=Input("부서",2,60);var position=Input("직책",3,50,"예: 교무부장, 담임");var ip=Input("좌석 IP · 선택",4,15,"교사 PC 자동 로그인용 IPv4입니다. 아이디가 아니며 휴대폰 로그인에는 쓰지 않습니다.");
+        var department=Input("부서",2,60);var position=Input("직책",3,50,"예: 교무부장, 담임");var ip=Input("좌석 IP · 교사 자리 PC 주소 · 선택",4,15,"교사 PC 자동 로그인용 IPv4입니다. 아이디가 아니며 휴대폰 로그인에는 쓰지 않습니다.");
         var register=new Button{Content="등록하고 활성화 번호 받기",HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,4,0,0)};register.SetResourceReference(StyleProperty,"PrimaryButton");form.Children.Add(register);
         register.Click+=async(_,_)=>await Run(async()=>
         {

@@ -1,5 +1,5 @@
 <Window x:Class="SchoolMessenger.Desktop.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
- Title="교무톡 · 온라인 교무실" Width="450" Height="820" MinWidth="380" MinHeight="580" Style="{StaticResource SchoolWindow}" Closing="WindowClosing">
+ Title="교무톡" Width="450" Height="820" MinWidth="380" MinHeight="580" Style="{StaticResource SchoolWindow}" Closing="WindowClosing">
  <Grid Background="Transparent">
   <Border Background="{DynamicResource Surface}" BorderBrush="{DynamicResource GlassLine}" BorderThickness="1" CornerRadius="18" Margin="8"><DockPanel x:Name="Workspace" Visibility="Collapsed">
    <Border DockPanel.Dock="Top" Background="{DynamicResource Glass}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" CornerRadius="17,17,0,0" Padding="14,12">
@@ -27,11 +27,11 @@
      <Button Style="{StaticResource RailButton}" Click="OpenWorkClick"><StackPanel><Path Data="{StaticResource FileIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="할 일·제출" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
      <Button Style="{StaticResource RailButton}" Click="OpenSurveyClick"><StackPanel><Path Data="{StaticResource SurveyIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="설문" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
      <Border x:Name="SchoolSection" Background="{DynamicResource SchoolSectionTint}" CornerRadius="5" Padding="3,3" Margin="6,4,6,3"><TextBlock Text="학교 업무" Style="{StaticResource RailSection}"/></Border>
-     <Button Style="{StaticResource RailButton}" Click="OpenAnnouncementClick"><StackPanel><Path Data="{StaticResource MailIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="가정통신문" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
-     <Button Style="{StaticResource RailButton}" Click="OpenTimetableClick"><StackPanel><Path Data="{StaticResource HistoryIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="시간표" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
-     <Button x:Name="ElectivesButton" Style="{StaticResource RailButton}" Click="OpenElectivesClick" Visibility="Collapsed"><StackPanel><Path Data="{StaticResource SurveyIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="수강신청" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
-     <Button Style="{StaticResource RailButton}" Click="OpenOfficeClick"><StackPanel><Path Data="{StaticResource HistoryIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="일정·예약" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
-     <Button Style="{StaticResource RailButton}" Click="OpenCounselingClick"><StackPanel><Path Data="{StaticResource HistoryIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="상담 예약" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
+     <Button Style="{StaticResource RailButton}" Click="OpenAnnouncementClick"><StackPanel><Path Data="{StaticResource NoticeIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="가정통신문" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
+     <Button Style="{StaticResource RailButton}" Click="OpenTimetableClick"><StackPanel><Path Data="{StaticResource TimetableIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="시간표" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
+     <Button x:Name="ElectivesButton" Style="{StaticResource RailButton}" Click="OpenElectivesClick" Visibility="Collapsed"><StackPanel><Path Data="{StaticResource ElectiveIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="수강신청" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
+     <Button Style="{StaticResource RailButton}" Click="OpenOfficeClick"><StackPanel><Path Data="{StaticResource CalendarIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="일정·예약" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
+     <Button Style="{StaticResource RailButton}" Click="OpenCounselingClick"><StackPanel><Path Data="{StaticResource CounselIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="상담 예약" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
     </StackPanel>
    </DockPanel></Border>
    <DockPanel>
@@ -51,17 +51,17 @@
   </DockPanel></Border>
   <ScrollViewer x:Name="LoginPanel" Padding="24" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel VerticalAlignment="Center">
    <Image Width="48" Height="48" Source="{StaticResource ProductMark}" HorizontalAlignment="Left" Margin="0,0,0,16" AutomationProperties.Name="교무톡"/>
-   <TextBlock Text="온라인 교무실" FontSize="26" FontWeight="Bold"/><TextBlock Text="교직원 로그인" Foreground="{DynamicResource Muted}" Margin="0,9,0,22"/>
+   <TextBlock Text="교무톡" FontSize="26" FontWeight="Bold"/><TextBlock Text="교직원 로그인" Foreground="{DynamicResource Muted}" Margin="0,9,0,22"/>
    <TextBlock Text="학교 서버 주소" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,0,7"/><DockPanel><Button x:Name="FindServerButton" DockPanel.Dock="Right" Content="교내 자동검색" Click="FindNearbyServerClick" Margin="7,0,0,0" Padding="9,7"/><TextBox x:Name="ServerAddress" TextChanged="ConnectionAddressChanged" AutomationProperties.Name="학교 서버 주소"/></DockPanel>
-   <TextBlock Text="관리자 프로그램의 ‘교사 PC 접속 주소’(예: https://192.168.0.10:5443)를 넣거나 교내 자동검색을 누르세요. 처음 연결할 때 서버 PC에 표시된 연결 확인 코드와 비교합니다." FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"/>
-   <TextBlock Text="아이디 · 본인 이름 (동명이인은 학교에서 안내한 이름)" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,15,0,7"/><TextBox x:Name="UsernameBox"/>
+   <TextBlock Text="관리자가 알려준 주소를 넣거나 ‘교내 자동검색’을 누르세요." FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+   <TextBlock Text="아이디" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,15,0,7"/><TextBox x:Name="UsernameBox" AutomationProperties.Name="아이디"/>
+   <TextBlock Text="관리자가 등록한 계정은 보통 본인 이름, 직접 신청한 계정은 그때 정한 아이디입니다." FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"/>
    <TextBlock Text="비밀번호" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,15,0,7"/><PasswordBox x:Name="PasswordBox" KeyDown="PasswordKeyDown"/>
    <CheckBox x:Name="AutoStartCheck" Content="Windows 로그인 시 자동 실행" FontSize="11" Margin="0,17,0,0" Checked="StartupChanged" Unchecked="StartupChanged"/>
    <CheckBox x:Name="RememberLogin" Content="이 Windows 계정에서 자동 로그인" FontSize="11" Margin="0,9,0,0" Checked="RememberChanged" Unchecked="RememberChanged"/>
    <Button x:Name="LoginButton" Content="로그인" Style="{StaticResource PrimaryButton}" Click="LoginClick" Margin="0,19,0,12" Padding="10,11"/>
    <Button Content="처음 사용하시나요? 계정 신청" FontSize="11" BorderThickness="0" Foreground="{DynamicResource Blue}" Click="RegisterClick" Padding="7" Margin="0,0,0,9"/>
-   <Button Content="화면 색상 · 유리 효과" Click="OpenAppearance" FontSize="11" Padding="7" BorderThickness="0" Background="Transparent" Margin="0,0,0,8"/>
-   <TextBlock x:Name="LoginError" Foreground="#AD573C" TextWrapping="Wrap"/><TextBlock Text="학교마다 계정과 자료는 따로 관리됩니다." FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,10,0,0"/>
+   <TextBlock x:Name="LoginError" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/><TextBlock Text="학교마다 계정과 자료는 따로 관리됩니다." FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,10,0,0"/>
   </StackPanel></ScrollViewer>
  </Grid>
 </Window>

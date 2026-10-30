@@ -136,13 +136,24 @@ public sealed partial class LocalServerWindow
         administrationView.Children.Clear();var revision=viewRevision;
         var content=new StackPanel{MaxWidth=560,HorizontalAlignment=HorizontalAlignment.Left};
         var title=Text(RoleName(service)+" 관리자 로그인",22);title.FontWeight=FontWeights.Bold;content.Children.Add(title);
-        content.Children.Add(Note("이 관리자 프로그램에서 구성원과 학교 설정을 관리합니다. 서버별 관리자 계정으로 로그인하세요."));
-        content.Children.Add(Text("서버 주소"));var card=cards.First(c=>c.Service==service);var local=card.Host.Installed&&card.Activated;
-        var address=new TextBox{Text=local&&card.Mode.SelectedIndex==0?(service=="office"?"http://localhost:5080":"http://localhost:5081"):local&&Simple(card)?"https://localhost:"+SimpleOperation.Port(service):"",MinWidth=360,ToolTip="학교에서 안내한 해당 서버의 HTTPS 주소"};content.Children.Add(address);
-        content.Children.Add(Text("관리자 아이디"));var username=new TextBox{Text=local&&Simple(card)&&card.AdminUsername.Text.Trim().Length>0?card.AdminUsername.Text.Trim():"admin"};content.Children.Add(username);
-        content.Children.Add(Text("관리자 비밀번호"));var password=new PasswordBox{MinHeight=38};content.Children.Add(password);
+        var intro=Note("구성원과 학교 설정을 바꾸려면 이 서버의 관리자 계정으로 로그인하세요.");intro.Margin=new Thickness(0,0,0,18);content.Children.Add(intro);
+        StackPanel Field(string label,FrameworkElement input){var field=new StackPanel{Margin=new Thickness(0,0,0,14)};var caption=AdminUi.Label(label,"Muted",12,true);caption.Margin=new Thickness(0,0,0,6);field.Children.Add(caption);field.Children.Add(input);content.Children.Add(field);return field;}
+        var card=cards.First(c=>c.Service==service);var local=card.Host.Installed&&card.Activated;
+        var address=new TextBox{Text=local&&card.Mode.SelectedIndex==0?(service=="office"?"http://localhost:5080":"http://localhost:5081"):local&&Simple(card)?"https://localhost:"+SimpleOperation.Port(service):"",MinWidth=360,ToolTip="학교에서 안내한 해당 서버의 HTTPS 주소"};
+        var addressField=Field("서버 주소",address);
+        // The server on this PC needs no address typing; another server's address stays one click away.
+        if(local&&address.Text.Length>0)
+        {
+            addressField.Visibility=Visibility.Collapsed;
+            var here=new DockPanel{Margin=new Thickness(0,0,0,14)};var other=new Button{Content="다른 서버 주소 입력",FontSize=12};other.SetResourceReference(StyleProperty,"SubtleButton");DockPanel.SetDock(other,Dock.Right);here.Children.Add(other);
+            var where=AdminUi.Label("이 PC에서 실행 중인 "+RoleName(service)+" 서버","Ink",13,true);where.VerticalAlignment=VerticalAlignment.Center;here.Children.Add(where);content.Children.Add(here);
+            other.Click+=(_,_)=>{here.Visibility=Visibility.Collapsed;addressField.Visibility=Visibility.Visible;address.Focus();};
+        }
+        var username=new TextBox{Text=local&&Simple(card)&&card.AdminUsername.Text.Trim().Length>0?card.AdminUsername.Text.Trim():"admin"};Field("관리자 아이디",username);
+        var password=new PasswordBox{MinHeight=38};Field("관리자 비밀번호",password);
         var status=Note(message??"비밀번호와 로그인 정보는 파일에 저장하지 않습니다.");content.Children.Add(status);
-        var login=new Button{Content="관리자 로그인",Margin=new Thickness(0,12,0,0),HorizontalAlignment=HorizontalAlignment.Left,MinWidth=140};login.SetResourceReference(StyleProperty,"PrimaryButton");content.Children.Add(login);
+        var login=new Button{Content="관리자 로그인",Margin=new Thickness(0,16,0,12),HorizontalAlignment=HorizontalAlignment.Left,MinWidth=140,IsDefault=true};login.SetResourceReference(StyleProperty,"PrimaryButton");content.Children.Add(login);
+        password.Loaded+=(_,_)=>password.Focus();
         login.Click+=async(_,_)=>
         {
             login.IsEnabled=false;

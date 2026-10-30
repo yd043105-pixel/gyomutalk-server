@@ -19,7 +19,7 @@ public partial class ChatWindow : Window
     string DraftPath(string room) => Path.Combine(main.LocalDirectory, $"chat-{main.Api!.Session!.User!.Id}-{room}.json");
     public ChatWindow(MainWindow main, Person[] people, string[]? selected = null)
     {
-        this.main = main; this.people = people; Owner = main; InitializeComponent();
+        this.main = main; this.people = people; Owner = main; InitializeComponent(); StatusTone.Watch(Feedback); ChatEntry.Me = main.Api?.Session?.User?.Id;
         main.ChatChanged += Changed;
         Closed += (_, _) => main.ChatChanged -= Changed;
         Loaded += async (_, _) => await Run(async () => { if (selected is { Length: > 0 }) await CreateRoom(selected, ""); else await ReloadRooms(); });
@@ -45,7 +45,7 @@ public partial class ChatWindow : Window
     {
         if (RoomId is null || suppressSelection) return;
         var room = (ChatRoom)Rooms.SelectedItem; selectionVersion++; entries = []; files.Clear(); uploaded.Clear(); pending = null;
-        RoomTitle.Text = room.Display; MembersLabel.Text = room.Participants; BodyBox.Clear(); FileHint.Text = ""; Feedback.Text = "";
+        RoomTitle.Text = room.Display; MembersLabel.Text = room.Participants; BodyBox.Clear(); FileHint.Text = ""; ClearFilesButton.Visibility = Visibility.Collapsed; Feedback.Text = "";
         try
         {
             var path = DraftPath(room.Id);
@@ -77,9 +77,9 @@ public partial class ChatWindow : Window
         if (dialog.ShowDialog(this) != true) return;
         foreach (var path in dialog.FileNames) if (!files.Contains(path)) files.Add(path);
         if (files.Count > 10 || files.Any(p => new FileInfo(p).Length > 104_857_600) || files.Sum(p => new FileInfo(p).Length) > 209_715_200) { files.Clear(); Feedback.Text = "파일당 100MB, 합계 200MB, 최대 10개입니다."; }
-        FileHint.Text = string.Join(", ", files.Select(Path.GetFileName));
+        FileHint.Text = string.Join(", ", files.Select(Path.GetFileName)); ClearFilesButton.Visibility = files.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
-    void ClearFiles(object sender, RoutedEventArgs e) { files.Clear(); uploaded.Clear(); FileHint.Text = ""; }
+    void ClearFiles(object sender, RoutedEventArgs e) { files.Clear(); uploaded.Clear(); FileHint.Text = ""; ClearFilesButton.Visibility = Visibility.Collapsed; }
     void Freeze(bool frozen) { BodyBox.IsEnabled = AttachButton.IsEnabled = ClearFilesButton.IsEnabled = Rooms.IsEnabled = !frozen; }
     async void SendClick(object sender, RoutedEventArgs e) => await Run(SendMessage);
     public async Task SendMessage()
@@ -97,7 +97,7 @@ public partial class ChatWindow : Window
                 File.WriteAllText(DraftPath(room), JsonSerializer.Serialize(pending));
             }
             await main.Api.Send<JsonElement>(HttpMethod.Post, $"api/chats/{room}/messages", pending);
-            File.Delete(DraftPath(room)); pending = null; BodyBox.Clear(); files.Clear(); uploaded.Clear(); FileHint.Text = ""; Feedback.Text = "";
+            File.Delete(DraftPath(room)); pending = null; BodyBox.Clear(); files.Clear(); uploaded.Clear(); FileHint.Text = ""; ClearFilesButton.Visibility = Visibility.Collapsed; Feedback.Text = "";
             await LoadMessages(false);
         }
         catch { Feedback.Text = pending is null ? "첨부 업로드 실패. 다시 시도하세요." : "전송 결과 미확인. 보내기를 눌러 재시도하세요."; throw; }

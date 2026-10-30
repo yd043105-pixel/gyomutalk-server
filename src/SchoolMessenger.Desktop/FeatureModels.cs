@@ -10,6 +10,9 @@ public record ChatRoom(string Id, string Name, bool Direct, int Unread, Person[]
 public record ChatEntry(long Sequence, string Id, string SenderId, string SenderName, string Body, long CreatedAt, Attachment[] Attachments)
 {
     public string Heading => $"{SenderName} · {DateTimeOffset.FromUnixTimeMilliseconds(CreatedAt).ToLocalTime():MM.dd HH:mm}";
+    // The signed-in teacher; their own messages sit on the right like in other messengers.
+    public static string? Me { get; set; }
+    public bool Mine => SenderId == Me;
 }
 public record ChatPending(string Server, string RoomId, string ClientId, string Body, string[] AttachmentIds);
 public record SurveyQuestion(string Text, string Kind, bool Required, string[] Options);

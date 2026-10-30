@@ -12,7 +12,7 @@ public partial class MainWindow
     public event Action<string>? ChatChanged;
     public event Action<string>? SurveyChanged;
     void NotifyFeature(string text, string target)
-    { if (!DoNotDisturb.IsChecked) { notificationTarget = target; tray.ShowBalloonTip(4000, "온라인 교무실", text, System.Windows.Forms.ToolTipIcon.Info); if (!Quiet.IsChecked) System.Media.SystemSounds.Asterisk.Play(); } }
+    { if (!DoNotDisturb.IsChecked) { notificationTarget = target; tray.ShowBalloonTip(4000, "교무톡", text, System.Windows.Forms.ToolTipIcon.Info); if (!Quiet.IsChecked) System.Media.SystemSounds.Asterisk.Play(); } }
     void OpenNotification()
     { if (notificationTarget == "chat") OpenChat(); else if (notificationTarget == "survey") OpenSurvey(); else if(notificationTarget=="timetable"&&Api is not null)new TimetableWindow(this).Show();else OpenMailbox("unread"); }
     void OpenChatClick(object sender, RoutedEventArgs e) => OpenChat();

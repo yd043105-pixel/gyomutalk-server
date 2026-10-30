@@ -10,13 +10,14 @@
     <TextBlock x:Name="Feedback" Foreground="#AD573C" TextWrapping="Wrap" Margin="0,0,0,6"/>
     <TextBlock x:Name="FileHint" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" FontSize="11"/>
     <TextBox x:Name="BodyBox" AcceptsReturn="True" TextWrapping="Wrap" Height="80" MaxLength="20000" VerticalScrollBarVisibility="Auto" PreviewKeyDown="MessageKey"/>
-    <DockPanel Margin="0,8,0,0"><Button x:Name="SendButton" DockPanel.Dock="Right" Content="보내기" Click="SendClick" Style="{StaticResource PrimaryButton}"/><StackPanel Orientation="Horizontal"><Button x:Name="AttachButton" Content="파일 첨부" Click="Attach"/><Button x:Name="ClearFilesButton" Content="첨부 해제" Click="ClearFiles" Margin="6,0,0,0"/><TextBlock Text="Enter 전송 · Shift+Enter 줄바꿈" FontSize="10" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="10,0,0,0"/></StackPanel></DockPanel>
+    <DockPanel Margin="0,8,0,0"><Button x:Name="SendButton" DockPanel.Dock="Right" Content="보내기" Click="SendClick" Style="{StaticResource PrimaryButton}"/><StackPanel Orientation="Horizontal"><Button x:Name="AttachButton" Content="파일 첨부" Click="Attach"/><Button x:Name="ClearFilesButton" Content="첨부 해제" Click="ClearFiles" Margin="6,0,0,0" Visibility="Collapsed"/><TextBlock Text="Enter 전송 · Shift+Enter 줄바꿈" FontSize="10" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" Margin="10,0,0,0"/></StackPanel></DockPanel>
    </StackPanel>
    <ScrollViewer x:Name="MessagesScroll" VerticalScrollBarVisibility="Auto"><ItemsControl x:Name="MessagesList"><ItemsControl.ItemTemplate><DataTemplate>
-    <Border Background="{DynamicResource Soft}" CornerRadius="10" Padding="13" Margin="0,6,0,6"><StackPanel>
+    <Border x:Name="Bubble" Background="{DynamicResource Soft}" CornerRadius="10" Padding="13" Margin="0,6,60,6" HorizontalAlignment="Left" MinWidth="160"><StackPanel>
      <TextBlock Text="{Binding Heading}" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,0,0,7"/><TextBlock Text="{Binding Body}" TextWrapping="Wrap"/>
      <ItemsControl ItemsSource="{Binding Attachments}"><ItemsControl.ItemTemplate><DataTemplate><StackPanel Margin="0,9,0,0"><Button Content="{Binding Description}" Tag="{Binding}" Click="Download" IsEnabled="{Binding Available}" HorizontalAlignment="Left"/><TextBlock Text="{Binding Expiry}" FontSize="10" Foreground="{DynamicResource Muted}" Margin="0,4,0,0"/></StackPanel></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
     </StackPanel></Border>
+   <DataTemplate.Triggers><DataTrigger Binding="{Binding Mine}" Value="True"><Setter TargetName="Bubble" Property="HorizontalAlignment" Value="Right"/><Setter TargetName="Bubble" Property="Margin" Value="60,6,0,6"/><Setter TargetName="Bubble" Property="Background" Value="{DynamicResource Pale}"/></DataTrigger></DataTemplate.Triggers>
    </DataTemplate></ItemsControl.ItemTemplate></ItemsControl></ScrollViewer>
   </DockPanel>
  </Grid>

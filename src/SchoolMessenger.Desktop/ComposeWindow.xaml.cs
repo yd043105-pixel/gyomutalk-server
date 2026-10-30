@@ -24,7 +24,7 @@ public partial class ComposeWindow : Window
     {
         this.main = main; this.people = people;
         Owner = main; Resources = main.Resources;
-        InitializeComponent();
+        InitializeComponent(); StatusTone.Watch(Feedback);
         InitializeEditor();
         SubmissionDate.SelectedDate = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(9)).Date.AddDays(7);
         ScheduleDate.SelectedDate = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(9)).Date.AddDays(1);

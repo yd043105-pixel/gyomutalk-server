@@ -18,7 +18,7 @@ public partial class SurveyWindow : Window
     string? desiredSurveyId;
     public SurveyWindow(MainWindow main, Person[] people, string[]? targets = null)
     {
-        this.main = main; this.people = people; Owner = main; InitializeComponent();
+        this.main = main; this.people = people; Owner = main; InitializeComponent(); StatusTone.Watch(Feedback);
         DeadlineDate.SelectedDate = DateTime.Today.AddDays(7);
         SendAll.Visibility = main.Api!.Session!.User is { IsAdmin: true } or { CanBroadcast: true } ? Visibility.Visible : Visibility.Collapsed;
         AddQuestion(); if (targets is not null) { targetIds = targets; TargetLabel.Text = string.Join(", ", people.Where(p => targets.Contains(p.Id)).Select(p => p.Label)); Tabs.SelectedIndex = 2; }
@@ -120,11 +120,22 @@ public partial class SurveyWindow : Window
         var id = current.Id; var result = await main.Api!.Get<SurveyResults>($"api/surveys/{id}/results"); if (current?.Id != id) return;
         ResultsPanel.Children.Clear();
         void Line(string text, bool bold = false) => ResultsPanel.Children.Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal, Margin = new Thickness(0, 6, 0, 6) });
+        // A choice reads as a share of the answers: label and count above a bar of that width.
+        void Bar(string option, int count, int total)
+        {
+            var row = new StackPanel { Margin = new Thickness(0, 4, 0, 6) };
+            var label = new DockPanel(); var number = new TextBlock { Text = total == 0 ? "0명" : $"{count}명 · {Math.Round(100.0 * count / total)}%", FontSize = 11 }; number.SetResourceReference(TextBlock.ForegroundProperty, "Muted");
+            DockPanel.SetDock(number, Dock.Right); label.Children.Add(number); label.Children.Add(new TextBlock { Text = option, TextTrimming = TextTrimming.CharacterEllipsis }); row.Children.Add(label);
+            var track = new Grid { Height = 8, Margin = new Thickness(0, 4, 0, 0) }; track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(count, GridUnitType.Star) }); track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(0, total - count), GridUnitType.Star) });
+            var back = new Border { CornerRadius = new CornerRadius(4) }; back.SetResourceReference(Border.BackgroundProperty, "Pale"); Grid.SetColumnSpan(back, 2); track.Children.Add(back);
+            if (count > 0) { var fill = new Border { CornerRadius = new CornerRadius(4) }; fill.SetResourceReference(Border.BackgroundProperty, "Blue"); track.Children.Add(fill); }
+            row.Children.Add(track); ResultsPanel.Children.Add(row);
+        }
         Line($"응답 {result.Responses.Length}명", true);
         for (var i = 0; i < result.Questions.Length; i++)
         {
             var q = result.Questions[i]; Line($"{i + 1}. {q.Text}", true);
-            if (q.Kind == "choice") foreach (var option in q.Options) Line($"{option}: {result.Responses.Count(r => r.Answers[i] == option)}명");
+            if (q.Kind == "choice") foreach (var option in q.Options) Bar(option, result.Responses.Count(r => r.Answers[i] == option), result.Responses.Length);
             foreach (var response in result.Responses) Line($"{response.Name} · {response.Department}: {response.Answers[i]}");
         }
     }

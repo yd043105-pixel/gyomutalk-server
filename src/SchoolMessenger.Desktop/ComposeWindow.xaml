@@ -6,11 +6,11 @@
   <StackPanel DockPanel.Dock="Top">
    <DockPanel Margin="0,0,0,7"><StackPanel DockPanel.Dock="Right" Orientation="Horizontal"><Button x:Name="SelfButton" Content="나에게 전송" Click="SendToSelf" FontSize="11" Padding="9,5" Margin="0,0,6,0"/><Button x:Name="RecipientsButton" Content="수신자 추가" Click="ChooseRecipients" FontSize="11" Padding="9,5"/></StackPanel><TextBlock x:Name="RecipientCount" Text="받는 사람" FontWeight="SemiBold" VerticalAlignment="Center"/></DockPanel>
    <Border BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="10" Background="{DynamicResource Soft}" Padding="5"><ScrollViewer x:Name="RecipientScroller" Height="54" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><WrapPanel x:Name="RecipientChips"/></ScrollViewer></Border>
-   <DockPanel Margin="0,10,0,7"><TextBlock Text="제목 · 선택" Width="70" VerticalAlignment="Center" Foreground="{DynamicResource Muted}" FontSize="11"/><TextBox x:Name="TitleBox" MaxLength="200" ToolTip="비워 두면 본문 앞부분이 제목으로 표시됩니다."/></DockPanel>
-   <StackPanel x:Name="DeliveryOptions" Orientation="Horizontal" TextElement.FontSize="11" Margin="0,0,0,8">
-    <CheckBox x:Name="CollectFiles" Content="파일 제출 요청" VerticalAlignment="Center" Margin="0,0,6,0"/><DatePicker x:Name="SubmissionDate" Width="114" FontSize="11" ToolTip="제출 마감 · 한국 시간 해당일 23:59까지"/>
-    <CheckBox x:Name="ScheduleSend" Content="예약 전송" VerticalAlignment="Center" Margin="14,0,6,0" Checked="ScheduleChanged" Unchecked="ScheduleChanged"/><DatePicker x:Name="ScheduleDate" Width="114" FontSize="11" IsEnabled="False"/><TextBox x:Name="ScheduleTime" Text="09:00" Width="54" MaxLength="5" Margin="5,0,0,0" Padding="5" IsEnabled="False" ToolTip="한국 시간 · HH:mm"/><TextBlock Text="한국 시간" Foreground="{DynamicResource Muted}" FontSize="10" VerticalAlignment="Center" Margin="6,0,0,0"/>
-   </StackPanel>
+   <DockPanel Margin="0,10,0,7"><TextBlock Text="제목" Width="44" VerticalAlignment="Center" Foreground="{DynamicResource Muted}" FontSize="11"/><TextBox x:Name="TitleBox" MaxLength="200" AutomationProperties.Name="제목" ToolTip="비워 두면 본문 앞부분이 제목으로 표시됩니다."/></DockPanel>
+   <WrapPanel x:Name="DeliveryOptions" TextElement.FontSize="11" Margin="0,0,0,2">
+    <StackPanel Orientation="Horizontal" Margin="0,0,18,6"><CheckBox x:Name="CollectFiles" Content="파일 제출 받기 · 마감" VerticalAlignment="Center" Margin="0,0,6,0"/><DatePicker x:Name="SubmissionDate" Width="124" FontSize="11" ToolTip="제출 마감 · 한국 시간 해당일 23:59까지"/></StackPanel>
+    <StackPanel Orientation="Horizontal" Margin="0,0,0,6"><CheckBox x:Name="ScheduleSend" Content="예약 전송" VerticalAlignment="Center" Margin="0,0,6,0" Checked="ScheduleChanged" Unchecked="ScheduleChanged"/><DatePicker x:Name="ScheduleDate" Width="124" FontSize="11" IsEnabled="False"/><TextBox x:Name="ScheduleTime" Text="09:00" Width="54" MaxLength="5" Margin="5,0,0,0" Padding="5" IsEnabled="False" ToolTip="한국 시간 · HH:mm"/></StackPanel>
+   </WrapPanel>
    <WrapPanel x:Name="FormattingToolbar" Margin="0,0,0,7">
     <ComboBox x:Name="FontChoice" Width="130" FontSize="11" ToolTip="이 컴퓨터에 설치된 글꼴" SelectionChanged="FontChanged" Margin="0,0,5,0"/>
     <ComboBox x:Name="SizeChoice" Width="52" FontSize="11" ToolTip="글자 크기 · pt" SelectionChanged="FontSizeChanged" Margin="0,0,5,0"/>
@@ -18,8 +18,8 @@
     <Button Content="I" FontStyle="Italic" ToolTip="기울임 · Ctrl+I" Click="ItalicText" Focusable="False" Padding="8,6" Margin="0,0,3,0"/>
     <Button Content="U" ToolTip="밑줄 · Ctrl+U" Click="UnderlineText" Focusable="False" Padding="8,6" Margin="0,0,3,0"/>
     <Button Content="S" ToolTip="취소선" Click="StrikeText" Focusable="False" Padding="8,6" Margin="0,0,5,0"/>
-    <ComboBox x:Name="ColorChoice" Width="66" FontSize="10" ToolTip="글자 색" SelectionChanged="ColorChanged" Margin="0,0,5,0"/>
-    <ComboBox x:Name="HighlightChoice" Width="70" FontSize="10" ToolTip="배경 강조" SelectionChanged="HighlightChanged" Margin="0,0,5,0"/>
+    <ComboBox x:Name="ColorChoice" MinWidth="96" FontSize="11" ToolTip="글자 색" SelectionChanged="ColorChanged" Margin="0,0,5,0"/>
+    <ComboBox x:Name="HighlightChoice" MinWidth="108" FontSize="11" ToolTip="배경 강조" SelectionChanged="HighlightChanged" Margin="0,0,5,0"/>
     <Button Content="지우기" ToolTip="선택한 글자의 서식 지우기" Click="ClearFormatting" Focusable="False" FontSize="10" Padding="7,6"/>
    </WrapPanel>
   </StackPanel>
