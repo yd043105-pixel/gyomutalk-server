@@ -89,7 +89,7 @@ try {
         node tests\timetable.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Timetable import and replica verification failed' }
     }
-    $packageDirectory = Join-Path $projectRoot 'artifacts\여양고-교무메신저'
+    $packageDirectory = Join-Path $projectRoot 'artifacts\gyomutalk-package'
     New-Item -ItemType Directory -Force -Path $packageDirectory | Out-Null
     if (Test-Path -LiteralPath (Join-Path $packageDirectory 'data')) { throw '배포 폴더에 운영 데이터가 있습니다. 데이터를 별도 경로로 옮긴 뒤 빌드하세요.' }
     # Publish does not remove old assets. Clean only these owned build folders,
@@ -140,9 +140,9 @@ try {
     Set-Content -LiteralPath (Join-Path $packageDirectory 'VERSION.txt') -Value $Version -Encoding ASCII
     $privateFiles = Get-ChildItem -LiteralPath $packageDirectory -Recurse -File | Where-Object { $_.Name -match '(?i)(\.db($|-)|\.sqlite3?($|-)|\.dpapi$|\.pfx$|\.pem$|\.key$|^login\.dat$|^\.env|^appsettings\.Production\.json$|^server-operations\.secrets\.xml$|^server-operations.*\.local\.json$|^preferences\.json$|^school-request-|^school-registration-decision-|^draft.*\.json$)' }
     if ($privateFiles) { throw '배포 폴더에 데이터 또는 비밀 파일이 있습니다. 압축을 중단합니다.' }
-    Compress-Archive -LiteralPath $packageDirectory -DestinationPath 'artifacts\여양고-교무메신저.zip' -Force
+    Compress-Archive -LiteralPath $packageDirectory -DestinationPath 'artifacts\gyomutalk-package.zip' -Force
     $releaseZip = Join-Path $projectRoot "artifacts\yymessenger-$Version-win-x64.zip"
-    Copy-Item -LiteralPath 'artifacts\여양고-교무메신저.zip' -Destination $releaseZip -Force
+    Copy-Item -LiteralPath 'artifacts\gyomutalk-package.zip' -Destination $releaseZip -Force
     # Server-only ZIP has server/, announcement-server/, scripts/, config/, docs/ at its root.
     $serverZip=Join-Path $projectRoot "artifacts\yymessenger-$Version-servers-win-x64.zip"
     $serverEntries=@('server','announcement-server','scripts','config','docs','VERSION.txt','LICENSE','THIRD-PARTY-NOTICES.md') | ForEach-Object {Join-Path $packageDirectory $_}
@@ -155,5 +155,5 @@ try {
     $serverInstaller=Join-Path $projectRoot "artifacts\yymessenger-$Version-server-setup-win-x64.exe"
     if(Test-Path -LiteralPath $serverInstaller){$checksums+=((Get-FileHash -LiteralPath $serverInstaller -Algorithm SHA256).Hash.ToLowerInvariant()+"  yymessenger-$Version-server-setup-win-x64.exe")}
     Set-Content -LiteralPath 'artifacts\SHA256SUMS.txt' -Value $checksums -Encoding ASCII
-    Write-Host '완료: artifacts\여양고-교무메신저.zip'
+    Write-Host '완료: artifacts\gyomutalk-package.zip'
 } finally { Pop-Location }

@@ -2,7 +2,7 @@
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
 if(-not $OutputDirectory){$OutputDirectory=Join-Path $projectRoot 'artifacts'}
-if(-not $PackageDirectory){$PackageDirectory=Join-Path $projectRoot 'artifacts\여양고-교무메신저'}
+if(-not $PackageDirectory){$PackageDirectory=Join-Path $projectRoot 'artifacts\gyomutalk-package'}
 if(-not $Compiler){$Compiler=Join-Path $projectRoot '.tools\inno-6.7.3\ISCC.exe'}
 $version=[string]([xml](Get-Content -LiteralPath (Join-Path $projectRoot 'Directory.Build.props') -Raw)).Project.PropertyGroup.Version
 $testGuid=[guid]::NewGuid().ToString()

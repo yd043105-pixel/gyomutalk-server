@@ -2,7 +2,7 @@
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
 if(-not $OutputDirectory){$OutputDirectory=Join-Path $projectRoot 'artifacts'}
-if(-not $PackageDirectory){$PackageDirectory=Join-Path $projectRoot 'artifacts\여양고-교무메신저'}
+if(-not $PackageDirectory){$PackageDirectory=Join-Path $projectRoot 'artifacts\gyomutalk-package'}
 $OutputDirectory=[IO.Path]::GetFullPath($OutputDirectory)
 $PackageDirectory=[IO.Path]::GetFullPath($PackageDirectory)
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
