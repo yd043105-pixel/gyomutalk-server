@@ -25,7 +25,7 @@ try{
  const [a,b,portal]=await Promise.all([launch('office','SCHOOL-A'),launch('office','SCHOOL-B'),launch('announcements','SCHOOL-A')]);
  for(const [fixture,id,role] of [[a,'SCHOOL-A','office'],[b,'SCHOOL-B','office'],[portal,'SCHOOL-A','announcements']]){
   assert.equal(fixture.identity.schoolId,id);assert.equal(fixture.identity.service,role);assert.equal(fixture.identity.directoryProduct,'SchoolMessenger.School.1');
-  assert.deepEqual(Object.keys(fixture.identity).sort(),['directoryProduct','product','schoolId','schoolName','service']);
+  assert.deepEqual(Object.keys(fixture.identity).sort(),['directoryProduct','product','schoolAddress','schoolId','schoolName','service']);
   assert.equal((await fetch(fixture.address+'/api/admin/deployment-review')).status,401);
  }
  console.log('PASS Both actual server roles publish bounded public school identity without exposing administrator APIs');
