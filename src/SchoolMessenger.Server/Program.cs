@@ -219,6 +219,7 @@ app.Use(async (context, next) =>
 });
 
 resources.Use(app);resources.Map(app);
+MovingNotice.Use(app, store.Root);
 ServerDiscovery.Map(app);
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 OperationalHealth.Map(app, store.Open, store.Root, "School");

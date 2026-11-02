@@ -56,6 +56,18 @@ public sealed partial class LocalServerWindow
             using(var wrong=new Api(address)){var rejected=false;try{await wrong.Login("admin",password);}catch(InvalidOperationException){rejected=true;}Check(rejected,"the default admin ID is not created when another ID is chosen");}
             var discovery=JsonDocument.Parse(File.ReadAllText(Path.Combine(card.SimpleData.Text,"discovery.json"))).RootElement;
             Check(discovery.GetProperty("enabled").GetBoolean()&&discovery.GetProperty("address").GetString()!.StartsWith("https://",StringComparison.Ordinal),"teacher PC discovery is turned on with the HTTPS address");
+            var link=SchoolLink(address,card.Fingerprint,school.Name,school.Address,"office");var linked=MoveFrom(link,0);
+            Check(linked.Address==address+"/"&&linked.Fingerprint==card.Fingerprint&&link.Contains(Uri.EscapeDataString(school.Address)),"the school connection link carries the server address, its certificate and the school");
+            var moved=new SchoolAppSettings.Moving("https://192.0.2.10:18443/",new string('C',64),DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()+SchoolAppSettings.MoveNoticeMilliseconds);
+            SchoolAppSettings.Write(card.SimpleData.Text,new(CheckTime:"07:40",Moving:moved));
+            using(var api=new Api(address))
+            {
+                var app=(await api.Get<JsonElement>("server-info")).GetProperty("app");var refused=false;
+                try{await api.Get<JsonElement>("api/session");}catch(ApiRequestException e)when(e.StatusCode==System.Net.HttpStatusCode.Gone){refused=true;}
+                Check(app.GetProperty("checkTime").GetString()=="07:40"&&app.GetProperty("moving").GetProperty("address").GetString()==moved.Address&&refused,"a moved server tells apps and teacher PCs the new address and accepts nothing else");
+            }
+            SchoolAppSettings.Write(card.SimpleData.Text,new());
+            using(var api=new Api(address))Check((await api.Get<JsonElement>("api/session")).ValueKind==JsonValueKind.Object,"cancelling the move puts the server back to normal");
             BuildChecklist(card);Check(card.Checklist.Children.Count>=5,"the dashboard lists the remaining operation checks instead of blocking start");
             SaveCapture(Path.Combine(outputDirectory,"server-manager-simple.png"));
             var first=card.Fingerprint;await card.Host.Stop();card.Password.Clear();card.Confirm.Clear();Refresh();

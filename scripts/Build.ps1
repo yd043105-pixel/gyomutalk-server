@@ -29,6 +29,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'PC message storage verification failed' }
         node tests\guardian-invite.mjs
         node tests\staff-activation-codes.mjs
+        node tests\school-move.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Guardian QR invite verification failed' }
         node tests\school-directory-servers.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Separate school server identity and session isolation verification failed' }

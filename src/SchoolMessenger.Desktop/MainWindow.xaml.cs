@@ -45,7 +45,7 @@ public partial class MainWindow : Window
             : @"Software\Microsoft\Windows\CurrentVersion\Run",Environment.GetCommandLineArgs().Contains("--server-manager")?"YeoyangMessengerServerManager":"YeoyangSchoolMessenger",Environment.GetCommandLineArgs().Contains("--server-manager")?LocalServerWindow.StartupCommand:null);
         AutoStartCheck.IsChecked = AutoStartMenu.IsChecked = startup.Enabled;
         startupReady = true;
-        schoolPick = new SchoolPicker(SchoolSearch); SchoolField.Children.Add(schoolPick.Choice);
+        schoolPick = new SchoolPicker(SchoolSearch); SchoolField.Children.Add(schoolPick.Choice); schoolPick.Changed += SchoolPicked;
         try
         {
             var file = Path.Combine(LocalDirectory, "preferences.json");
@@ -133,6 +133,8 @@ public partial class MainWindow : Window
         try { await SignInOnce(); }
         catch (HttpRequestException) when (CertificatePins.Pending(ServerAddress.Text) is { } fingerprint && ConfirmCertificate(fingerprint))
         { await SignInOnce(); }
+        catch (Exception e) when (e is ApiRequestException { StatusCode: System.Net.HttpStatusCode.Gone } or HttpRequestException && CertificatePins.Pending(ServerAddress.Text) is null)
+        { if (!await FindMovedServer()) throw; await SignInOnce(); }
     }
     bool ConfirmCertificate(string fingerprint)
     {

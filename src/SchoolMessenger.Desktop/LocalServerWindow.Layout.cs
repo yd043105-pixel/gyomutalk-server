@@ -119,7 +119,8 @@ public sealed partial class LocalServerWindow
         foreach(var code in new[]{card.AddressValue,card.Connection}){code.FontFamily=new FontFamily("Cascadia Mono, Consolas");code.FontSize=14;code.FontWeight=FontWeights.SemiBold;code.Margin=new Thickness(0);code.TextTrimming=TextTrimming.CharacterEllipsis;code.TextWrapping=TextWrapping.NoWrap;code.SetResourceReference(TextBlock.ForegroundProperty,"Ink");}
         Column(0,"교사 PC 접속 주소",card.AddressValue,"교사 PC 메신저가 같은 학교망에서 자동으로 찾습니다.",()=>card.AddressValue.Text);
         Column(1,"연결 확인 코드",card.Connection,"교사가 처음 접속할 때 화면의 코드와 같은지 확인합니다.",()=>card.Connection.Text);
-        Column(2,"학교",card.SchoolValue,"",null).Children.Add(card.SchoolNote);
+        var schoolColumn=Column(2,"학교",card.SchoolValue,"",null);schoolColumn.Children.Add(card.SchoolNote);
+        var link=new Button{Content="학교 연결 QR · 서버 이전",HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,10,0,0),ToolTip="앱·교사 PC가 주소 없이 연결하는 QR, 휴대폰 소식 확인 시각, 새 서버로 이전"};link.Click+=(_,_)=>ShowSchoolLink(card);schoolColumn.Children.Add(link);
         status.Children.Add(card.ConnectionPanel);
         card.StatusCard.Child=status;card.StatusCard.Margin=new Thickness(0,0,0,16);Grid.SetRow(card.StatusCard,1);card.View.Children.Add(card.StatusCard);
         BuildEmptyState(card);

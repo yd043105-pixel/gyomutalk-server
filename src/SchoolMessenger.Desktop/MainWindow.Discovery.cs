@@ -13,13 +13,17 @@ public partial class MainWindow
     // Progress and confirmations read as plain notes; only problems are coloured.
     void LoginMessage(string text,bool problem=true){LoginError.Text=text;LoginError.SetResourceReference(ForegroundProperty,problem?"Danger":"Muted");}
     async void FindNearbyServerClick(object sender,RoutedEventArgs e)=>await FindSchoolServer();
-    async Task FindSchoolServer()
+    // With a school picked, its own server (same name and address) is used without asking.
+    async Task FindSchoolServer(SchoolEntry? school=null)
     {
         if(findingServer||signingIn)return;findingServer=true;FindServerButton.IsEnabled=LoginButton.IsEnabled=false;
         LoginMessage("교내 학교 서버를 찾는 중…",false);
         try
         {
             var candidates=await SchoolDiscovery.Search();
+            if(school is not null&&candidates.Where(c=>SchoolList.Same(school,c.SchoolName,c.SchoolAddress)).ToArray() is [var only])
+            {ServerAddress.Text=only.Address.TrimEnd('/');SavePreferences();LoginMessage(school.Name+" 서버를 찾았습니다. 아이디와 비밀번호로 로그인하세요.",false);return;}
+            if(school is not null&&candidates.Length==0){LoginMessage("같은 학교망에서 "+school.Name+" 서버를 찾지 못했습니다. 학교망에 연결했는지 확인하거나, 관리자에게 받은 학교 연결 QR의 주소를 ‘학교 서버 주소’에 넣으세요.");return;}
             if(candidates.Length==0){LoginMessage("같은 망에서 학교 서버를 찾지 못했습니다. 서버 PC에서 교무톡 서버가 실행 중인지 확인하고, 관리자 프로그램의 ‘교사 PC 접속 주소’를 직접 입력하세요. 교사 PC와 서버 PC가 다른 망이면 자동검색이 되지 않습니다.");return;}
             // The school chosen on the sign-in screen comes first, so same-named schools elsewhere are not picked by mistake.
             candidates=candidates.OrderBy(c=>schoolPick.Selected is {} s&&SchoolList.Same(s,c.SchoolName,c.SchoolAddress)?0:1).ToArray();

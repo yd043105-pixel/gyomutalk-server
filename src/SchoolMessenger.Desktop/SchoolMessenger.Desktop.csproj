@@ -7,7 +7,7 @@
     <ApplicationIcon>../SchoolMessenger.Shared/Branding/brand_mark.ico</ApplicationIcon>
     <Product>교무톡</Product><Description>학교에서 직접 운영하는 학교 메신저</Description><Company>교무톡 프로젝트</Company>
   </PropertyGroup>
-  <ItemGroup><PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" /></ItemGroup>
+  <ItemGroup><PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" /><PackageReference Include="QRCoder" Version="1.6.0" /></ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="../../config/update-publisher.json" LogicalName="SchoolMessenger.UpdatePublisher.json" Condition="Exists('../../config/update-publisher.json')" />
     <EmbeddedResource Include="../../config/update-publisher-server.json" LogicalName="SchoolMessenger.ServerUpdatePublisher.json" Condition="Exists('../../config/update-publisher-server.json')" />
@@ -33,7 +33,7 @@
     <Compile Include="../SchoolMessenger.Shared/ReleaseNotice.cs" Link="ReleaseNotice.cs" />
     <Compile Include="../SchoolMessenger.Shared/FilePolicy.cs" Link="FilePolicy.cs" />
     <Compile Include="../SchoolMessenger.Shared/MessageText.cs" Link="MessageText.cs" />
-    <Compile Include="../SchoolMessenger.Shared/SchoolDiscovery.cs" Link="SchoolDiscovery.cs" /><Compile Include="../SchoolMessenger.Shared/SchoolList.cs" Link="SchoolList.cs" /><EmbeddedResource Include="../SchoolMessenger.Shared/schools.tsv.gz" LogicalName="SchoolMessenger.Schools.tsv.gz" />
+    <Compile Include="../SchoolMessenger.Shared/SchoolDiscovery.cs" Link="SchoolDiscovery.cs" /><Compile Include="../SchoolMessenger.Shared/SchoolList.cs" Link="SchoolList.cs" /><Compile Include="../SchoolMessenger.Shared/Backend/SchoolAppSettings.cs" Link="SchoolAppSettings.cs" /><EmbeddedResource Include="../SchoolMessenger.Shared/schools.tsv.gz" LogicalName="SchoolMessenger.Schools.tsv.gz" />
     <EmbeddedResource Include="../SchoolMessenger.Shared/updates.json" LogicalName="SchoolMessenger.UpdateNotes.json" />
     <EmbeddedResource Include="../../config/registration-policy.draft.json" LogicalName="SchoolMessenger.RegistrationDraft.json" />
   </ItemGroup>

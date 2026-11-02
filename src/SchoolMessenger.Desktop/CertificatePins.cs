@@ -47,6 +47,11 @@ internal static class CertificatePins
         if(!Uri.TryCreate(address.TrimEnd('/')+"/",UriKind.Absolute,out var uri))return null;
         lock(gate){if(Load().ContainsKey(Key(uri)))return null;return pending.TryGetValue(Key(uri),out var value)?value:null;}
     }
+    public static string? Pinned(string address)
+    {
+        if(!Uri.TryCreate(address.TrimEnd('/')+"/",UriKind.Absolute,out var uri))return null;
+        lock(gate)return Load().TryGetValue(Key(uri),out var value)?value:null;
+    }
     public static void Trust(string address,string fingerprint)
     {
         var uri=new Uri(address.TrimEnd('/')+"/");
