@@ -7,6 +7,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
+using SchoolMessenger.Shared;
 
 namespace SchoolMessenger.Desktop;
 
@@ -25,10 +26,16 @@ public sealed partial class LocalServerWindow
             var news=cards.First(c=>c.Service=="announcements");Refresh();
             Check(news.Status.Text=="미설치"&&news.Activate.Visibility==Visibility.Visible&&news.Controls.Visibility!=Visibility.Visible,"the student and parent news server is shown as not installed until the school chooses to install it");
             card.SimpleData.Text=Path.Combine(directory,"simple","office");card.Backup.Text=Path.Combine(directory,"simple-backup","office");
-            card.School.Text="가상고등학교";card.AdminUsername.Text="it.manager";
+            // Two real schools sharing a name: only the address tells them apart.
+            var twins=SchoolList.All.Where(s=>s.Address.Length>0).GroupBy(s=>s.Name).First(g=>g.Count()>1).ToArray();var school=twins[1];
+            Check(SchoolList.All.Length>12000&&SchoolList.Search(school.Name+" "+school.Address.Split(' ')[0]).Contains(school),"the school list searches by name and region");
+            card.School.Text=school.Name;card.AdminUsername.Text="it.manager";
             var approval=Path.Combine(directory,"synthetic-approval.pdf");File.WriteAllText(approval,"synthetic principal approval for verification");
             var (kept,hash)=SimpleOperation.KeepApproval(directory,"office",approval);card.Approval.Text=kept;card.ApprovalSha256=hash;card.ReviewedAt=DateTimeOffset.Now;
             card.Password.Password=card.Confirm.Password=password;SelectCard(card);Refresh();UpdateLayout();
+            var ambiguous=false;try{PrepareSimple(card);}catch(InvalidOperationException e){ambiguous=e.Message.Contains("이름이 같은 학교");}
+            Check(ambiguous&&card.SchoolPick!.Choice.Text.Contains("같은 이름의 학교"),"a typed school name shared by several schools must be picked from the list by address");
+            card.SchoolPick.Set(school.Name,school.Address);Check(card.SchoolPick.Selected==school&&card.SchoolPick.Choice.Text.Contains(school.Address),"the picked school shows its address");
             Check(card.SimpleFields.IsVisible&&card.PasswordFields.IsVisible&&!card.TrialFields.IsVisible&&!card.ProductionFields.IsVisible,"simple setup asks only for school name, administrator account and approval document");
             await Start(card);
             Check(card.Host.Running&&card.Fingerprint.Length==64,"the server starts in production mode with a generated certificate");
@@ -43,7 +50,8 @@ public sealed partial class LocalServerWindow
                 await api.Login("it.manager",password);
                 Check(api.Session?.User?.IsAdmin==true,"the administrator ID chosen at setup signs in over HTTPS");
                 var info=await api.Get<JsonElement>("server-info");
-                Check(info.GetProperty("schoolName").GetString()=="가상고등학교","the school name identifies the server for teacher PCs");
+                Check(info.GetProperty("schoolName").GetString()==school.Name&&info.GetProperty("schoolAddress").GetString()==school.Address,"the school name and address identify the server for teacher PCs");
+                Check(SchoolList.Mismatch(school,school.Name,school.Address) is null&&SchoolList.Mismatch(twins[0],school.Name,school.Address) is {} wrong&&wrong.Contains(school.Address),"a user who picked the same-named school elsewhere is told the address belongs to another school");
             }
             using(var wrong=new Api(address)){var rejected=false;try{await wrong.Login("admin",password);}catch(InvalidOperationException){rejected=true;}Check(rejected,"the default admin ID is not created when another ID is chosen");}
             var discovery=JsonDocument.Parse(File.ReadAllText(Path.Combine(card.SimpleData.Text,"discovery.json"))).RootElement;

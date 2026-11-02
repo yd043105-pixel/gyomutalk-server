@@ -20,7 +20,7 @@ public static class SchoolDiscovery
     public const int Port=45983;
     public const string Product="Yeoyang.Office.Discovery.1";
     public record Packet(string Product,string Nonce,string? Address=null);
-    public record Candidate(string Address,string SchoolName,IPAddress Source,string Fingerprint);
+    public record Candidate(string Address,string SchoolName,IPAddress Source,string Fingerprint,string SchoolAddress="");
     static readonly JsonSerializerOptions Json=new(JsonSerializerDefaults.Web);
     public static bool Address(string? text,out Uri? address)
     {
@@ -103,9 +103,9 @@ public static class SchoolDiscovery
             using var response=await http.GetAsync(new Uri(address,"server-info"),deadline.Token);
             if(!response.IsSuccessStatusCode)return null;
             var data=JsonSerializer.Deserialize<Identity>(await response.Content.ReadAsStringAsync(deadline.Token),Json);
-            return data?.Product==Product&&data.SchoolName is{Length:>0 and <=80}&&!data.SchoolName.Any(char.IsControl)?new(address.AbsoluteUri,data.SchoolName,source,fingerprint):null;
+            return data?.Product==Product&&data.SchoolName is{Length:>0 and <=80}&&!data.SchoolName.Any(char.IsControl)?new(address.AbsoluteUri,data.SchoolName,source,fingerprint,data.SchoolAddress is{Length:<=120} schoolAddress&&!schoolAddress.Any(char.IsControl)?schoolAddress:""):null;
         }
         catch(Exception e)when(e is HttpRequestException or OperationCanceledException or SocketException or JsonException){return null;}
     }
-    public record Identity(string Product,string SchoolName);
+    public record Identity(string Product,string SchoolName,string? SchoolAddress=null);
 }

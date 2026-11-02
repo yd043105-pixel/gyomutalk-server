@@ -34,6 +34,7 @@ public sealed partial class LocalServerWindow:Window
         public CheckBox Ups=new(){Content="정전 대비 UPS를 설치하고 시험했습니다",Margin=new Thickness(0,6,0,0)};
         public Button Activate=new(){Content="설치하기"};
         public bool Activated=true;
+        public SchoolPicker? SchoolPick;
         public TextBox Data=new(),Config=new(){IsReadOnly=true},Log=new(){IsReadOnly=true,TextWrapping=TextWrapping.Wrap,MaxHeight=100,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
         public TextBlock Status=Text("중지됨",16),Address=Text("",12);
         public PasswordBox Password=new(),Confirm=new();
@@ -53,7 +54,7 @@ public sealed partial class LocalServerWindow:Window
         public Grid ConnectionPanel=new(),DetailsGrid=new();
         public string ChecklistKey="";
     }
-    record Settings(string Service,bool Trial,string Data,string Config,bool Auto,int Mode=-1,string School="",string AdminUsername="admin",string SimpleData="",string Backup="",string Approval="",string ApprovalSha256="",DateTimeOffset? ReviewedAt=null,string SchoolId="",bool Activated=true,bool Ups=false);
+    record Settings(string Service,bool Trial,string Data,string Config,bool Auto,int Mode=-1,string School="",string AdminUsername="admin",string SimpleData="",string Backup="",string Approval="",string ApprovalSha256="",DateTimeOffset? ReviewedAt=null,string SchoolId="",bool Activated=true,bool Ups=false,string SchoolAddress="");
     static bool Simple(ServerCard c)=>c.Mode.SelectedIndex==2;
     static string DataPath(ServerCard c)=>Simple(c)?c.SimpleData.Text:c.Data.Text;
     static bool Initialized(ServerCard c)=>File.Exists(Path.Combine(DataPath(c),".initialized"));
@@ -154,7 +155,7 @@ public sealed partial class LocalServerWindow:Window
     void SaveSettings()
     {
         if(loadingSettings)return;
-        try{var path=Path.Combine(directory,"manager.json");var temp=path+".tmp";File.WriteAllText(temp,JsonSerializer.Serialize(cards.Select(c=>new Settings(c.Service,c.Mode.SelectedIndex==0,c.Data.Text,c.Config.Text,c.Auto.IsChecked==true,c.Mode.SelectedIndex,c.School.Text.Trim(),c.AdminUsername.Text.Trim(),c.SimpleData.Text,c.Backup.Text,c.Approval.Text,c.ApprovalSha256,c.ReviewedAt,c.SchoolId,c.Activated,c.Ups.IsChecked==true))));File.Move(temp,path,true);}
+        try{var path=Path.Combine(directory,"manager.json");var temp=path+".tmp";File.WriteAllText(temp,JsonSerializer.Serialize(cards.Select(c=>new Settings(c.Service,c.Mode.SelectedIndex==0,c.Data.Text,c.Config.Text,c.Auto.IsChecked==true,c.Mode.SelectedIndex,c.School.Text.Trim(),c.AdminUsername.Text.Trim(),c.SimpleData.Text,c.Backup.Text,c.Approval.Text,c.ApprovalSha256,c.ReviewedAt,c.SchoolId,c.Activated,c.Ups.IsChecked==true,c.SchoolPick?.Selected?.Address??""))));File.Move(temp,path,true);}
         catch(Exception e)when(e is IOException or UnauthorizedAccessException){MessageBox.Show(this,"서버 관리 설정을 저장하지 못했습니다. 저장 공간과 폴더 권한을 확인하세요.\n"+e.Message,"설정 저장 실패");}
     }
     void LoadSettings()
@@ -164,7 +165,7 @@ public sealed partial class LocalServerWindow:Window
         {
             var path=Path.Combine(directory,"manager.json");if(!File.Exists(path))return;var values=JsonSerializer.Deserialize<Settings[]>(File.ReadAllText(path));
             foreach(var s in values??[]){var c=cards.FirstOrDefault(c=>c.Service==s.Service);if(c is null)continue;c.Data.Text=s.Data;c.Config.Text=s.Config;c.Mode.SelectedIndex=s.Mode is >=0 and <=2?s.Mode:s.Trial?0:1;c.Auto.IsChecked=s.Auto;
-                c.School.Text=s.School;c.AdminUsername.Text=s.AdminUsername;if(s.SimpleData.Length>0)c.SimpleData.Text=s.SimpleData;if(s.Backup.Length>0)c.Backup.Text=s.Backup;c.Approval.Text=s.Approval;c.ApprovalSha256=s.ApprovalSha256;c.ReviewedAt=s.ReviewedAt;c.SchoolId=s.SchoolId;c.Activated=s.Activated;c.Ups.IsChecked=s.Ups;}
+                if(c.SchoolPick is {} pick)pick.Set(s.School,s.SchoolAddress);else c.School.Text=s.School;c.AdminUsername.Text=s.AdminUsername;if(s.SimpleData.Length>0)c.SimpleData.Text=s.SimpleData;if(s.Backup.Length>0)c.Backup.Text=s.Backup;c.Approval.Text=s.Approval;c.ApprovalSha256=s.ApprovalSha256;c.ReviewedAt=s.ReviewedAt;c.SchoolId=s.SchoolId;c.Activated=s.Activated;c.Ups.IsChecked=s.Ups;}
         }catch(Exception e)when(e is IOException or JsonException){MessageBox.Show(this,"서버 관리 설정을 읽지 못했습니다. 데이터·운영 설정 경로를 다시 확인하세요.");}
         finally{loadingSettings=false;}
     }

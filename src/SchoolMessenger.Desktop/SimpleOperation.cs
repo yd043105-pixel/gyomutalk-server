@@ -13,7 +13,7 @@ namespace SchoolMessenger.Desktop;
 
 // "간편 설정": a school runs the server with only its name, an administrator account and the principal's
 // approval document. Certificate, listener, LAN filter, discovery and the school review record are derived here.
-internal sealed record SimpleSetup(string Service,string School,string AdminUsername,string Data,string Backup,string Approval,string ApprovalSha256,DateTimeOffset ReviewedAt,string SchoolId);
+internal sealed record SimpleSetup(string Service,string School,string AdminUsername,string Data,string Backup,string Approval,string ApprovalSha256,DateTimeOffset ReviewedAt,string SchoolId,string SchoolAddress="");
 
 internal static class SimpleOperation
 {

@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
+using SchoolMessenger.Shared;
 
 namespace SchoolMessenger.Desktop;
 
@@ -22,7 +23,10 @@ public sealed partial class LocalServerWindow
         SimpleOperation.EnsurePortFree(SimpleOperation.Port(c.Service));
         Directory.CreateDirectory(c.SimpleData.Text);Directory.CreateDirectory(c.Backup.Text);
         if(c.SchoolId.Length==0)c.SchoolId=SimpleOperation.NewSchoolId();
-        var setup=new SimpleSetup(c.Service,school,admin,c.SimpleData.Text,c.Backup.Text,c.Approval.Text,c.ApprovalSha256,reviewed,c.SchoolId);
+        // Same-named schools are told apart by address; a school missing from the list runs without one.
+        var named=SchoolList.Named(school);var chosen=c.SchoolPick?.Selected??(named.Length==1?named[0]:null);
+        if(chosen is null&&named.Length>1)throw new InvalidOperationException("이름이 같은 학교가 "+named.Length+"곳 있습니다. 학교 이름 칸의 목록에서 주소를 보고 고르세요.");
+        var setup=new SimpleSetup(c.Service,school,admin,c.SimpleData.Text,c.Backup.Text,c.Approval.Text,c.ApprovalSha256,reviewed,c.SchoolId,chosen?.Address??"");
         var (thumbprint,fingerprint)=SimpleOperation.Certificate(directory,c.Service);c.Fingerprint=fingerprint;
         // This program made the certificate, so its own administrator sign-in trusts it without a code check.
         var port=SimpleOperation.Port(c.Service);foreach(var address in SimpleOperation.Addresses(c.Service).Append("https://localhost:"+port).Append("https://127.0.0.1:"+port))CertificatePins.Trust(address,fingerprint);

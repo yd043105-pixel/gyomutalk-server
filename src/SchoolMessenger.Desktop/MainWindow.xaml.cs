@@ -45,11 +45,12 @@ public partial class MainWindow : Window
             : @"Software\Microsoft\Windows\CurrentVersion\Run",Environment.GetCommandLineArgs().Contains("--server-manager")?"YeoyangMessengerServerManager":"YeoyangSchoolMessenger",Environment.GetCommandLineArgs().Contains("--server-manager")?LocalServerWindow.StartupCommand:null);
         AutoStartCheck.IsChecked = AutoStartMenu.IsChecked = startup.Enabled;
         startupReady = true;
+        schoolPick = new SchoolPicker(SchoolSearch); SchoolField.Children.Add(schoolPick.Choice);
         try
         {
             var file = Path.Combine(LocalDirectory, "preferences.json");
             if (File.Exists(file) && JsonSerializer.Deserialize<Preferences>(File.ReadAllText(file)) is { } preferences)
-            { ServerAddress.Text = connectedAddress = preferences.ServerAddress; UsernameBox.Text = preferences.Username; Quiet.IsChecked = preferences.Quiet; DoNotDisturb.IsChecked = preferences.DoNotDisturb; RememberLogin.IsChecked = preferences.AutoLogin; Favorites = preferences.Favorites.ToHashSet(); Appearance.Apply(preferences.ThemeId, preferences.Glass); SetAutomaticAway(preferences.IdleMinutes); }
+            { schoolPick.Set(preferences.SchoolName, preferences.SchoolAddress); ServerAddress.Text = connectedAddress = preferences.ServerAddress; UsernameBox.Text = preferences.Username; Quiet.IsChecked = preferences.Quiet; DoNotDisturb.IsChecked = preferences.DoNotDisturb; RememberLogin.IsChecked = preferences.AutoLogin; Favorites = preferences.Favorites.ToHashSet(); Appearance.Apply(preferences.ThemeId, preferences.Glass); SetAutomaticAway(preferences.IdleMinutes); }
         }
         catch (Exception error) when (error is IOException or JsonException) { LoginMessage("설정을 읽지 못했습니다. 서버 주소를 확인하세요."); }
         loginOptionsReady = true;
@@ -79,7 +80,7 @@ public partial class MainWindow : Window
             if (RememberLogin.IsChecked == true) { await TryAutomaticLogin(); if (savedLogin.Exists) timer.Start(); }
         };
     }
-    public void SavePreferences() => File.WriteAllText(Path.Combine(LocalDirectory, "preferences.json"), JsonSerializer.Serialize(new Preferences(ServerAddress.Text, UsernameBox.Text, Quiet.IsChecked, Favorites.ToArray(), DoNotDisturb.IsChecked, RememberLogin.IsChecked == true, Appearance.Selected, Appearance.Glass,AutomaticAwayMinutes)));
+    public void SavePreferences() => File.WriteAllText(Path.Combine(LocalDirectory, "preferences.json"), JsonSerializer.Serialize(new Preferences(ServerAddress.Text, UsernameBox.Text, Quiet.IsChecked, Favorites.ToArray(), DoNotDisturb.IsChecked, RememberLogin.IsChecked == true, Appearance.Selected, Appearance.Glass,AutomaticAwayMinutes,schoolPick.Selected?.Name ?? SchoolSearch.Text.Trim(),schoolPick.Selected?.Address ?? "")));
     void OpenAppearance(object sender, RoutedEventArgs e) => new AppearanceWindow(this).ShowDialog();
     public void RefreshAppearance()
     {
@@ -142,7 +143,7 @@ public partial class MainWindow : Window
     async Task SignInOnce()
     {
         await RequireServerAddress();
-        if (hub is not null) await hub.DisposeAsync(); Api?.Dispose(); Api = new Api(ServerAddress.Text);
+        if (hub is not null) await hub.DisposeAsync(); Api?.Dispose(); Api = new Api(ServerAddress.Text); await CheckChosenSchool();
         await Api.Login(UsernameBox.Text.Trim(), PasswordBox.Password, RememberLogin.IsChecked == true); PasswordBox.Clear(); UsernameBox.Text=Api.Session!.User!.Username; SavePreferences();
         if(Api.Session!.User!.ActivationRequired){savedLogin.Clear();new StaffActivationWindow(Api){Owner=this}.ShowDialog();await Api.RefreshSession();throw new InvalidOperationException("계정 활성화 후 다시 로그인하세요.");}
         if(Api.Session.User.PasswordChangeRequired){savedLogin.Clear();ShowPasswordChange(true);throw new InvalidOperationException("개인 비밀번호로 변경한 뒤 다시 로그인하세요.");}
@@ -601,4 +602,4 @@ public partial class MainWindow : Window
         catch (Exception error) { Directory.CreateDirectory("artifacts"); File.WriteAllText("artifacts/ui-error.txt", error.ToString()); exiting = true; System.Windows.Application.Current.Shutdown(1); }
     }
 }
-record Preferences(string ServerAddress, string Username, bool Quiet, string[] Favorites, bool DoNotDisturb = false, bool AutoLogin = false, string ThemeId = "blue", bool Glass = true,int IdleMinutes=5);
+record Preferences(string ServerAddress, string Username, bool Quiet, string[] Favorites, bool DoNotDisturb = false, bool AutoLogin = false, string ThemeId = "blue", bool Glass = true,int IdleMinutes=5,string SchoolName="",string SchoolAddress="");

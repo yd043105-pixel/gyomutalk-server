@@ -57,7 +57,7 @@ public sealed class ServerDiscovery(Store store,IConfiguration configuration,ILo
     }
     public static void Map(WebApplication app)
     {
-        app.MapGet("/server-info",(IConfiguration c,DeploymentReview review)=>new{product=SchoolDiscovery.Product,schoolName=review.SchoolName??c["School:Name"]??"학교",directoryProduct="SchoolMessenger.School.1",schoolId=review.SchoolId??c["Operations:SchoolId"]??"",service="office"});
+        app.MapGet("/server-info",(IConfiguration c,DeploymentReview review)=>new{product=SchoolDiscovery.Product,schoolName=review.SchoolName??c["School:Name"]??"학교",schoolAddress=c["School:Address"]??"",directoryProduct="SchoolMessenger.School.1",schoolId=review.SchoolId??c["Operations:SchoolId"]??"",service="office"});
         app.MapGet("/api/admin/server-discovery",(ServerDiscovery service)=>new{settings=service.Current,service.Listening,service.LastError,port=service.Port}).RequireAuthorization("Admin");
         app.MapPost("/api/admin/server-discovery",IResult(Settings settings,ServerDiscovery service)=>
         {try{service.Save(settings);return Results.Ok();}catch(InvalidOperationException e){return Results.Json(new{error=e.Message},statusCode:400);}}).RequireAuthorization("Admin");

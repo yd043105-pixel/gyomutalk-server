@@ -132,7 +132,7 @@ app.Use(async(c,next)=>
     await next();
 });
 app.MapGet("/health",()=>Results.Ok(new{status="ok",service="announcements"}));
-app.MapGet("/server-info",()=>new{product="Yeoyang.Office.Discovery.1",schoolName=deploymentReview.SchoolName??app.Configuration["Portal:Name"]??"학교",directoryProduct="SchoolMessenger.School.1",schoolId=deploymentReview.SchoolId??app.Configuration["Operations:SchoolId"]??"",service="announcements"});
+app.MapGet("/server-info",()=>new{product="Yeoyang.Office.Discovery.1",schoolName=deploymentReview.SchoolName??app.Configuration["Portal:Name"]??"학교",schoolAddress=app.Configuration["Portal:SchoolAddress"]??"",directoryProduct="SchoolMessenger.School.1",schoolId=deploymentReview.SchoolId??app.Configuration["Operations:SchoolId"]??"",service="announcements"});
 OperationalHealth.Map(app,store.Open,store.Root,"Portal");
 app.MapGet("/api/session",(HttpContext c,IAntiforgery csrf)=>new PortalSession(app.Configuration["Portal:Name"]??"우리 학교",csrf.GetAndStoreTokens(c).RequestToken!,c.User.Identity?.IsAuthenticated==true?store.Public(store.Person(Id(c))!):null));
 app.MapPost("/api/login",async Task<IResult>(Login request,HttpContext c)=>

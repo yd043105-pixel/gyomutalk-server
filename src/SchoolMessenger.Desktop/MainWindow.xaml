@@ -52,6 +52,7 @@
   <ScrollViewer x:Name="LoginPanel" Padding="24" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel VerticalAlignment="Center">
    <Image Width="48" Height="48" Source="{StaticResource ProductMark}" HorizontalAlignment="Left" Margin="0,0,0,16" AutomationProperties.Name="교무톡"/>
    <TextBlock Text="교무톡" FontSize="26" FontWeight="Bold"/><TextBlock Text="교직원 로그인" Foreground="{DynamicResource Muted}" Margin="0,9,0,22"/>
+   <StackPanel x:Name="SchoolField" Margin="0,0,0,15"><TextBlock Text="학교" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,0,7"/><TextBox x:Name="SchoolSearch" AutomationProperties.Name="학교 찾기"/></StackPanel>
    <TextBlock Text="학교 서버 주소" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,0,7"/><DockPanel><Button x:Name="FindServerButton" DockPanel.Dock="Right" Content="교내 자동검색" Click="FindNearbyServerClick" Margin="7,0,0,0" Padding="9,7"/><TextBox x:Name="ServerAddress" TextChanged="ConnectionAddressChanged" AutomationProperties.Name="학교 서버 주소"/></DockPanel>
    <TextBlock Text="관리자가 알려준 주소를 넣거나 ‘교내 자동검색’을 누르세요." FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"/>
    <TextBlock Text="아이디" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,15,0,7"/><TextBox x:Name="UsernameBox" AutomationProperties.Name="아이디"/>

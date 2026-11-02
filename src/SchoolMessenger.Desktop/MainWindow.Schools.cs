@@ -1,10 +1,19 @@
 using System.Windows.Controls;
+using SchoolMessenger.Shared;
 
 namespace SchoolMessenger.Desktop;
 
 public partial class MainWindow
 {
     string connectedAddress="";
+    SchoolPicker schoolPick=null!;
+    // The chosen school only confirms the address: a server stating another school (by name and address) is refused.
+    async Task CheckChosenSchool()
+    {
+        if(schoolPick.Selected is not {} chosen)return;
+        var info=await Api!.Get<SchoolDiscovery.Identity>("server-info");
+        if(SchoolList.Mismatch(chosen,info.SchoolName,info.SchoolAddress) is {} problem)throw new InvalidOperationException(problem);
+    }
     // Each school keeps its own sign-in and favourites, so moving to another address starts clean.
     void ConnectionAddressChanged(object sender,TextChangedEventArgs e)
     {

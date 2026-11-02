@@ -48,7 +48,7 @@ internal sealed class LocalServerProcess(string root,string service)
         start.Environment["FeedbackMail__Enabled"]="false";start.Environment["Feedback__AutomaticReportsEnabled"]="false";start.Environment["Operations__AlertMailEnabled"]="false";
         start.Environment["ASPNETCORE_FORWARDEDHEADERS_ENABLED"]="false";start.Environment["DOTNET_FORWARDEDHEADERS_ENABLED"]="false";
         start.Environment["Operations__SecurityReviewFile"]=review;start.Environment["Operations__SchoolId"]=setup.SchoolId;
-        start.Environment["School__Name"]=setup.School;start.Environment["School__AllowedNetworks"]=SimpleOperation.AllowedNetworks();
+        start.Environment["School__Name"]=setup.School;start.Environment["School__Address"]=setup.SchoolAddress;start.Environment["School__AllowedNetworks"]=SimpleOperation.AllowedNetworks();
         start.Environment["School__DataDirectory"]=data;start.Environment["School__BackupDirectory"]=Path.GetFullPath(setup.Backup);start.Environment["School__AttachmentBackup"]="true";
         start.Environment["School__CertificateThumbprint"]=thumbprint;start.Environment["School__CertificateStore"]="CurrentUser";
         start.Environment["School__AdminUsername"]=setup.AdminUsername;

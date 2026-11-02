@@ -139,7 +139,8 @@ public sealed partial class LocalServerWindow
         var second=new StackPanel();second.Children.Add(FieldLabel("비밀번호 확인"));second.Children.Add(card.Confirm);Grid.SetColumn(second,2);passwords.Children.Add(second);
         System.Windows.Automation.AutomationProperties.SetName(card.Password,"최초 관리자 비밀번호");System.Windows.Automation.AutomationProperties.SetName(card.Confirm,"비밀번호 확인");
         card.PasswordFields.Children.Add(passwords);var passwordNote=Note("12~128자 · 서버를 처음 만들 때 정합니다.");passwordNote.Margin=new Thickness(0,6,0,0);card.PasswordNote=passwordNote;card.PasswordFields.Children.Add(passwordNote);controls.Children.Add(card.TrialFields);
-        Field(card.SimpleFields,"학교 이름",card.School,"교사 메신저의 교내 자동검색 결과와 화면 제목에 표시됩니다.");
+        Field(card.SimpleFields,"학교 이름",card.School,"학교 이름이나 지역으로 검색해 목록에서 고르세요. 교사 PC의 교내 자동검색 결과와 화면 제목에 학교 이름과 주소가 표시됩니다.");
+        card.SchoolPick=new SchoolPicker(card.School);card.SimpleFields.Children.Insert(card.SimpleFields.Children.IndexOf(card.School)+1,card.SchoolPick.Choice);
         Field(card.SimpleFields,"관리자 아이디",card.AdminUsername,"영문·숫자·._- 3~32자 · 서버를 처음 만들 때 정하고 이후에는 바꿀 수 없습니다.");
         var approval=new DockPanel();var choose=new Button{Content="문서 선택",Margin=new Thickness(8,0,0,0)};DockPanel.SetDock(choose,Dock.Right);approval.Children.Add(choose);approval.Children.Add(card.Approval);choose.Click+=(_,_)=>ChooseApproval(card);
         card.SimpleFields.Children.Add(FieldLabel("학교장 승인(내부결재) 문서"));card.SimpleFields.Children.Add(approval);var approvalNote=Note("결재 문서 파일은 이 PC에만 보관하고 지문(해시)으로 학교 검토 기록을 만듭니다. 1년마다 새 승인 문서로 갱신합니다.");approvalNote.Margin=new Thickness(0,6,0,0);approvalNote.FontSize=12;card.SimpleFields.Children.Add(approvalNote);
