@@ -51,9 +51,16 @@ public sealed partial class LocalServerWindow
             BuildChecklist(card);Check(card.Checklist.Children.Count>=5,"the dashboard lists the remaining operation checks instead of blocking start");
             SaveCapture(Path.Combine(outputDirectory,"server-manager-simple.png"));
             var first=card.Fingerprint;await card.Host.Stop();card.Password.Clear();card.Confirm.Clear();Refresh();
-            Check(!card.PasswordFields.IsVisible&&!card.AdminUsername.IsEnabled,"after the first start the password and administrator ID are not asked again");
+            Check(card.PasswordFields.IsVisible&&card.PasswordLabel?.Text=="새 관리자 비밀번호 · 바꿀 때만"&&!card.AdminUsername.IsEnabled,"after the first start the administrator ID is fixed and the password field only changes it");
             await Start(card);Check(await Ready()&&card.Fingerprint==first,"restarting keeps the same certificate so teachers never re-confirm the code");
+            using(var same=new Api(address)){await same.Login("it.manager",password);Check(same.Session?.User?.IsAdmin==true,"restarting with an empty password field keeps the administrator password");}
             await card.Host.Stop();
+            var changed="Changed-"+Guid.NewGuid().ToString("N")[..12];card.Password.Password=card.Confirm.Password=changed;await Start(card);Check(await Ready(),"the server starts with a new administrator password");
+            using(var renewed=new Api(address)){await renewed.Login("it.manager",changed);Check(renewed.Session?.User?.IsAdmin==true,"the new administrator password signs in");}
+            using(var old=new Api(address)){var refused=false;try{await old.Login("it.manager",password);}catch(InvalidOperationException){refused=true;}Check(refused,"the old administrator password no longer signs in");}
+            await card.Host.Stop();card.Auto.IsChecked=false;LaunchedAtSignIn=true;
+            await StartSelected();Check(card.Host.Running&&await Ready(),"opened by Windows sign-in, the simple-setup server starts without the auto-start switch or a password");
+            LaunchedAtSignIn=false;await card.Host.Stop();
             Check(new SchoolPinsProbe(address,"0000000000000000000000000000000000000000000000000000000000000000").Rejects(),"a different certificate for the same address is never accepted silently");
             File.WriteAllText(Path.Combine(outputDirectory,"simple-setup-checks.json"),JsonSerializer.Serialize(new{checks}));
         }

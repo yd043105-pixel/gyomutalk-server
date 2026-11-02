@@ -45,7 +45,7 @@ public sealed partial class LocalServerWindow
         var links=new WrapPanel{Margin=new Thickness(0,6,0,0)};
         void Link(string label,Action action){var link=new Button{Content=label,FontWeight=FontWeights.Normal};link.SetResourceReference(StyleProperty,"SubtleButton");link.SetResourceReference(Control.ForegroundProperty,"Muted");link.Click+=(_,_)=>action();links.Children.Add(link);}
         Link("업데이트 확인",()=>DesktopUpdater.Settings(this));Link("운영 안내",OpenGuide);bottom.Children.Add(links);
-        autoProgram.Content=AdminUi.Label("Windows 로그인 시 자동 실행","Muted",12);autoProgram.Margin=new Thickness(8,2,0,0);bottom.Children.Add(autoProgram);
+        autoProgram.Content=AdminUi.Label("Windows 로그인 시 자동 실행","Muted",12);autoProgram.ToolTip="켜 두면 Windows에 로그인할 때 관리자 프로그램과 간편 설정 서버가 함께 시작됩니다.";autoProgram.Margin=new Thickness(8,2,0,0);bottom.Children.Add(autoProgram);
         DockPanel.SetDock(bottom,Dock.Bottom);side.Children.Add(bottom);
         var navigation=new StackPanel();side.Children.Add(new ScrollViewer{Content=navigation,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled});
         var rail=new Border{Child=side,BorderThickness=new Thickness(0,0,1,0)};rail.SetResourceReference(Border.BackgroundProperty,"Rail");rail.SetResourceReference(Border.BorderBrushProperty,"Line");layout.Children.Add(rail);
@@ -135,10 +135,10 @@ public sealed partial class LocalServerWindow
         card.Data.Text=office&&Directory.Exists(@"C:\SchoolMessengerTrial\office")?@"C:\SchoolMessengerTrial\office":Path.Combine(directory,"trial",service);
         card.TrialFields.Children.Add(Note("가상 자료로 시험합니다. 외부 연결·파일 악성코드 검사는 사용하지 않습니다."));
         var passwords=new Grid{Margin=new Thickness(0,10,0,0)};passwords.ColumnDefinitions.Add(new ColumnDefinition());passwords.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(12)});passwords.ColumnDefinitions.Add(new ColumnDefinition());
-        var first=new StackPanel();first.Children.Add(FieldLabel("최초 관리자 비밀번호"));first.Children.Add(card.Password);passwords.Children.Add(first);
+        var first=new StackPanel();card.PasswordLabel=FieldLabel("최초 관리자 비밀번호");first.Children.Add(card.PasswordLabel);first.Children.Add(card.Password);passwords.Children.Add(first);
         var second=new StackPanel();second.Children.Add(FieldLabel("비밀번호 확인"));second.Children.Add(card.Confirm);Grid.SetColumn(second,2);passwords.Children.Add(second);
         System.Windows.Automation.AutomationProperties.SetName(card.Password,"최초 관리자 비밀번호");System.Windows.Automation.AutomationProperties.SetName(card.Confirm,"비밀번호 확인");
-        card.PasswordFields.Children.Add(passwords);var passwordNote=Note("12~128자 · 서버를 처음 만들 때만 입력합니다.");passwordNote.Margin=new Thickness(0,6,0,0);card.PasswordFields.Children.Add(passwordNote);controls.Children.Add(card.TrialFields);
+        card.PasswordFields.Children.Add(passwords);var passwordNote=Note("12~128자 · 서버를 처음 만들 때 정합니다.");passwordNote.Margin=new Thickness(0,6,0,0);card.PasswordNote=passwordNote;card.PasswordFields.Children.Add(passwordNote);controls.Children.Add(card.TrialFields);
         Field(card.SimpleFields,"학교 이름",card.School,"교사 메신저의 교내 자동검색 결과와 화면 제목에 표시됩니다.");
         Field(card.SimpleFields,"관리자 아이디",card.AdminUsername,"영문·숫자·._- 3~32자 · 서버를 처음 만들 때 정하고 이후에는 바꿀 수 없습니다.");
         var approval=new DockPanel();var choose=new Button{Content="문서 선택",Margin=new Thickness(8,0,0,0)};DockPanel.SetDock(choose,Dock.Right);approval.Children.Add(choose);approval.Children.Add(card.Approval);choose.Click+=(_,_)=>ChooseApproval(card);

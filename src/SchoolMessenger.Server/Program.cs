@@ -122,6 +122,17 @@ if (store.Users().Count == 0)
     var admin = new User(Guid.NewGuid().ToString("N"), username, "정보담당", "관리", "", true, true, true, 1, 0, 0);
     InsertUser(store, admin, hasher.HashPassword(admin, password!));
 }
+// The administrator program can set a new administrator password on a later start. Whoever runs the server PC can
+// already reach its data folder, so the old password is not asked; sessions signed in with it end.
+if (builder.Configuration["School:ResetAdminPassword"] is { Length: > 0 } newPassword)
+{
+    if (!ValidPassword(newPassword)) throw new InvalidOperationException("새 관리자 비밀번호는 12~128자로 입력하세요.");
+    var username = builder.Configuration["School:AdminUsername"] ?? "admin";
+    var admin = store.Users().FirstOrDefault(u => u.IsAdmin && u.Username.Equals(username, StringComparison.OrdinalIgnoreCase))
+        ?? throw new InvalidOperationException("관리자 아이디 '" + username + "'를 찾지 못해 비밀번호를 바꾸지 않았습니다.");
+    store.Execute("UPDATE Users SET PasswordHash=$hash,SessionVersion=SessionVersion+1,FailedAttempts=0,LockedUntil=0 WHERE Id=$id", ("$hash", hasher.HashPassword(admin, newPassword)), ("$id", admin.Id));
+    Console.WriteLine("관리자 비밀번호를 새로 정했습니다.");
+}
 File.WriteAllText(Path.Combine(store.Root, ".initialized"), "initialized");
 var networks = (builder.Configuration["School:AllowedNetworks"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
     .Select(System.Net.IPNetwork.Parse).ToArray();

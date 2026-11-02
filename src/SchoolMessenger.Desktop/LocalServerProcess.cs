@@ -53,6 +53,12 @@ internal sealed class LocalServerProcess(string root,string service)
         start.Environment["School__CertificateThumbprint"]=thumbprint;start.Environment["School__CertificateStore"]="CurrentUser";
         start.Environment["School__AdminUsername"]=setup.AdminUsername;
         if(!File.Exists(Path.Combine(data,".initialized")))start.Environment["School__AdminPassword"]=password;
+        // An existing server keeps its administrator password unless a new one is given for this start.
+        else if(password.Length>0)
+        {
+            if(password.Length is <12 or >128||string.IsNullOrWhiteSpace(password))throw new InvalidOperationException("새 관리자 비밀번호는 12~128자로 입력하세요.");
+            start.Environment["School__ResetAdminPassword"]=password;
+        }
         start.ArgumentList.Add("--urls");start.ArgumentList.Add(SimpleOperation.Listener(service));
         Launch(start,true);
     }

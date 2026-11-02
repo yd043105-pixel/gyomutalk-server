@@ -37,6 +37,7 @@ public sealed partial class LocalServerWindow:Window
         public TextBox Data=new(),Config=new(){IsReadOnly=true},Log=new(){IsReadOnly=true,TextWrapping=TextWrapping.Wrap,MaxHeight=100,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
         public TextBlock Status=Text("중지됨",16),Address=Text("",12);
         public PasswordBox Password=new(),Confirm=new();
+        public TextBlock? PasswordLabel,PasswordNote;
         public StackPanel PasswordFields=new(),TrialFields=new(),ProductionFields=new();
         public StackPanel Controls=new();
         public Grid View=new();
@@ -86,7 +87,16 @@ public sealed partial class LocalServerWindow:Window
             c.Status.Text=!available?"미설치":c.Busy?"처리 중…":running?"실행 중":"중지됨";
             c.NavigationStatus.Text=c.Status.Text;c.Status.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,running?"Blue":"Muted");
             c.TrialFields.Visibility=trial?Visibility.Visible:Visibility.Collapsed;c.ProductionFields.Visibility=c.Mode.SelectedIndex==1?Visibility.Visible:Visibility.Collapsed;c.SimpleFields.Visibility=simple?Visibility.Visible:Visibility.Collapsed;
-            c.PasswordFields.Visibility=(trial||simple)&&!Initialized(c)?Visibility.Visible:Visibility.Collapsed;
+            // A simple-setup server can always get a new administrator password; the first one is set when it is created.
+            var initialized=Initialized(c);
+            c.PasswordFields.Visibility=(trial&&!initialized)||simple?Visibility.Visible:Visibility.Collapsed;
+            if(c.PasswordLabel is not null&&c.PasswordNote is not null)
+            {
+                c.PasswordLabel.Text=initialized?"새 관리자 비밀번호 · 바꿀 때만":"최초 관리자 비밀번호";
+                c.PasswordNote.Text=initialized?"비워 두면 지금 비밀번호를 그대로 씁니다. 입력하고 서버를 시작하면 새 비밀번호로 바뀌고, 로그인해 있던 관리자는 다시 로그인합니다."
+                    :"12~128자 · 서버를 처음 만들 때 정합니다. 서버를 다시 켜거나 Windows를 재시작해도 그대로 유지됩니다.";
+                System.Windows.Automation.AutomationProperties.SetName(c.Password,c.PasswordLabel.Text);
+            }
             c.AdminUsername.IsEnabled=!Initialized(c);
             c.Data.IsEnabled=c.TrialFields.IsEnabled=c.ProductionFields.IsEnabled=c.SimpleFields.IsEnabled=c.PasswordFields.IsEnabled=c.Mode.IsEnabled=!running&&!c.Busy;
             c.Start.IsEnabled=available&&!running&&!c.Busy;c.Stop.IsEnabled=running&&!c.Busy;c.Admin.IsEnabled=running&&!c.Busy;
@@ -107,7 +117,10 @@ public sealed partial class LocalServerWindow:Window
         railSchool.Text=Simple(office)&&office.School.Text.Trim().Length>0?office.School.Text.Trim():"교무톡 서버";
         railStatus.Text="교내 업무 서버 "+office.Status.Text;railDot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,office.Host.Running?"Success":"Faint");
     }
-    async Task StartSelected(){foreach(var card in cards.Where(c=>c.Host.Installed&&c.Auto.IsChecked==true))await Start(card);}
+    // Opened by Windows sign-in (startup entry): the school server set up with simple setup starts too, so a restarted
+    // server PC serves teachers again without anyone opening the program.
+    internal bool LaunchedAtSignIn=Environment.GetCommandLineArgs().Contains("--startup");
+    async Task StartSelected(){foreach(var card in cards.Where(c=>c.Host.Installed&&c.Activated&&(c.Auto.IsChecked==true||LaunchedAtSignIn&&Simple(c)&&Initialized(c))))await Start(card);}
     async Task Start(ServerCard c)
     {
         if(c.Busy||c.Host.Running)return;c.Busy=true;c.Details.IsExpanded=false;Refresh();
