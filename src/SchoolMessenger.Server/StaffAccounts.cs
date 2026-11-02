@@ -71,6 +71,24 @@ public static class StaffAccounts
             using(var update=Store.Command(db,"UPDATE StaffProfiles SET NeedsActivation=1,ActivationHash=$hash,ExpiresAt=$expiry,Failures=0,LockedUntil=0,SharedPassword=$shared WHERE UserId=$id",tx,("$hash",Hash(code)),("$expiry",expires),("$id",id),("$shared",request.UseSharedPassword)))update.ExecuteNonQuery();
             Audit(db,tx,Actor(context),"staff.reset",id);tx.Commit();return Results.Ok(new{activationCode=code,expiresAt=expires});
         });
+        // One list for every account still waiting for its first activation, so the administrator can hand codes out at
+        // once. Only hashes are stored, so earlier codes cannot be shown again: they are replaced and stop working.
+        admin.MapPost("/staff/activation-codes",IResult(HttpContext context)=>
+        {
+            var expires=Maintenance.Now+7*86_400_000L;var issued=new List<object>();
+            using var db=store.Open();using var tx=db.BeginTransaction(deferred:false);
+            var waiting=new List<(string Id,string Name,string Username,string Department,string Position)>();
+            using(var read=Store.Command(db,"SELECT u.Id,u.Name,u.Username,u.Department,u.Position FROM Users u JOIN StaffProfiles p ON p.UserId=u.Id WHERE p.NeedsActivation=1 AND u.IsAdmin=0 AND u.Active=1 ORDER BY u.Department,u.Name",tx))
+            using(var reader=read.ExecuteReader())while(reader.Read())waiting.Add((reader.GetString(0),reader.GetString(1),reader.GetString(2),reader.GetString(3),reader.IsDBNull(4)?"":reader.GetString(4)));
+            foreach(var person in waiting)
+            {
+                var code=NewCode();
+                using(var update=Store.Command(db,"UPDATE StaffProfiles SET ActivationHash=$hash,ExpiresAt=$expiry,Failures=0,LockedUntil=0 WHERE UserId=$id",tx,("$hash",Hash(code)),("$expiry",expires),("$id",person.Id)))update.ExecuteNonQuery();
+                Audit(db,tx,Actor(context),"staff.activation-reissue",person.Id);
+                issued.Add(new{person.Name,loginName=person.Username,person.Department,person.Position,activationCode=code,expiresAt=expires});
+            }
+            tx.Commit();return Results.Ok(issued);
+        });
         admin.MapPost("/staff/{id}/seat",IResult(string id,StaffSeatRequest request,HttpContext context)=>
         {
             if(store.GetUser(id) is null)return Results.NotFound();string? ip=null;

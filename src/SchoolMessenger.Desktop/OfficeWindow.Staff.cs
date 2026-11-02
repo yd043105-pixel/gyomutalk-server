@@ -18,6 +18,18 @@ public sealed partial class OfficeWindow
     static string Value(JsonElement row,string key)=>row.TryGetProperty(key,out var value)&&value.ValueKind==JsonValueKind.String?value.GetString()??"":"";
     static bool Flag(JsonElement row,string key)=>row.TryGetProperty(key,out var value)&&value.ValueKind==JsonValueKind.True;
     // Member directory: searchable table on the left, the selected teacher's settings on the right (Figma "구성원 · 교직원·권한").
+    // Reissues every pending activation code and saves them as one CSV the administrator hands out.
+    async Task DownloadActivationCodes()
+    {
+        if(MessageBox.Show(InteractionOwner,"아직 활성화하지 않은 교직원의 활성화 번호를 모두 새로 발급해 CSV 파일로 저장합니다.\n\n이전에 전달한 번호는 더 이상 쓸 수 없습니다. 파일에는 개인별 활성화 번호가 들어 있으니 배부한 뒤 삭제하세요.","활성화 번호 일괄 받기",MessageBoxButton.OKCancel)!=MessageBoxResult.OK)return;
+        var picker=new Microsoft.Win32.SaveFileDialog{Filter="CSV 파일|*.csv",FileName="교직원-활성화번호-"+DateTime.Now.ToString("yyyyMMdd")+".csv"};if(picker.ShowDialog(InteractionOwner)!=true)return;
+        var list=await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff/activation-codes",new{});
+        static string Cell(string value){if(value.Length>0&&"=+-@".Contains(value.TrimStart().FirstOrDefault()))value="'"+value;return "\""+value.Replace("\"","\"\"")+"\"";}
+        var lines=new List<string>{"이름,부서,직책,로그인 아이디,활성화 번호,유효 기한"};
+        foreach(var p in list.EnumerateArray())lines.Add(string.Join(",",new[]{Value(p,"name"),Value(p,"department"),Value(p,"position"),Value(p,"loginName"),Value(p,"activationCode"),DateTimeOffset.FromUnixTimeMilliseconds(p.GetProperty("expiresAt").GetInt64()).ToLocalTime().ToString("yyyy-MM-dd HH:mm")}.Select(Cell)));
+        System.IO.File.WriteAllText(picker.FileName,string.Join("\r\n",lines)+"\r\n",new System.Text.UTF8Encoding(true));
+        MessageBox.Show(InteractionOwner,list.GetArrayLength()+"명의 활성화 번호를 저장했습니다. 유효 기간은 7일입니다.\n교직원은 처음 비밀번호로 로그인한 뒤 이 번호를 입력합니다.","활성화 번호 일괄 받기");
+    }
     async Task StaffList()
     {
         var usersTask=api.Get<JsonElement>("api/admin/users");var permissionsTask=api.Get<JsonElement>("api/admin/office/permissions");var pendingTask=api.Get<JsonElement>("api/admin/registrations");var electivesTask=api.Get<JsonElement>("api/admin/elective-managers");
@@ -28,6 +40,8 @@ public sealed partial class OfficeWindow
         Page(false);
         var heading=new DockPanel{Margin=new Thickness(0,0,0,16)};
         var add=new Button{Content=AdminUi.IconLabel("AdminPlusIcon","교직원 등록"),VerticalAlignment=VerticalAlignment.Bottom,ToolTip="교직원 사전 등록 · 가입 승인"};add.SetResourceReference(StyleProperty,"PrimaryButton");AutomationProperties.SetName(add,"교직원 등록 · 승인");add.Click+=async(_,_)=>await Run(Administration);DockPanel.SetDock(add,Dock.Right);heading.Children.Add(add);
+        var codes=new Button{Content="활성화 번호 일괄 받기",Margin=new Thickness(0,0,8,0),VerticalAlignment=VerticalAlignment.Bottom,IsEnabled=staff.Any(s=>s.Pending&&!s.Admin),ToolTip="아직 활성화하지 않은 교직원의 활성화 번호를 새로 발급해 CSV 파일 하나로 저장합니다."};
+        codes.Click+=async(_,_)=>await Run(DownloadActivationCodes);DockPanel.SetDock(codes,Dock.Right);heading.Children.Add(codes);
         var introduction=new StackPanel();introduction.Children.Add(AdminUi.Heading("교직원·권한",22));var description=AdminUi.Label("교직원 계정과 학교 업무 권한을 한 곳에서 관리합니다.","Muted",14);description.Margin=new Thickness(0,4,0,0);introduction.Children.Add(description);heading.Children.Add(introduction);body.Children.Add(heading);
         // Toolbar: search and status filters; the sign-up filter opens the approval page.
         var toolbar=new DockPanel{Margin=new Thickness(0,0,0,16)};var count=AdminUi.Label("","Faint");count.Margin=new Thickness(2,8,0,0);DockPanel.SetDock(count,Dock.Bottom);toolbar.Children.Add(count);
