@@ -35,6 +35,6 @@
     <Compile Include="../SchoolMessenger.Shared/MessageText.cs" Link="MessageText.cs" />
     <Compile Include="../SchoolMessenger.Shared/SchoolDiscovery.cs" Link="SchoolDiscovery.cs" /><Compile Include="../SchoolMessenger.Shared/SchoolList.cs" Link="SchoolList.cs" /><Compile Include="../SchoolMessenger.Shared/Backend/SchoolAppSettings.cs" Link="SchoolAppSettings.cs" /><EmbeddedResource Include="../SchoolMessenger.Shared/schools.tsv.gz" LogicalName="SchoolMessenger.Schools.tsv.gz" />
     <EmbeddedResource Include="../SchoolMessenger.Shared/updates.json" LogicalName="SchoolMessenger.UpdateNotes.json" />
-    <EmbeddedResource Include="../../config/registration-policy.draft.json" LogicalName="SchoolMessenger.RegistrationDraft.json" />
+    <EmbeddedResource Include="../../config/registration-policy.draft.json" LogicalName="SchoolMessenger.RegistrationDraft.json" /><EmbeddedResource Include="../../config/registration-policy.school.json" LogicalName="SchoolMessenger.RegistrationSchool.json" />
   </ItemGroup>
 </Project>

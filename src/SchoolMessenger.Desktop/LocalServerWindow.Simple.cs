@@ -57,6 +57,8 @@ public sealed partial class LocalServerWindow
         items.Add((!same,"백업 위치",same?"서버와 같은 드라이브에 있습니다. 외장 드라이브를 권장합니다.":backup,"위치 변경",()=>ChooseBackup(c)));
         items.Add((c.Ups.IsChecked==true,"정전 대비(UPS)",c.Ups.IsChecked==true?"UPS 설치·시험을 확인했습니다.":"정전 때 서버 PC가 안전하게 꺼지도록 UPS를 연결하세요.",c.Ups.IsChecked==true?null:"확인함",()=>{c.Ups.IsChecked=true;SaveSettings();Refresh();}));
         items.Add((true,"Windows 방화벽","설치할 때 같은 학교망(로컬 서브넷)의 접속만 허용했습니다.",null,null));
+        var policy=ConfirmedPolicy(c.SimpleData.Text);
+        items.Add((policy is not null,"약관·개인정보 확정",policy is null?"학교 이름·문의처·보호책임자를 넣어 약관을 확정해야 교직원 계정 신청과 활성화를 받습니다.":"시행일 "+policy.Effective+" · "+policy.School+" 약관으로 회원가입을 받습니다.",policy is null?"확정하기":"다시 확정",()=>ShowPolicy(c)));
         // Rebuilt only when something changed so a click is never lost to the 3-second refresh.
         var key=string.Join("|",items.Select(i=>i.Done+i.Title+i.Detail));if(key==c.ChecklistKey)return;c.ChecklistKey=key;
         c.Checklist.Children.Clear();var open=items.Count(i=>!i.Done);AdminUi.SetBadge(c.ChecklistBadge,open==0?"모두 확인됨":open+"건 확인 필요",open==0?"Success":"Warning");
