@@ -48,7 +48,7 @@ public sealed partial class LocalServerWindow
         var window=new Window{Owner=this,Title="약관·개인정보 확정",Width=640,Height=780,WindowStartupLocation=WindowStartupLocation.CenterOwner};
         window.SetResourceReference(BackgroundProperty,"Surface");
         var stack=new StackPanel{Margin=new Thickness(24)};window.Content=new ScrollViewer{Content=stack,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
-        var intro=AdminUi.Label("학교 정보를 넣고 전문을 확인한 뒤 확정하면, 이 약관과 개인정보 안내로 교직원 계정 신청과 활성화를 받습니다. 서버를 다시 시작하면 적용됩니다.","Muted",13);intro.TextWrapping=TextWrapping.Wrap;stack.Children.Add(intro);
+        var intro=AdminUi.Label("학교 정보를 넣고 전문을 확인한 뒤 확정하면, 이 약관과 개인정보 안내로 교직원 계정 신청과 활성화를 받습니다. 실행 중인 서버는 바로 다시 시작해 적용하며, 기존 계정과 신청은 그대로 남습니다.","Muted",13);intro.TextWrapping=TextWrapping.Wrap;stack.Children.Add(intro);
         TextBox Field(string label,string value,string note)
         {
             var title=AdminUi.Label(label,"Ink",13,true);title.Margin=new Thickness(0,14,0,6);stack.Children.Add(title);
@@ -74,15 +74,19 @@ public sealed partial class LocalServerWindow
         var reviewed=new CheckBox{Content="학교 개인정보 담당자 등 학교 내부 검토를 마쳤고, 이 내용으로 운영합니다.",Margin=new Thickness(0,14,0,0)};stack.Children.Add(reviewed);
         var confirm=new Button{Content="약관 확정",HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,12,0,0),IsEnabled=false};confirm.SetResourceReference(StyleProperty,"PrimaryButton");stack.Children.Add(confirm);stack.Children.Add(error);
         reviewed.Checked+=(_,_)=>confirm.IsEnabled=true;reviewed.Unchecked+=(_,_)=>confirm.IsEnabled=false;
-        confirm.Click+=(_,_)=>
+        // The server reads the documents when it starts, so a running server is restarted right away. Accounts,
+        // applications and activations live in the server data and are kept.
+        confirm.Click+=async(_,_)=>
         {
             try
             {
                 if(data.Length==0)throw new InvalidOperationException("서버 데이터 위치를 먼저 정하세요.");
-                ConfirmPolicy(data,Fields());c.ChecklistKey="";Refresh();
-                MessageBox.Show(window,c.Host.Running?"약관을 확정했습니다. 서버를 중지했다가 다시 시작하면 회원가입을 받습니다.":"약관을 확정했습니다. 서버를 시작하면 회원가입을 받습니다.","약관·개인정보 확정");window.Close();
+                ConfirmPolicy(data,Fields());c.ChecklistKey="";confirm.IsEnabled=false;
+                if(c.Host.Running){error.Text="서버를 다시 시작해 적용하는 중…";await c.Host.Stop();await Start(c);}
+                Refresh();
+                MessageBox.Show(window,c.Host.Running?"약관을 확정하고 서버에 적용했습니다. 이제 교직원 계정 신청과 활성화를 받습니다. 기존 계정과 신청은 그대로입니다.":"약관을 확정했습니다. 서버를 시작하면 회원가입을 받습니다.","약관·개인정보 확정");window.Close();
             }
-            catch(Exception e)when(e is InvalidOperationException or IOException or UnauthorizedAccessException){error.Text=e.Message;}
+            catch(Exception e)when(e is InvalidOperationException or IOException or UnauthorizedAccessException){error.Text=e.Message;confirm.IsEnabled=reviewed.IsChecked==true;}
         };
         Preview();window.ShowDialog();
     }

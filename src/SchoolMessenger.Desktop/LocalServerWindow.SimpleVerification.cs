@@ -80,6 +80,7 @@ public sealed partial class LocalServerWindow
             var first=card.Fingerprint;await card.Host.Stop();card.Password.Clear();card.Confirm.Clear();Refresh();
             Check(card.PasswordFields.IsVisible&&card.PasswordLabel?.Text=="새 관리자 비밀번호 · 바꿀 때만"&&!card.AdminUsername.IsEnabled,"after the first start the administrator ID is fixed and the password field only changes it");
             await Start(card);Check(await Ready()&&card.Fingerprint==first,"restarting keeps the same certificate so teachers never re-confirm the code");
+            using(var after=new Api(address)){await after.Login("it.manager",password);Check((await after.Get<JsonElement>("api/admin/registrations")).EnumerateArray().Any(r=>r.GetProperty("username").GetString()=="new.teacher")&&(await after.Get<JsonElement>("api/registration/policy")).GetProperty("canRegister").GetBoolean(),"a restart keeps account applications and the confirmed terms; nobody signs up again");}
             using(var same=new Api(address)){await same.Login("it.manager",password);Check(same.Session?.User?.IsAdmin==true,"restarting with an empty password field keeps the administrator password");}
             await card.Host.Stop();
             var changed="Changed-"+Guid.NewGuid().ToString("N")[..12];card.Password.Password=card.Confirm.Password=changed;await Start(card);Check(await Ready(),"the server starts with a new administrator password");

@@ -14,9 +14,16 @@ public static class SchoolAppSettings
     public const string FileName="school-app.json",DefaultCheckTime="18:00";
     public const long MoveNoticeMilliseconds=7*86_400_000L;
     static readonly JsonSerializerOptions Json=new(JsonSerializerDefaults.Web){WriteIndented=true};
+    // Servers check this on every API request, so the parsed file is kept until it changes on disk.
+    static (string Path,DateTime Written,Settings Value)? cached;
     public static Settings Read(string root)
     {
-        try{var path=Path.Combine(root,FileName);return File.Exists(path)?JsonSerializer.Deserialize<Settings>(File.ReadAllText(path),Json)??new():new();}
+        try
+        {
+            var path=Path.Combine(root,FileName);var file=new FileInfo(path);if(!file.Exists)return new();
+            if(cached is{} hit&&hit.Path==path&&hit.Written==file.LastWriteTimeUtc)return hit.Value;
+            var value=JsonSerializer.Deserialize<Settings>(File.ReadAllText(path),Json)??new();cached=(path,file.LastWriteTimeUtc,value);return value;
+        }
         catch(Exception e)when(e is IOException or JsonException or UnauthorizedAccessException){return new();}
     }
     public static void Write(string root,Settings settings)

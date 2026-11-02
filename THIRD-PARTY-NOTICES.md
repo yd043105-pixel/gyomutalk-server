@@ -15,4 +15,4 @@ WinSparkle 0.9.4 — MIT license and bundled third-party notices. Copies of COPY
 
 ## Guardian invite QR codes
 
-QRCoder 1.6.0 (school news server) — MIT license. https://github.com/codebude/QRCoder
+QRCoder 1.6.0 (school news server, administrator program) — MIT license. https://github.com/codebude/QRCoder
