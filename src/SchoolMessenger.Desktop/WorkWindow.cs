@@ -16,8 +16,10 @@ public sealed class WorkWindow : Window
     readonly MainWindow main;
     readonly Api api;
     readonly ListBox list = new();
+    readonly Grid panes = new();
+    readonly Border emptyHost = new(), scroller = new();
     readonly Button todosTab,submissionsTab,directAdd,more;
-    readonly StackPanel detail = new() { Margin = new Thickness(24) };
+    readonly StackPanel detail = new() { Margin = new Thickness(24,16,24,16) };
     readonly TextBlock feedback = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(16, 8, 16, 10) };
     readonly Dictionary<string, SubmissionPacket> pending = new();
     WrapPanel? targetsPanel;
@@ -31,30 +33,32 @@ public sealed class WorkWindow : Window
     public WorkWindow(MainWindow main, string? requestId = null)
     { StatusTone.Watch(feedback);
         this.main = main; api = main.Api!; Owner = main; Resources = main.Resources;
-        Title = "교무톡 · 할 일과 파일 제출"; Width = 860; Height = 650; MinWidth = 650; MinHeight = 500;
+        Title = "교무톡 · 할 일과 파일 제출"; Width = 860; Height = 650; MinWidth = 650; MinHeight = 500; FontSize = 13;
         Style = (Style)FindResource("SchoolWindow"); WindowStartupLocation = WindowStartupLocation.CenterOwner;
         requestedId = requestId; if (requestId is not null) view = "submission-requests";
         var layout = new DockPanel();layout.SetResourceReference(Panel.BackgroundProperty,"Surface"); Content = layout;
-        var heading = new StackPanel { Margin = new Thickness(20, 16, 20, 12) };
-        heading.Children.Add(Text("할 일과 파일 제출", 18)); heading.Children.Add(Text("진행 중인 일은 기한순으로 표시합니다. D-Day는 한국 날짜 기준입니다.", 11));
-        var navigation = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
-        todosTab=Action("나의 할 일", async () => { view = "todos"; offset = 0; detail.Children.Clear(); await Reload(); });navigation.Children.Add(todosTab);
-        submissionsTab=Action("파일 제출 · 수합", async () => { view = "submission-requests"; offset = 0; detail.Children.Clear(); await Reload(); });navigation.Children.Add(submissionsTab);
-        navigation.Children.Add(Action("새로고침", Reload));
-        directAdd=Action("할 일 직접 추가", async () => { view="todos";offset=0;await Reload();Todo(null); });navigation.Children.Add(directAdd);
-        more=Action("다음 100개 보기", async () => { offset += 100; detail.Children.Clear(); await Reload(); });more.Visibility=Visibility.Collapsed;navigation.Children.Add(more);
-        heading.Children.Add(navigation); DockPanel.SetDock(heading, Dock.Top); layout.Children.Add(heading);
+        var heading = new StackPanel { Margin = new Thickness(24, 16, 24, 0) };
+        var headRow=new DockPanel();heading.Children.Add(headRow);
+        var navigation = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(-4, 4, 0, 0) };
+        todosTab=Action("나의 할 일", async () => { view = "todos"; offset = 0; detail.Children.Clear(); await Reload(); });todosTab.SetResourceReference(StyleProperty,"TabButton");todosTab.ClearValue(FontSizeProperty);todosTab.ClearValue(MarginProperty);navigation.Children.Add(todosTab);
+        submissionsTab=Action("파일 제출 · 수합", async () => { view = "submission-requests"; offset = 0; detail.Children.Clear(); await Reload(); });submissionsTab.SetResourceReference(StyleProperty,"TabButton");submissionsTab.ClearValue(FontSizeProperty);submissionsTab.ClearValue(MarginProperty);navigation.Children.Add(submissionsTab);
+        directAdd=Action("할 일 추가", async () => { view="todos";offset=0;await Reload();Todo(null);UpdatePanes(); },true);directAdd.Margin=new Thickness(8,0,0,0);DockPanel.SetDock(directAdd,Dock.Right);headRow.Children.Add(directAdd);var refresh=Action("새로고침", Reload);refresh.Margin=new Thickness(0);DockPanel.SetDock(refresh,Dock.Right);headRow.Children.Add(refresh);headRow.Children.Add(new TextBlock{Text="할 일과 파일 제출",FontSize=22,FontWeight=FontWeights.Bold,VerticalAlignment=VerticalAlignment.Center});
+        more=Action("다음 100개 보기", async () => { offset += 100; detail.Children.Clear(); await Reload(); });more.Visibility=Visibility.Collapsed;more.Margin=new Thickness(12,0,0,0);more.VerticalAlignment=VerticalAlignment.Center;navigation.Children.Add(more);
+        heading.Children.Add(navigation); var headBorder=new Border{Child=heading,BorderThickness=new Thickness(0,0,0,1)};headBorder.SetResourceReference(Border.BorderBrushProperty,"Line");DockPanel.SetDock(headBorder, Dock.Top); layout.Children.Add(headBorder);
         DockPanel.SetDock(feedback, Dock.Bottom); layout.Children.Add(feedback);
-        var grid = new Grid(); grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280) }); grid.ColumnDefinitions.Add(new ColumnDefinition());
-        list.BorderThickness = new Thickness(0, 0, 1, 0); list.BorderBrush = (Brush)FindResource("Line");
-        list.SetResourceReference(Control.BackgroundProperty,"Soft");
+        var grid = panes; grid.ColumnDefinitions.Add(new ColumnDefinition()); grid.ColumnDefinitions.Add(new ColumnDefinition());
+        list.Margin=new Thickness(12);
         ScrollViewer.SetHorizontalScrollBarVisibility(list,ScrollBarVisibility.Disabled);list.HorizontalContentAlignment=HorizontalAlignment.Stretch;
-        var row=new FrameworkElementFactory(typeof(StackPanel));row.SetBinding(ToolTipService.ToolTipProperty,new Binding("Label"));
-        var title=new FrameworkElementFactory(typeof(TextBlock));title.SetBinding(TextBlock.TextProperty,new Binding("Title"));title.SetValue(TextBlock.FontSizeProperty,12d);title.SetValue(TextBlock.FontWeightProperty,FontWeights.SemiBold);title.SetValue(TextBlock.TextWrappingProperty,TextWrapping.NoWrap);title.SetValue(TextBlock.TextTrimmingProperty,TextTrimming.CharacterEllipsis);row.AppendChild(title);
-        var summary=new FrameworkElementFactory(typeof(TextBlock));summary.SetBinding(TextBlock.TextProperty,new Binding("Summary"));summary.SetValue(TextBlock.FontSizeProperty,10d);summary.SetResourceReference(TextBlock.ForegroundProperty,"Muted");summary.SetValue(FrameworkElement.MarginProperty,new Thickness(0,6,0,0));summary.SetValue(TextBlock.TextWrappingProperty,TextWrapping.NoWrap);summary.SetValue(TextBlock.TextTrimmingProperty,TextTrimming.CharacterEllipsis);row.AppendChild(summary);
-        list.ItemTemplate=new DataTemplate{VisualTree=row};
+        var row=new FrameworkElementFactory(typeof(DockPanel));row.SetBinding(ToolTipService.ToolTipProperty,new Binding("Label"));
+        var doneBox=new FrameworkElementFactory(typeof(CheckBox));doneBox.SetValue(DockPanel.DockProperty,Dock.Left);doneBox.SetValue(MarginProperty,new Thickness(0,0,12,0));doneBox.SetValue(VerticalAlignmentProperty,VerticalAlignment.Center);doneBox.SetBinding(VisibilityProperty,new Binding("CanComplete"){Converter=new BooleanToVisibilityConverter()});doneBox.SetBinding(TagProperty,new Binding());doneBox.SetValue(ToolTipProperty,"완료로 표시");doneBox.AddHandler(System.Windows.Controls.Primitives.ButtonBase.ClickEvent,new RoutedEventHandler(CompleteTodo));row.AppendChild(doneBox);
+        var badgeText=new FrameworkElementFactory(typeof(TextBlock));badgeText.SetBinding(TextBlock.TextProperty,new Binding("Badge"));badgeText.SetValue(TextBlock.FontSizeProperty,11d);badgeText.SetValue(TextBlock.FontWeightProperty,FontWeights.SemiBold);badgeText.SetBinding(TextBlock.ForegroundProperty,new Binding("BadgeFore"));
+        var badge=new FrameworkElementFactory(typeof(Border));badge.SetValue(DockPanel.DockProperty,Dock.Right);badge.SetValue(Border.CornerRadiusProperty,new CornerRadius(10));badge.SetValue(Border.PaddingProperty,new Thickness(8,2,8,2));badge.SetValue(MarginProperty,new Thickness(8,0,0,0));badge.SetValue(VerticalAlignmentProperty,VerticalAlignment.Center);badge.SetBinding(Border.BackgroundProperty,new Binding("BadgeBack"));badge.SetBinding(VisibilityProperty,new Binding("HasBadge"){Converter=new BooleanToVisibilityConverter()});badge.AppendChild(badgeText);row.AppendChild(badge);
+        var words=new FrameworkElementFactory(typeof(StackPanel));
+        var title=new FrameworkElementFactory(typeof(TextBlock));title.SetBinding(TextBlock.TextProperty,new Binding("Title"));title.SetValue(TextBlock.FontSizeProperty,13d);title.SetValue(TextBlock.FontWeightProperty,FontWeights.SemiBold);title.SetValue(TextBlock.TextWrappingProperty,TextWrapping.NoWrap);title.SetValue(TextBlock.TextTrimmingProperty,TextTrimming.CharacterEllipsis);words.AppendChild(title);
+        var summary=new FrameworkElementFactory(typeof(TextBlock));summary.SetBinding(TextBlock.TextProperty,new Binding("Summary"));summary.SetValue(TextBlock.FontSizeProperty,11d);summary.SetResourceReference(TextBlock.ForegroundProperty,"Muted");summary.SetValue(FrameworkElement.MarginProperty,new Thickness(0,6,0,0));summary.SetValue(TextBlock.TextWrappingProperty,TextWrapping.NoWrap);summary.SetValue(TextBlock.TextTrimmingProperty,TextTrimming.CharacterEllipsis);words.AppendChild(summary);
+        row.AppendChild(words);list.ItemTemplate=new DataTemplate{VisualTree=row};
         list.SelectionChanged += async (_, _) => { if (!rendering && list.SelectedItem is WorkRow row) await Run(() => Show(row.Value)); };
-        grid.Children.Add(list); var scroll = new ScrollViewer { Content = detail, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled }; Grid.SetColumn(scroll, 1); grid.Children.Add(scroll); layout.Children.Add(grid);
+        grid.Children.Add(list); grid.Children.Add(emptyHost); scroller.BorderThickness=new Thickness(1,0,0,0); scroller.SetResourceReference(Border.BorderBrushProperty,"Line"); scroller.Child=new ScrollViewer { Content = detail, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled }; Grid.SetColumn(scroller, 1); grid.Children.Add(scroller); layout.Children.Add(grid);
         Loaded += async (_, _) => await Run(async () => { await Reload(); if (requestedId is not null) await Submission(requestedId); });
         Loaded+=(_,_)=>deadlineClock.Start();Closed+=(_,_)=>deadlineClock.Stop();
         deadlineClock.Tick+=async(_,_)=>{var today=KoreanToday;if(today!=displayedDay&&!busy){if(view=="todos")await Run(Reload);else displayedDay=today;}};
@@ -69,26 +73,48 @@ public sealed class WorkWindow : Window
     }
     Button Action(string label, Func<Task> action,bool primary=false)
     {
-        var button = new Button { Content = label, Margin = new Thickness(0, 0, 8, 8), FontSize = 11 };
+        var button = new Button { Content = label, Margin = new Thickness(0, 0, 8, 8) };
         if(primary)button.SetResourceReference(StyleProperty,"PrimaryButton");
         button.Click += async (_, _) => { if (busy) return; busy = true; button.IsEnabled = false; try { await Run(action); } finally { busy = false; button.IsEnabled = true; } }; return button;
     }
-    async Task Run(Func<Task> action) { feedback.Text = ""; try { await action(); } catch (Exception error) { feedback.Text = error.Message; } }
+    async Task Run(Func<Task> action) { feedback.Text = ""; try { await action(); UpdatePanes(); } catch (Exception error) { feedback.Text = error.Message; } }
+    // To-dos fill the window with a side panel for editing; submissions need the wide right side for the recipient cards.
+    void UpdatePanes()
+    {
+        var todos=view=="todos";var open=detail.Children.Count>0;
+        panes.ColumnDefinitions[0].Width=todos?new GridLength(1,GridUnitType.Star):new GridLength(280);
+        panes.ColumnDefinitions[1].Width=!open&&todos?new GridLength(0):todos?new GridLength(320):new GridLength(1,GridUnitType.Star);
+        scroller.Visibility=open||!todos?Visibility.Visible:Visibility.Collapsed;
+        var none=list.Items.Count==0;list.Visibility=none?Visibility.Collapsed:Visibility.Visible;emptyHost.Visibility=none?Visibility.Visible:Visibility.Collapsed;
+        var add=new Button{Content="할 일 추가"};add.SetResourceReference(StyleProperty,"PrimaryButton");add.Click+=(_,_)=>directAdd.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        emptyHost.Child=todos?AdminUi.Empty("진행 중인 할 일이 없습니다","받은 메시지에서 찾은 할 일과 직접 추가한 일이 여기에 모입니다.",open?null:add):AdminUi.Empty("제출 요청이 없습니다","메시지를 보낼 때 ‘파일 제출 받기’를 켜면 여기에 모입니다.");
+    }
+    async void CompleteTodo(object sender,RoutedEventArgs e)
+    {
+        if(sender is not CheckBox{Tag:WorkRow row})return;
+        await Run(async()=>{await api.Send<JsonElement>(HttpMethod.Patch,"api/todos/"+String(row.Value,"id"),new{title=String(row.Value,"title"),dueDate=String(row.Value,"dueDate") is{Length:>0} d?d:null,status="done",revision=row.Value.GetProperty("revision").GetInt32()});detail.Children.Clear();await Reload();});
+    }
     public async Task Reload()
     {
         var currentView = view;
-        todosTab.SetResourceReference(Control.BackgroundProperty,currentView=="todos"?"Pale":"Surface");todosTab.SetResourceReference(Control.ForegroundProperty,currentView=="todos"?"Blue":"Muted");
-        submissionsTab.SetResourceReference(Control.BackgroundProperty,currentView=="submission-requests"?"Pale":"Surface");submissionsTab.SetResourceReference(Control.ForegroundProperty,currentView=="submission-requests"?"Blue":"Muted");
+        todosTab.Tag=currentView=="todos"?"selected":null;submissionsTab.Tag=currentView=="submission-requests"?"selected":null;
         var previous = (list.SelectedItem as WorkRow)?.Value.GetProperty("id").GetString();
         var rows = await api.Get<JsonElement[]>($"api/{view}?offset={offset}");
         if (currentView != view) return;
         feedback.Text="";more.Visibility=rows.Length==100?Visibility.Visible:Visibility.Collapsed;
         rendering = true;
-        try { displayedDay=KoreanToday;list.ItemsSource = rows.Select(v => new WorkRow(v, v.GetProperty("title").GetString()!.ReplaceLineEndings(" "), currentView == "todos" ? Status(v.GetProperty("status").GetString()!) + " · " + Deadline(String(v,"dueDate"),String(v,"status"),displayedDay) : v.GetProperty("ownerName").GetString() + " · " + v.GetProperty("submittedCount").GetInt32() + "/" + v.GetProperty("targetCount").GetInt32() + "명 제출")).ToArray(); list.SelectedItem = list.Items.Cast<WorkRow>().FirstOrDefault(r => r.Value.GetProperty("id").GetString() == previous); }
+        try { displayedDay=KoreanToday;list.ItemsSource = rows.Select(v => (currentView == "todos" ? Status(v.GetProperty("status").GetString()!) + (String(v,"dueDate") is {Length:>0} due ? " · " + due : "") : v.GetProperty("ownerName").GetString() + " · " + v.GetProperty("submittedCount").GetInt32() + "/" + v.GetProperty("targetCount").GetInt32() + "명 제출") is var summary && currentView == "todos" ? WithBadge(v, summary) : new WorkRow(v, v.GetProperty("title").GetString()!.ReplaceLineEndings(" "), summary)).ToArray(); list.SelectedItem = list.Items.Cast<WorkRow>().FirstOrDefault(r => r.Value.GetProperty("id").GetString() == previous); }
         finally { rendering = false; }
         if(currentView=="todos"&&list.SelectedItem is WorkRow selected&&detail.Children.OfType<TextBlock>().FirstOrDefault(t=>Equals(t.Tag,"deadline-counter")) is{} counter)
             counter.Text=Deadline(String(selected.Value,"dueDate"),String(selected.Value,"status"),displayedDay);
-        if (rows.Length == 0) feedback.Text = "표시할 항목이 없습니다. 이전 목록은 메뉴를 다시 선택하세요.";
+        UpdatePanes();
+    }
+    WorkRow WithBadge(JsonElement v,string summary)
+    {
+        var state=String(v,"status");var open=state is "open" or "suggested";
+        var known=DateOnly.TryParseExact(String(v,"dueDate"),"yyyy-MM-dd",CultureInfo.InvariantCulture,DateTimeStyles.None,out var due);var days=known?due.DayNumber-displayedDay.DayNumber:0;
+        var (text,back,fore)=!open?("","",""):!known?("기한 없음","Subtle","Muted"):days<0?("지남 "+(-days)+"일","DangerTint","Danger"):days<=1?(days==0?"D-Day":"D-1","DangerTint","Danger"):days<=3?("D-"+days,"WarningTint","Warning"):("D-"+days,"Subtle","Muted");
+        return new WorkRow(v,String(v,"title").ReplaceLineEndings(" "),summary,text,text.Length>0?(Brush)FindResource(back):null,text.Length>0?(Brush)FindResource(fore):null,state=="open");
     }
     Task Show(JsonElement value) { if (view == "todos") { Todo(value); return Task.CompletedTask; } return Submission(value.GetProperty("id").GetString()!); }
     static string String(JsonElement value, string field) => value.TryGetProperty(field, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString()! : "";
@@ -103,32 +129,33 @@ public sealed class WorkWindow : Window
     }
     void Todo(JsonElement? item)
     {
-        detail.Children.Clear(); detail.Children.Add(Text(item is null ? "할 일 직접 추가" : "할 일 확인 · 수정", 19));
+        detail.Children.Clear(); detail.Children.Add(Text(item is null ? "할 일 추가" : "할 일 수정", 16));
         if (item is { } original)
         {
             detail.Children.Add(Text(String(original, "evidence"), 12));
             var counter=Text(Deadline(String(original,"dueDate"),String(original,"status"),KoreanToday),14);counter.Tag="deadline-counter";detail.Children.Add(counter);
             if (String(original, "sourceId") is { Length: > 0 } source)
-                detail.Children.Add(Action("원본 메시지 보기", async () => { var originalMessage = main.Archive.Merge(await api.Get<Detail>($"api/messages/{source}")); var window = new Window { Owner = this, Title = originalMessage.Message.Title, Width = 550, Height = 450, Style=(Style)FindResource("SchoolWindow"), Content = new ScrollViewer { Content = Text(originalMessage.Message.Body), Margin = new Thickness(20) } }; window.Show(); }));
+                detail.Children.Add(Action("원본 메시지 보기", async () => { var originalMessage = main.Archive.Merge(await api.Get<Detail>($"api/messages/{source}")); if (originalMessage.Message.Purged) { MessageBox.Show(this, "메시지는 받은 PC에만 저장됩니다. 이 PC에는 사본이 없어 내용을 볼 수 없습니다.", "원본 메시지"); return; } var window = new Window { Owner = this, Title = originalMessage.Message.Title, Width = 550, Height = 450, Style=(Style)FindResource("SchoolWindow"), Content = new ScrollViewer { Content = Text(originalMessage.Message.Body), Margin = new Thickness(20) } }; window.Show(); }));
         }
         var title = new TextBox { MaxLength = 200, Text = item is { } t ? String(t, "title") : "", Margin = new Thickness(0, 0, 0, 12) };
         var due = new DatePicker { Margin = new Thickness(0, 0, 0, 12) };
         if (item is { } d && DateTime.TryParse(String(d, "dueDate"), out var day)) due.SelectedDate = day;
         var statuses = new[] { "open", "done", "dismissed" };
-        var status = new ComboBox { ItemsSource = statuses.Select(Status).ToArray(), SelectedIndex = 0, Margin = new Thickness(0, 0, 0, 14), IsEnabled = item is not null };
+        var status = new ComboBox { ItemsSource = statuses.Select(Status).ToArray(), SelectedIndex = 0, Margin = new Thickness(0, 0, 0, 14) };
         if (item is { } s && Array.IndexOf(statuses, String(s, "status")) is var index && index >= 0) status.SelectedIndex = index;
-        detail.Children.Add(Text("제목", 11)); detail.Children.Add(title); detail.Children.Add(Text("기한 · 선택", 11)); detail.Children.Add(due); detail.Children.Add(Text("상태", 11)); detail.Children.Add(status);
-        detail.Children.Add(Action(item is { } candidate && String(candidate, "status") == "suggested" ? "확인 후 등록" : "저장", async () =>
+        detail.Children.Add(Text("제목", 12)); detail.Children.Add(title); detail.Children.Add(Text("기한 (선택)", 12)); detail.Children.Add(due); if (item is not null) { detail.Children.Add(Text("상태", 12)); detail.Children.Add(status); }
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; var cancel = Action("취소", () => { detail.Children.Clear(); list.SelectedItem = null; return Task.CompletedTask; }); buttons.Children.Add(cancel); detail.Children.Add(buttons);
+        buttons.Children.Add(Action(item is { } candidate && String(candidate, "status") == "suggested" ? "확인 후 등록" : "저장", async () =>
         {
             await api.Send<JsonElement>(item is null ? HttpMethod.Post : HttpMethod.Patch, "api/todos" + (item is { } todo ? "/" + String(todo, "id") : ""), new { title = title.Text, dueDate = due.SelectedDate?.ToString("yyyy-MM-dd"), status = statuses[status.SelectedIndex], revision = item is { } old ? old.GetProperty("revision").GetInt32() : 0 });
-            await Reload(); detail.Children.Clear(); detail.Children.Add(Text("저장했습니다."));
+            detail.Children.Clear(); await Reload(); feedback.Text = "저장했습니다.";
         },true));
     }
     public async Task Submission(string id)
     {
         if(view!="submission-requests"){view="submission-requests";offset=0;await Reload();}
         var response = await api.Get<JsonElement>($"api/submission-requests/{id}"); var request = response.GetProperty("request");
-        detail.Children.Clear(); detail.Children.Add(Text(String(request, "title"), 19)); detail.Children.Add(Text(String(request, "body")));
+        detail.Children.Clear(); detail.Children.Add(Text(String(request, "title"), 16)); detail.Children.Add(Text(String(request, "body")));
         var closed = request.GetProperty("closed").GetBoolean();
         detail.Children.Add(Text("마감 " + DateTimeOffset.FromUnixTimeMilliseconds(request.GetProperty("deadline").GetInt64()).ToOffset(TimeSpan.FromHours(9)).ToString("yyyy.MM.dd HH:mm") + (closed ? " · 종료" : ""), 12));
         var mine = String(request, "ownerId") == api.Session!.User!.Id;
@@ -202,7 +229,7 @@ public sealed class WorkWindow : Window
         }
         detail.Children.Add(Text("업로드한 파일은 30일 보관됩니다.",11));
     }
-    sealed record WorkRow(JsonElement Value, string Title,string Summary){public string Label=>Title+"\n"+Summary;}
+    sealed record WorkRow(JsonElement Value, string Title,string Summary,string Badge="",Brush? BadgeBack=null,Brush? BadgeFore=null,bool CanComplete=false){public string Label=>Title+"\n"+Summary;public bool HasBadge=>Badge.Length>0;}
     internal async Task VerifySubmissionLayout(Action<Window,string> capture,string directory)
     {
         var checks=new List<string>();void Check(bool ok,string message){if(!ok)throw new InvalidOperationException(message);checks.Add(message);}
@@ -236,7 +263,7 @@ public sealed class WorkWindow : Window
         for(var i=0;i<100&&busy;i++)await Task.Delay(50);
         if(busy||view!="todos"||!detail.Children.OfType<TextBox>().Any())throw new InvalidOperationException("제출 탭에서 할 일 직접 추가 전환 실패");
         detail.Children.OfType<TextBox>().Single().Text = "학급 상담 기록 정리";
-        detail.Children.OfType<Button>().Single(b => b.Content?.ToString() == "저장").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        detail.Children.OfType<StackPanel>().SelectMany(p => p.Children.OfType<Button>()).Single(b => b.Content?.ToString() == "저장").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         for (var i = 0; i < 100 && busy; i++) await Task.Delay(50);
         if (busy || !(await api.Get<JsonElement[]>("api/todos")).Any(t => String(t, "title") == "학급 상담 기록 정리")) throw new InvalidOperationException("Windows 할 일 창 등록 실패: " + feedback.Text);
         await Reload();

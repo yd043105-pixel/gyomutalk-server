@@ -14,7 +14,7 @@ public sealed class StaffActivationWindow:Window
     public StaffActivationWindow(Api api)
     {
         Title="교직원 계정 · 첫 설정";Width=480;Height=690;WindowStartupLocation=WindowStartupLocation.CenterOwner;
-        var stack=new StackPanel{Margin=new Thickness(24)};Content=new ScrollViewer{Content=stack};
+        var stack=new StackPanel{Margin=new Thickness(24)};AdminUi.Page(this,new ScrollViewer{Content=stack,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
         stack.Children.Add(new TextBlock{Text="관리자가 개별 전달한 활성화 번호와 개인 비밀번호를 설정하세요. 완료 전에는 업무 자료를 열 수 없습니다.",TextWrapping=TextWrapping.Wrap});
         stack.Children.Add(new TextBlock{Text="개별 활성화 번호",Margin=new Thickness(0,16,0,5)});var code=new TextBox();stack.Children.Add(code);
         var password=new PasswordBox();var confirm=new PasswordBox();

@@ -49,6 +49,21 @@ static class AdminUi
         icon.SetResourceReference(FrameworkElement.StyleProperty,"Glyph");icon.SetResourceReference(Path.DataProperty,key);
         if(stroke is not null)icon.SetResourceReference(Shape.StrokeProperty,stroke);return icon;
     }
+    // A window built in code: the school title bar with a plain page under it.
+    public static void Page(Window window,UIElement content)
+    {
+        var page=new Border{Child=content};page.SetResourceReference(Border.BackgroundProperty,"Surface");
+        window.Content=page;window.Style=(Style)window.FindResource("SchoolWindow");
+    }
+    // Shown instead of an empty list or table, so a blank screen always says what belongs there.
+    public static StackPanel Empty(string title,string detail,Button? action=null)
+    {
+        var panel=new StackPanel{HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(24,48,24,48)};
+        var heading=Heading(title);heading.TextAlignment=TextAlignment.Center;panel.Children.Add(heading);
+        var text=Label(detail);text.TextAlignment=TextAlignment.Center;text.Margin=new Thickness(0,8,0,0);panel.Children.Add(text);
+        if(action is not null){action.HorizontalAlignment=HorizontalAlignment.Center;action.Margin=new Thickness(0,16,0,0);panel.Children.Add(action);}
+        return panel;
+    }
     public static StackPanel IconLabel(string key,string text)
     {
         var row=new StackPanel{Orientation=Orientation.Horizontal};row.Children.Add(Icon(key,14));

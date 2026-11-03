@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using SchoolMessenger.Contracts;
 
 namespace SchoolMessenger.Desktop;
@@ -19,8 +20,8 @@ public sealed partial class OfficeWindow:Window
     public OfficeWindow(MainWindow main,bool administration=false):this(main,main.Api!,administration){}
     internal OfficeWindow(Window owner,Api source,bool administration,string page="administration")
     {
-        api=source;this.administration=administration;Owner=owner;Resources=owner.Resources;Title=administration?"교직원 · 학교 운영 관리":"학사일정 · 특별실 예약";Width=700;Height=760;MinHeight=500;MinWidth=500;
-        WindowStartupLocation=WindowStartupLocation.CenterOwner;var dock=new DockPanel();DockPanel.SetDock(error,Dock.Bottom);dock.Children.Add(error);surface.Child=new ScrollViewer{Content=body};surface.Margin=new Thickness(administration?0:16);dock.Children.Add(surface);Content=dock;Page();var initialized=false;dock.Loaded+=async(_,_)=>{if(initialized)return;initialized=true;await Run(async()=>{if(!administration){await Load(false);return;}switch(page){case "staff":await StaffList();break;case "sections":await Sections();break;case "rooms":setup=await api.Get<JsonElement>("api/office/setup");await Rooms();break;case "calendar":await Load(false);break;case "audit":await Audit();break;default:await Administration();break;}});};
+        api=source;this.administration=administration;Owner=owner;Resources=owner.Resources;Title=administration?"교직원 · 학교 운영 관리":"교무톡 · 학사일정 · 특별실";Width=960;Height=780;MinHeight=500;MinWidth=700;FontSize=13;Style=(Style)FindResource("SchoolWindow");
+        WindowStartupLocation=WindowStartupLocation.CenterOwner;var dock=new DockPanel();DockPanel.SetDock(error,Dock.Bottom);dock.Children.Add(error);surface.Child=new ScrollViewer{Content=body,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};dock.SetResourceReference(BackgroundProperty,"Surface");dock.Children.Add(surface);Content=dock;Page();var initialized=false;dock.Loaded+=async(_,_)=>{if(initialized)return;initialized=true;await Run(async()=>{if(!administration){await Load(false);return;}switch(page){case "staff":await StaffList();break;case "sections":await Sections();break;case "rooms":setup=await api.Get<JsonElement>("api/office/setup");await Rooms();break;case "calendar":await Load(false);break;case "audit":await Audit();break;default:await Administration();break;}});};
     }
     readonly Border surface=new(){CornerRadius=new CornerRadius(10)};
     // Every page starts here: most pages sit on a card, the member directory draws its own table and panel.
@@ -29,36 +30,77 @@ public sealed partial class OfficeWindow:Window
         body.Children.Clear();body.Margin=new Thickness(card?24:0);surface.BorderThickness=new Thickness(card?1:0);
         if(card){surface.SetResourceReference(Border.BackgroundProperty,"Surface");surface.SetResourceReference(Border.BorderBrushProperty,"Line");}else surface.Background=null;
     }
-    static TextBlock Text(string text,int size=14)=>new(){Text=text,FontSize=size,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,8,0,6)};
+    static TextBlock Text(string text,int size=14)=>new(){Text=text,FontSize=size,FontWeight=size>=20?FontWeights.Bold:FontWeights.Normal,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,8,0,6)};
     void Button(string label,Func<Task> action){var b=new Button{Content=label,Margin=new Thickness(0,4,0,8),HorizontalAlignment=HorizontalAlignment.Left};b.Click+=async(_,_)=>await Run(action);body.Children.Add(b);}
     TextBox Field(string label,string value=""){body.Children.Add(Text(label));var box=new TextBox{Text=value};body.Children.Add(box);return box;}
     async Task Run(Func<Task> action){if(busy)return;busy=true;body.IsEnabled=false;error.Text="";try{await action();}catch(Exception e){error.Text=e.Message;}finally{busy=false;body.IsEnabled=true;}}
     static string Date(JsonElement row,string key)=>DateTimeOffset.FromUnixTimeMilliseconds(row.GetProperty(key).GetInt64()).ToOffset(TimeSpan.FromHours(9)).ToString("M/d HH:mm");
+    DateTime officeDate=DateTime.UtcNow.AddHours(9).Date;
     async Task Load(bool bookings)
     {
-        setup=await api.Get<JsonElement>("api/office/setup");Page();Button("학사력 · 학교 일정",()=>Load(false));Button("특별실 예약",()=>Load(true));if(administration&&api.Session!.User!.IsAdmin)Button("교직원 계정 · 운영 권한",Administration);
-        body.Children.Add(Text(bookings?"특별실 예약":"학사력 · 행사 · 학교 일정",22));
-        var date=new DatePicker{SelectedDate=DateTime.UtcNow.AddHours(9).Date};body.Children.Add(date);var list=new StackPanel();
-        async Task Refresh()
+        setup=await api.Get<JsonElement>("api/office/setup");Page(false);body.Margin=new Thickness(Embedded?0:24,Embedded?0:16,Embedded?0:24,Embedded?0:16);
+        var head=new DockPanel();var canAdd=bookings||setup.GetProperty("calendarManager").GetBoolean();
+        if(canAdd){var add=new Button{Content=bookings?"특별실 예약하기":"학교 일정 등록"};add.SetResourceReference(StyleProperty,"PrimaryButton");add.Click+=async(_,_)=>await Run(()=>Editor(bookings,null));DockPanel.SetDock(add,Dock.Right);head.Children.Add(add);}
+        if(bookings&&setup.GetProperty("roomManager").GetBoolean()){var rooms=new Button{Content="특별실 관리",Margin=new Thickness(0,0,8,0)};rooms.Click+=async(_,_)=>await Run(Rooms);DockPanel.SetDock(rooms,Dock.Right);head.Children.Add(rooms);}
+        head.Children.Add(AdminUi.Heading("학사일정 · 특별실",22));body.Children.Add(head);
+        var tabs=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(-4,4,0,0)};void Tab(string label,bool on,bool target){var t=new Button{Content=label,Tag=on?"selected":null};t.SetResourceReference(StyleProperty,"TabButton");t.Click+=async(_,_)=>await Run(()=>Load(target));tabs.Children.Add(t);}
+        Tab("학사일정",!bookings,false);Tab("특별실 예약",bookings,true);body.Children.Add(tabs);var rule=new Border{Height=1,Margin=new Thickness(Embedded?0:-24,0,Embedded?0:-24,12)};rule.SetResourceReference(Border.BackgroundProperty,"Line");body.Children.Add(rule);
+        var nav=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,0,0,12)};body.Children.Add(nav);
+        Button Step(string text,string name,Func<DateTime> next){var b=new Button{Content=text,Width=text.Length==1?32:double.NaN,FontSize=text.Length==1?18:13,Padding=text.Length==1?new Thickness(0):new Thickness(12,6,12,6),HorizontalContentAlignment=HorizontalAlignment.Center,ToolTip=name};b.SetResourceReference(StyleProperty,"SubtleButton");System.Windows.Automation.AutomationProperties.SetName(b,name);b.Click+=async(_,_)=>await Run(async()=>{officeDate=next();await Load(bookings);});return b;}
+        var title=AdminUi.Heading(bookings?officeDate.ToString("M월 d일 dddd",Korean):officeDate.ToString("yyyy년 M월",Korean));title.VerticalAlignment=VerticalAlignment.Center;title.Margin=new Thickness(4,0,4,0);
+        nav.Children.Add(Step("‹","이전",()=>bookings?officeDate.AddDays(-1):officeDate.AddMonths(-1)));nav.Children.Add(title);nav.Children.Add(Step("›","다음",()=>bookings?officeDate.AddDays(1):officeDate.AddMonths(1)));nav.Children.Add(Step("오늘","오늘",()=>DateTime.UtcNow.AddHours(9).Date));
+        if(bookings)await BookingGrid();else await MonthGrid();
+    }
+    static readonly CultureInfo Korean=CultureInfo.GetCultureInfo("ko-KR");
+    static DateTime KoreaTime(JsonElement row,string key)=>DateTimeOffset.FromUnixTimeMilliseconds(row.GetProperty(key).GetInt64()).ToOffset(TimeSpan.FromHours(9)).DateTime;
+    async Task MonthGrid()
+    {
+        var first=new DateTime(officeDate.Year,officeDate.Month,1);var rows=(await api.Get<JsonElement>("api/office/events?from="+first.ToString("yyyy-MM-dd")+"&to="+first.AddMonths(1).ToString("yyyy-MM-dd"))).EnumerateArray().ToArray();
+        var manager=setup.GetProperty("calendarManager").GetBoolean();var today=DateTime.UtcNow.AddHours(9).Date;var start=first.AddDays(-(int)first.DayOfWeek);var weeks=(int)Math.Ceiling(((first.AddMonths(1)-start).TotalDays)/7);
+        var grid=new Grid();for(var d=0;d<7;d++)grid.ColumnDefinitions.Add(new ColumnDefinition());grid.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});for(var w=0;w<weeks;w++)grid.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto,MinHeight=88});
+        string[] names=["일","월","화","수","목","금","토"];for(var d=0;d<7;d++){var label=AdminUi.Label(names[d],d==0?"Danger":"Muted",12);label.HorizontalAlignment=HorizontalAlignment.Center;var cell=new Border{Child=label,Padding=new Thickness(0,8,0,8)};cell.SetResourceReference(Border.BackgroundProperty,"Subtle");Grid.SetColumn(cell,d);grid.Children.Add(cell);}
+        for(var w=0;w<weeks;w++)for(var d=0;d<7;d++)
         {
-            list.Children.Clear();var selected=date.SelectedDate??DateTime.UtcNow.AddHours(9).Date;var from=bookings?selected.Date:new DateTime(selected.Year,selected.Month,1);var to=bookings?from.AddDays(1):from.AddMonths(1);
-            var rows=await api.Get<JsonElement>("api/office/"+(bookings?"bookings":"events")+"?from="+from.ToString("yyyy-MM-dd")+"&to="+to.ToString("yyyy-MM-dd"));
-            foreach(var row in rows.EnumerateArray())
+            var date=start.AddDays(w*7+d);var inMonth=date.Month==first.Month;var stack=new StackPanel{Margin=new Thickness(8)};var cell=new Border{Child=stack,BorderThickness=new Thickness(0,1,0,0)};cell.SetResourceReference(Border.BorderBrushProperty,"Line");if(date==today)cell.SetResourceReference(Border.BackgroundProperty,"Pale");Grid.SetRow(cell,w+1);Grid.SetColumn(cell,d);grid.Children.Add(cell);
+            if(!inMonth)continue;
+            stack.Children.Add(AdminUi.Label(date.Day.ToString(),date==today?"Blue":d==0?"Danger":"Muted",12,date==today));
+            foreach(var row in rows.Where(r=>{var from=KoreaTime(r,"start").Date;var end=KoreaTime(r,"end");var to=(end.TimeOfDay==TimeSpan.Zero&&end.Date>from?end.AddDays(-1):end).Date;return date>=from&&date<=to;}))
             {
-                list.Children.Add(Text(row.GetProperty("title").GetString()!,18));list.Children.Add(Text(Date(row,"start")+" → "+Date(row,"end")+" · "+row.GetProperty("ownerName").GetString(),12));list.Children.Add(Text(bookings?row.GetProperty("roomName").GetString()!:row.GetProperty("description").GetString()!));
-                var allowed=bookings?row.GetProperty("ownerId").GetString()==api.Session!.User!.Id||setup.GetProperty("roomManager").GetBoolean():setup.GetProperty("calendarManager").GetBoolean();
-                if(allowed)
-                {
-                    var edit=new Button{Content="변경",Margin=new Thickness(0,4,0,4)};edit.Click+=async(_,_)=>await Run(()=>Editor(bookings,row));list.Children.Add(edit);
-                    var cancel=new Button{Content="취소",Margin=new Thickness(0,4,0,10)};cancel.Click+=async(_,_)=>await Run(async()=>{if(MessageBox.Show(InteractionOwner,"이 항목을 취소할까요?","취소 확인",MessageBoxButton.YesNo)==MessageBoxResult.Yes){await api.Send<JsonElement>(HttpMethod.Post,"api/office/"+(bookings?"bookings":"events")+"/"+row.GetProperty("id").GetString()+"/cancel",new OfficeRevision(row.GetProperty("revision").GetInt32()));await Refresh();}});list.Children.Add(cancel);
-                }
+                var text=new TextBlock{Text=row.GetProperty("title").GetString(),FontSize=11,TextTrimming=TextTrimming.CharacterEllipsis};text.SetResourceReference(TextBlock.ForegroundProperty,"Blue");
+                var tip=(row.GetProperty("allDay").GetBoolean()?"종일":Date(row,"start")+" ~ "+Date(row,"end"))+" · "+row.GetProperty("ownerName").GetString()+(row.GetProperty("description").GetString() is{Length:>0} about?"\n"+about:"");
+                var chip=new Border{Child=text,Padding=new Thickness(4),Margin=new Thickness(0,4,0,0),CornerRadius=new CornerRadius(4),ToolTip=tip};chip.SetResourceReference(Border.BackgroundProperty,date==today?"Surface":"Pale");
+                if(manager){chip.Cursor=System.Windows.Input.Cursors.Hand;var picked=row;chip.MouseLeftButtonUp+=async(_,_)=>await Run(()=>Editor(false,picked));}
+                stack.Children.Add(chip);
             }
-            if(rows.GetArrayLength()==0)list.Children.Add(Text(bookings?"선택한 날짜에는 예약이 없습니다.":"선택한 달에는 일정이 없습니다."));
         }
-        Button(bookings?"날짜 조회":"선택한 달 조회",Refresh);
-        if(bookings||setup.GetProperty("calendarManager").GetBoolean())Button(bookings?"특별실 예약하기":"학교 일정 등록",()=>Editor(bookings,null));
-        if(bookings&&setup.GetProperty("roomManager").GetBoolean())Button("특별실 관리",Rooms);
-        body.Children.Add(list);await Refresh();
+        var frame=new Border{Child=grid,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),ClipToBounds=true};frame.SetResourceReference(Border.BorderBrushProperty,"Line");body.Children.Add(frame);
+        if(manager){var note=AdminUi.Label("일정을 누르면 변경하거나 취소할 수 있습니다.","Faint",11);note.Margin=new Thickness(0,8,0,0);body.Children.Add(note);}
+    }
+    async Task BookingGrid()
+    {
+        var rows=(await api.Get<JsonElement>("api/office/bookings?from="+officeDate.ToString("yyyy-MM-dd")+"&to="+officeDate.AddDays(1).ToString("yyyy-MM-dd"))).EnumerateArray().ToArray();
+        var rooms=setup.GetProperty("rooms").EnumerateArray().Where(r=>r.GetProperty("active").GetBoolean()).ToArray();
+        if(rooms.Length==0){body.Children.Add(AdminUi.Empty("아직 등록된 특별실이 없습니다","관리자가 특별실을 등록하면 여기에서 예약할 수 있습니다."));return;}
+        var grid=new Grid();grid.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(120)});for(var p=1;p<=7;p++)grid.ColumnDefinitions.Add(new ColumnDefinition());for(var r=0;r<=rooms.Length;r++)grid.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
+        void Head(string text,int column){var label=AdminUi.Label(text,"Muted",12);label.HorizontalAlignment=column==0?HorizontalAlignment.Left:HorizontalAlignment.Center;var cell=new Border{Child=label,Padding=new Thickness(12,8,12,8)};cell.SetResourceReference(Border.BackgroundProperty,"Subtle");Grid.SetColumn(cell,column);grid.Children.Add(cell);}
+        Head("특별실",0);for(var p=1;p<=7;p++)Head(p+"교시",p);
+        var me=setup.GetProperty("userId").GetString();var manage=setup.GetProperty("roomManager").GetBoolean();
+        for(var r=0;r<rooms.Length;r++)
+        {
+            var id=rooms[r].GetProperty("id").GetString()!;var name=AdminUi.Label(rooms[r].GetProperty("name").GetString()!,"Ink",13,true);var nameCell=new Border{Child=name,Padding=new Thickness(12,16,12,16),BorderThickness=new Thickness(0,1,0,0)};nameCell.SetResourceReference(Border.BorderBrushProperty,"Line");Grid.SetRow(nameCell,r+1);grid.Children.Add(nameCell);
+            for(var p=1;p<=7;p++)
+            {
+                var period=p;var booked=rows.Where(b=>b.GetProperty("roomId").GetString()==id).Where(b=>{var lessons=SchoolDay.Lessons(b.TryGetProperty("grade",out var g)&&g.ValueKind==JsonValueKind.Number&&g.GetInt32() is >=1 and <=3?g.GetInt32():1,7);var lesson=lessons.FirstOrDefault(l=>l.Number==period);if(lesson is null)return false;var from=KoreaTime(b,"start").ToString("HH:mm");var to=KoreaTime(b,"end").ToString("HH:mm");return string.CompareOrdinal(from,lesson.End)<0&&string.CompareOrdinal(to,lesson.Start)>0;}).Cast<JsonElement?>().FirstOrDefault();
+                var mine=booked is{} own&&(own.GetProperty("ownerId").GetString()==me||manage);
+                var cell=new Button{Content=booked is{} b2?b2.GetProperty("ownerName").GetString():"비어 있음",FontSize=11,FontWeight=FontWeights.Normal,Margin=new Thickness(4),Padding=new Thickness(2,10,2,10),BorderThickness=new Thickness(0),HorizontalContentAlignment=HorizontalAlignment.Center,IsEnabled=booked is null||mine,ToolTip=booked is{} b3?b3.GetProperty("title").GetString()+" · "+b3.GetProperty("ownerName").GetString():"이 시간으로 예약"};
+                if(booked is not null){cell.SetResourceReference(Control.BackgroundProperty,"Pale");cell.SetResourceReference(Control.ForegroundProperty,"Blue");}else{cell.Background=Brushes.Transparent;cell.SetResourceReference(Control.ForegroundProperty,"Faint");}
+                System.Windows.Automation.AutomationProperties.SetName(cell,rooms[r].GetProperty("name").GetString()+" "+p+"교시 "+(booked is null?"비어 있음":"예약됨"));
+                var found=booked;cell.Click+=async(_,_)=>await Run(()=>found is{} existing?BookingEditor(existing):BookingEditor(null,id,period,officeDate));
+                var host=new Border{Child=cell,BorderThickness=new Thickness(0,1,0,0)};host.SetResourceReference(Border.BorderBrushProperty,"Line");Grid.SetRow(host,r+1);Grid.SetColumn(host,p);grid.Children.Add(host);
+            }
+        }
+        var frame=new Border{Child=grid,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),ClipToBounds=true};frame.SetResourceReference(Border.BorderBrushProperty,"Line");body.Children.Add(frame);
+        var note=AdminUi.Label("빈 칸을 누르면 그 시간으로 예약 창이 열립니다. 본인 예약을 누르면 변경하거나 취소할 수 있습니다.","Faint",11);note.Margin=new Thickness(0,8,0,0);body.Children.Add(note);
     }
     Task Editor(bool booking,JsonElement? existing)
     {

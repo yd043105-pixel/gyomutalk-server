@@ -20,7 +20,7 @@ public partial class MailboxWindow : Window
         Owner = main; Resources = main.Resources; InitializeComponent(); StatusTone.Watch(StatusLabel);
         MessageList.ItemsSource = messages;
         Title = person is null ? "교무톡 · 메시지함" : person.Name + " · 주고받은 메시지";
-        BoxTitle.Text = person is null ? box switch { "sent" => "보낸 메시지", "unread" => "미확인 메시지", _ => "받은 메시지" } : person.Name + " 관련 메시지"; UpdateTabs();
+        BoxTitle.Text = person is null ? "메시지함" : person.Name + " 관련 메시지"; UpdateTabs();
         Loaded += async (_, _) => await Reload();
         Closed += (_, _) => ResetTaskPrompt();
     }
@@ -34,11 +34,12 @@ public partial class MailboxWindow : Window
         {
             var selected = detail?.Message.Id;
             var selectionVersion=taskPromptVersion;
-            var path = $"api/messages?box={box}&q={Uri.EscapeDataString(SearchBox.Text)}&offset={(more ? messages.Count : 0)}";
+            var path = $"api/messages?box={box}&q={Uri.EscapeDataString(SearchBox.Text)}&offset={(more ? fetched : 0)}";
             if (FromDate.SelectedDate is { } from) path += $"&from={new DateTimeOffset(from).ToUnixTimeMilliseconds()}";
             if (ToDate.SelectedDate is { } to) path += $"&to={new DateTimeOffset(to.AddDays(1)).ToUnixTimeMilliseconds() - 1}";
             if (personId is not null) path += "&person=" + Uri.EscapeDataString(personId);
-            var rows = (await Api.Get<MessageItem[]>(path)).Select(Local).ToList();
+            var answer = await Api.Get<MessageItem[]>(path); fetched = (more ? fetched : 0) + answer.Length;
+            var rows = answer.Select(Local).Where(r => r.Title.Length > 0).ToList();
             if (!more && SearchBox.Text.Trim() is { Length: > 0 } query) rows.AddRange(LocalMatches(query).Where(m => rows.All(r => r.Id != m.Id)));
             // A list refresh started earlier must not clear or replace a message the user just opened.
             if(detailsOpening>0||selectionVersion!=taskPromptVersion||detail?.Message.Id!=selected)return;
@@ -50,13 +51,14 @@ public partial class MailboxWindow : Window
             ListHint.Text = messages.Count == 0 ? "메시지가 없습니다. 검색 조건도 확인하세요." : $"{messages.Count}개 표시 · 한 번에 100개 조회";
             if (selected is not null && messages.Any(m=>m.Id==selected)) await OpenDetail(selected, markRead: false);
             else if(!more){detail=null;ResetTaskPrompt();DetailBody.Text="";DetailTitle.Text="";FileList.ItemsSource=null;ReceiptList.ItemsSource=null;DetailPanel.Visibility=Visibility.Collapsed;EmptyHint.Visibility=Visibility.Visible;}
-            ConnectionLabel.Text = "첨부파일은 업로드 후 30일간 보관됩니다.";
+            ConnectionLabel.Text = "이 PC에 저장된 메시지만 보입니다 · 첨부파일은 업로드 후 30일간 보관됩니다.";
             StatusLabel.Text = "";
         }
         finally { refreshing = false; rendering = false; }
     }
-    // The server drops a body once every PC saved it, so previews and search fall back to this PC's copies.
-    MessageItem Local(MessageItem row) => row.Preview.Length == 0 && main.Archive.Load(row.Id) is { } copy ? row with { Preview = SchoolMessenger.Shared.MessageText.Excerpt(copy.Message.Body) } : row;
+    // Once this PC saved a message the server gives only its receipts, so title, preview and search come from the copy here.
+    int fetched;
+    MessageItem Local(MessageItem row) => row.Title.Length == 0 && main.Archive.Load(row.Id) is { } copy ? row with { Title = copy.Message.Title, Preview = SchoolMessenger.Shared.MessageText.Excerpt(copy.Message.Body) } : row;
     IEnumerable<MessageItem> LocalMatches(string query)
     {
         var me = Api!.Session!.User!.Id;
@@ -87,7 +89,7 @@ public partial class MailboxWindow : Window
         if (version != taskPromptVersion) return;
         try { detail = main.Archive.Merge(opened); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException) { detail = opened; StatusLabel.Text = "이 PC에 메시지를 저장하지 못했습니다. 디스크 공간과 권한을 확인하세요."; }
-        if (detail.Message.Purged) detail = detail with { Message = detail.Message with { Body = "이 메시지 본문은 받은 PC에만 저장됩니다. 이 PC에는 사본이 없습니다." } };
+        if (detail.Message.Purged) detail = detail with { Message = detail.Message with { Title = "이 PC에 없는 메시지", Body = "메시지는 받은 PC에만 저장됩니다. 이 PC에는 사본이 없어 내용을 볼 수 없습니다." } };
         DetailTitle.Text = SchoolMessenger.Shared.MessageText.Excerpt(detail.Message.Title, 200);
         DetailTitle.Visibility = detail.Message.Title == SchoolMessenger.Shared.MessageText.Excerpt(detail.Message.Body, 80) ? Visibility.Collapsed : Visibility.Visible;
         DetailMeta.Text = $"{detail.Message.SenderName}   ·   {DateTimeOffset.FromUnixTimeMilliseconds(detail.Message.CreatedAt).ToLocalTime():yyyy.MM.dd HH:mm}   ·   수신 {detail.Recipients.Length}명";
@@ -122,8 +124,8 @@ public partial class MailboxWindow : Window
     { if (!rendering && MessageList.SelectedItem is MessageItem item) await Run(() => OpenDetail(item.Id)); }
     async void ChangeBox(object sender, RoutedEventArgs e)
     {
-        box = (string)((System.Windows.Controls.Button)sender).Tag; UpdateTabs();
-        BoxTitle.Text = box switch { "unread" => "미확인 메시지", "sent" => "보낸 메시지", _ => "받은 메시지" };
+        box = ((System.Windows.Controls.Button)sender).Uid; UpdateTabs();
+        BoxTitle.Text = "메시지함";
         detail = null; ResetTaskPrompt(); DetailPanel.Visibility = Visibility.Collapsed; EmptyHint.Visibility = Visibility.Visible;
         await Run(() => Refresh());
     }
@@ -131,9 +133,7 @@ public partial class MailboxWindow : Window
     {
         foreach (var tab in new[] { ReceivedTab, UnreadTab, SentTab })
         {
-            tab.SetResourceReference(System.Windows.Controls.Button.ForegroundProperty, (string)tab.Tag == box ? "Blue" : "Muted");
-            tab.ClearValue(System.Windows.Controls.Button.BorderBrushProperty);
-            if ((string)tab.Tag == box) tab.SetResourceReference(System.Windows.Controls.Button.BorderBrushProperty, "Blue");
+            tab.Tag = tab.Uid == box ? "selected" : null;
         }
     }
     async void NewMessage(object sender, RoutedEventArgs e) => await main.WriteMessage();

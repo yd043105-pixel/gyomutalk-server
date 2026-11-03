@@ -26,6 +26,7 @@ public partial class App : System.Windows.Application
             catch(Exception error){MessageBox.Show(error.Message,"자동 실행 설정 실패");Shutdown(1);}
             return;
         }
+        WindowCorners.Register();
         Appearance.Apply(Appearance.Selected, Appearance.Glass);
         SystemParameters.StaticPropertyChanged += (_, args) =>
         {

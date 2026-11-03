@@ -84,15 +84,24 @@ public sealed class Store : IDisposable
             CREATE TABLE IF NOT EXISTS Surveys(Id TEXT PRIMARY KEY, OwnerId TEXT NOT NULL REFERENCES Users(Id), Title TEXT NOT NULL, Description TEXT NOT NULL, Questions TEXT NOT NULL, Deadline INTEGER NOT NULL, Closed INTEGER NOT NULL DEFAULT 0, CreatedAt INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS SurveyTargets(SurveyId TEXT NOT NULL REFERENCES Surveys(Id), UserId TEXT NOT NULL REFERENCES Users(Id), PRIMARY KEY(SurveyId,UserId));
             CREATE TABLE IF NOT EXISTS SurveyResponses(SurveyId TEXT NOT NULL REFERENCES Surveys(Id), UserId TEXT NOT NULL REFERENCES Users(Id), Answers TEXT NOT NULL, UpdatedAt INTEGER NOT NULL, PRIMARY KEY(SurveyId,UserId));
+            -- Anonymous surveys keep who voted and what was answered apart: no shared key, no time, and no rowid whose order could pair them up.
+            CREATE TABLE IF NOT EXISTS SurveyVoters(SurveyId TEXT NOT NULL REFERENCES Surveys(Id), UserId TEXT NOT NULL REFERENCES Users(Id), PRIMARY KEY(SurveyId,UserId)) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS SurveyBallots(SurveyId TEXT NOT NULL REFERENCES Surveys(Id), Id TEXT NOT NULL, Answers TEXT NOT NULL, PRIMARY KEY(SurveyId,Id)) WITHOUT ROWID;
             """;
         command.ExecuteNonQuery();
         if(!Query("PRAGMA table_info(Users)",r=>r.GetString(1)).Contains("Position"))Execute("ALTER TABLE Users ADD COLUMN Position TEXT NOT NULL DEFAULT ''");
+        var chatColumns=Query("PRAGMA table_info(ChatMembers)",r=>r.GetString(1));
+        if(!chatColumns.Contains("Alias"))Execute("ALTER TABLE ChatMembers ADD COLUMN Alias TEXT NOT NULL DEFAULT ''");
+        if(!chatColumns.Contains("Hidden"))Execute("ALTER TABLE ChatMembers ADD COLUMN Hidden INTEGER NOT NULL DEFAULT 0");
+        if(!Query("PRAGMA table_info(Surveys)",r=>r.GetString(1)).Contains("Anonymous"))Execute("ALTER TABLE Surveys ADD COLUMN Anonymous INTEGER NOT NULL DEFAULT 0");
     }
     public SqliteConnection Open()
     {
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         { DataSource = Database, ForeignKeys = true, DefaultTimeout = 30 }.ToString());
         connection.Open();
+        // A dropped message or anonymous answer must not linger in freed database pages.
+        using (var wipe = connection.CreateCommand()) { wipe.CommandText = "PRAGMA secure_delete=ON"; wipe.ExecuteNonQuery(); }
         return connection;
     }
     public static SqliteCommand Command(SqliteConnection connection, string sql, SqliteTransaction? transaction,

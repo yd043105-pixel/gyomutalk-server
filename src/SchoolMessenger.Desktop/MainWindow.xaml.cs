@@ -50,7 +50,7 @@ public partial class MainWindow : Window
         {
             var file = Path.Combine(LocalDirectory, "preferences.json");
             if (File.Exists(file) && JsonSerializer.Deserialize<Preferences>(File.ReadAllText(file)) is { } preferences)
-            { schoolPick.Set(preferences.SchoolName, preferences.SchoolAddress); ServerAddress.Text = connectedAddress = preferences.ServerAddress; UsernameBox.Text = preferences.Username; Quiet.IsChecked = preferences.Quiet; DoNotDisturb.IsChecked = preferences.DoNotDisturb; RememberLogin.IsChecked = preferences.AutoLogin; Favorites = preferences.Favorites.ToHashSet(); Appearance.Apply(preferences.ThemeId, preferences.Glass); SetAutomaticAway(preferences.IdleMinutes); }
+            { MutedRooms.UnionWith(preferences.MutedRooms ?? []); schoolPick.Set(preferences.SchoolName, preferences.SchoolAddress); ServerAddress.Text = connectedAddress = preferences.ServerAddress; UsernameBox.Text = preferences.Username; Quiet.IsChecked = preferences.Quiet; DoNotDisturb.IsChecked = preferences.DoNotDisturb; RememberLogin.IsChecked = preferences.AutoLogin; Favorites = preferences.Favorites.ToHashSet(); Appearance.Apply(preferences.ThemeId, preferences.Glass); SetAutomaticAway(preferences.IdleMinutes); }
         }
         catch (Exception error) when (error is IOException or JsonException) { LoginMessage("설정을 읽지 못했습니다. 서버 주소를 확인하세요."); }
         loginOptionsReady = true;
@@ -60,7 +60,7 @@ public partial class MainWindow : Window
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("교무실 열기", null, (_, _) => Dispatcher.Invoke(ShowWindow));
         menu.Items.Add("종료", null, (_, _) => Dispatcher.Invoke(CloseApp)); tray.ContextMenuStrip = menu;
-        tray.DoubleClick += (_, _) => Dispatcher.Invoke(ShowWindow); tray.BalloonTipClicked += (_, _) => Dispatcher.Invoke(OpenNotification);
+        tray.DoubleClick += (_, _) => Dispatcher.Invoke(ShowWindow);
         timer.Tick += async (_, _) => await Run(async () =>
         {
             if (Workspace.Visibility != Visibility.Visible) { if (RememberLogin.IsChecked == true) await TryAutomaticLogin(); return; }
@@ -80,7 +80,7 @@ public partial class MainWindow : Window
             if (RememberLogin.IsChecked == true) { await TryAutomaticLogin(); if (savedLogin.Exists) timer.Start(); }
         };
     }
-    public void SavePreferences() => File.WriteAllText(Path.Combine(LocalDirectory, "preferences.json"), JsonSerializer.Serialize(new Preferences(ServerAddress.Text, UsernameBox.Text, Quiet.IsChecked, Favorites.ToArray(), DoNotDisturb.IsChecked, RememberLogin.IsChecked == true, Appearance.Selected, Appearance.Glass,AutomaticAwayMinutes,schoolPick.Selected?.Name ?? SchoolSearch.Text.Trim(),schoolPick.Selected?.Address ?? "")));
+    public void SavePreferences() => File.WriteAllText(Path.Combine(LocalDirectory, "preferences.json"), JsonSerializer.Serialize(new Preferences(ServerAddress.Text, UsernameBox.Text, Quiet.IsChecked, Favorites.ToArray(), DoNotDisturb.IsChecked, RememberLogin.IsChecked == true, Appearance.Selected, Appearance.Glass,AutomaticAwayMinutes,schoolPick.Selected?.Name ?? SchoolSearch.Text.Trim(),schoolPick.Selected?.Address ?? "",MutedRooms.ToArray())));
     void OpenAppearance(object sender, RoutedEventArgs e) => new AppearanceWindow(this).ShowDialog();
     public void RefreshAppearance()
     {
@@ -194,12 +194,12 @@ public partial class MainWindow : Window
         if (Api is null) return;
         if (hub is not null) await hub.DisposeAsync();
         hub = new HubConnectionBuilder().WithUrl(new Uri(Api.Address, "hub"), o => { o.Cookies = Api.Cookies; CertificatePins.Apply(o, Api.Address); }).WithAutomaticReconnect().Build();
-        hub.On<string>("NewMessage", async id => await Dispatcher.InvokeAsync(() => Run(async () => { if (knownIncoming.Add(id)) Notify(); await Refresh(); })).Task.Unwrap());
+        hub.On<string>("NewMessage", async id => await Dispatcher.InvokeAsync(() => Run(async () => { var fresh = knownIncoming.Add(id); await Refresh(); if (fresh) await NotifyUnread("message", null); })).Task.Unwrap());
         hub.On<string>("MessageRecalled", async id => await Dispatcher.InvokeAsync(() => Run(async()=>{Archive.Remove(id);await Refresh();})).Task.Unwrap());
         hub.On<string>("ReadChanged", async _ => await Dispatcher.InvokeAsync(() => Run(RefreshWindows)).Task.Unwrap());
         hub.On("PresenceChanged", async () => await Dispatcher.InvokeAsync(() => Run(RefreshPeople)).Task.Unwrap());
-        hub.On<string>("ChatChanged", id => Dispatcher.InvokeAsync(() => { ChatChanged?.Invoke(id); NotifyFeature("새 채팅을 확인하세요.", "chat"); }).Task);
-        hub.On<string>("SurveyChanged", id => Dispatcher.InvokeAsync(() => { SurveyChanged?.Invoke(id); NotifyFeature("설문 변경 사항을 확인하세요.", "survey"); }).Task);
+        hub.On<string>("ChatChanged", id => Dispatcher.InvokeAsync(() => Run(async () => { ChatChanged?.Invoke(id); await NotifyChat(id); })).Task.Unwrap());
+        hub.On<string>("SurveyChanged", id => Dispatcher.InvokeAsync(() => Run(async () => { SurveyChanged?.Invoke(id); await NotifySurvey(id); })).Task.Unwrap());
         hub.On<string,long>("TimetableChanged",(date,revision)=>Dispatcher.InvokeAsync(()=>{if(knownTimetables.Add(revision))NotifyFeature("시간표 변경 · "+date,"timetable");}).Task);
         hub.Reconnecting += _ => { Dispatcher.Invoke(() => ConnectionLabel.Text = "재연결 중 · 수신 확인 계속"); return Task.CompletedTask; };
         hub.Reconnected += _ => Dispatcher.InvokeAsync(() => Run(async()=>{sentAway=null;await SynchronizeActivity();await Refresh();})).Task.Unwrap();
@@ -217,8 +217,9 @@ public partial class MainWindow : Window
             await Archive.Synchronize();
             await RefreshPeople(); await UpdateUnread();
             var incoming = await Api.Get<MessageItem[]>("api/messages?box=received");
-            if (incoming.Any(m => !knownIncoming.Contains(m.Id))) Notify();
+            var arrived = incoming.Any(m => !knownIncoming.Contains(m.Id));
             foreach (var message in incoming) knownIncoming.Add(message.Id);
+            if (arrived) await NotifyUnread("message", null);
             foreach(var n in await Api.Get<SchoolMessenger.Contracts.TimetableNotice[]>("api/timetable/notices"))
                 if(knownTimetables.Add(n.Revision)&&n.ReadAt is null)NotifyFeature(n.Title+" · "+n.Date,"timetable");
             await RefreshWindows();
@@ -238,7 +239,7 @@ public partial class MainWindow : Window
     {
         if (Api is null) return;
         var unread = await Api.Get<MessageItem[]>("api/messages?box=unread");
-        unreadCount = unread.Length; UpdateRosterHint();
+        unreadCount = unread.Count(m => m.Title.Length > 0 || Archive.Has(m.Id)); UpdateRosterHint();
         UnreadShortcut.Content=$"미확인 {unreadCount}{(unreadCount==100?"+":"")}";
     }
     async Task RefreshPeople()
@@ -407,14 +408,13 @@ public partial class MainWindow : Window
         savedLogin.Clear();
         ElectivesButton.Visibility=Visibility.Collapsed;
         if (remote is not null) { await remote.DisposeAsync(); remote = null; }
-        timer.Stop(); activityTimer.Stop();sentAway=null; closingWindows=true; foreach (var window in OwnedWindows.Cast<Window>().ToArray()) window.Close(); closingWindows=false;
+        timer.Stop(); activityTimer.Stop();sentAway=null; toast?.Close(); chatSeen.Clear(); knownSurveys.Clear(); closingWindows=true; foreach (var window in OwnedWindows.Cast<Window>().ToArray()) window.Close(); closingWindows=false;
         if (hub is not null) { await hub.DisposeAsync(); hub = null; } Api?.Dispose(); Api = null;
         OrganizationTree.Items.Clear(); people = []; selectedPeople.Clear(); Workspace.Visibility = Visibility.Collapsed; LoginPanel.Visibility = Visibility.Visible;
     }
-    void Notify() { if (DoNotDisturb.IsChecked) return; notificationTarget = "message"; tray.ShowBalloonTip(5000, "교무톡", "새 업무 메시지가 도착했습니다.", System.Windows.Forms.ToolTipIcon.Info); if (!Quiet.IsChecked) System.Media.SystemSounds.Asterisk.Play(); }
     void ShowWindow() { Show(); WindowState = WindowState.Normal; Activate(); }
     void WindowClosing(object? sender, CancelEventArgs e)
-    { if (!exiting) { e.Cancel = true; Hide(); } else { timer.Stop(); tray.Dispose(); SavePreferences(); } }
+    { if (!exiting) { e.Cancel = true; Hide(); } else { timer.Stop(); toast?.Close(); tray.Dispose(); SavePreferences(); } }
     async void CloseApp() { if (remote is not null) { await remote.DisposeAsync(); remote = null; } exiting = true; Close(); }
     void ExitApp(object sender, RoutedEventArgs e) => CloseApp();
     // Screenshots for the download site set SCHOOL_UI_SCALE=2 so text stays sharp when shown large.
@@ -578,7 +578,7 @@ public partial class MainWindow : Window
             var messages = await Api!.Get<MessageItem[]>("api/messages?box=received");
             if (messages.Length == 0) throw new InvalidOperationException("메시지 검증 데이터 없음");
             await inbox.ShowMessage(messages[0].Id); SavePreview(inbox, Path.Combine(directory, "mailbox-preview.png"));
-            Archive.Verify(await Api.Get<Detail>("api/messages/"+messages[0].Id));
+            Archive.Verify(Archive.Merge(await Api.Get<Detail>("api/messages/"+messages[0].Id)));
             ((System.Windows.Controls.Button)inbox.Template.FindName("CloseAction", inbox)).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             for (var i = 0; i < 20 && inbox.IsVisible; i++) await Task.Delay(25);
             if (inbox.IsVisible) throw new InvalidOperationException("제목줄 닫기 버튼 실패");
@@ -591,7 +591,7 @@ public partial class MainWindow : Window
             compose.SendButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             for (var i = 0; i < 100 && compose.IsVisible; i++) await Task.Delay(100);
             if (compose.IsVisible) throw new InvalidOperationException("작성 창 전송 실패: " + compose.Feedback.Text);
-            if (!(await Api.Get<MessageItem[]>("api/messages?box=sent")).Any(m => m.Title == "학년 협의회 일정 안내")) throw new InvalidOperationException("전송 기록 없음");
+            if (!(await Api.Get<MessageItem[]>("api/messages?box=sent")).Any(m => m.Title == "학년 협의회 일정 안내" || Archive.Load(m.Id)?.Message.Title == "학년 협의회 일정 안내")) throw new InvalidOperationException("전송 기록 없음");
             var recallCheck=OpenMailbox("sent");await recallCheck.VerifyRecallState();recallCheck.Close();
             var registration = new RegistrationWindow(ServerAddress.Text) { Owner = this }; registration.Show();
             await registration.PolicyReady;
@@ -611,4 +611,4 @@ public partial class MainWindow : Window
         catch (Exception error) { Directory.CreateDirectory("artifacts"); File.WriteAllText("artifacts/ui-error.txt", error.ToString()); exiting = true; System.Windows.Application.Current.Shutdown(1); }
     }
 }
-record Preferences(string ServerAddress, string Username, bool Quiet, string[] Favorites, bool DoNotDisturb = false, bool AutoLogin = false, string ThemeId = "blue", bool Glass = true,int IdleMinutes=5,string SchoolName="",string SchoolAddress="");
+record Preferences(string ServerAddress, string Username, bool Quiet, string[] Favorites, bool DoNotDisturb = false, bool AutoLogin = false, string ThemeId = "blue", bool Glass = true,int IdleMinutes=5,string SchoolName="",string SchoolAddress="",string[]? MutedRooms=null);

@@ -23,7 +23,7 @@ public sealed class FeedbackWindow:Window
     public FeedbackWindow(Window owner,Api source,bool administration,bool privacy=false)
     {
         Owner=owner;api=source;this.administration=administration;this.privacy=privacy;Title=privacy?"개인정보 권리 요청":"오류 신고 · 개선 의견";Width=620;Height=640;MinWidth=450;MinHeight=400;
-        var view=new ScrollViewer{Content=body};Content=view;var initialized=false;view.Loaded+=async(_,_)=>{if(initialized)return;initialized=true;await Run(administration?()=>List(true):Home);};
+        var view=new ScrollViewer{Content=body,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};AdminUi.Page(this,view);var initialized=false;view.Loaded+=async(_,_)=>{if(initialized)return;initialized=true;await Run(administration?()=>List(true):Home);};
     }
     void Text(string text)=>body.Children.Add(new TextBlock{Text=text,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,5,0,5)});
     void Button(string label,Func<Task> action){var button=new Button{Content=label,Margin=new Thickness(0,6,0,0),Padding=new Thickness(8)};button.Click+=async(_,_)=>await Run(action);body.Children.Add(button);}

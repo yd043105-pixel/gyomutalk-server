@@ -459,6 +459,8 @@ IResult SendStoredMessage(SendMessage request, HttpContext c, IHubContext<Messag
         if (roomId is not null)
         {
             using var entry = Store.Command(connection, "INSERT INTO ChatEntries(RoomId,MessageId) VALUES($room,$message)", transaction, ("$room", roomId), ("$message", id)); entry.ExecuteNonQuery();
+            // A one-to-one room someone cleared from their list comes back with the next message.
+            using var show = Store.Command(connection, "UPDATE ChatMembers SET Hidden=0 WHERE RoomId=$room AND Hidden=1", transaction, ("$room", roomId)); show.ExecuteNonQuery();
         }
         TaskFeatures.Extract(connection, transaction, recipients.Where(u => u != sender.Id), id, request.Body!, now);
         if (request.SubmissionDeadline is { } due)
@@ -478,21 +480,22 @@ api.MapGet("/messages", (HttpContext c, string? box, string? q, string? person, 
 {
     if ((q?.Length ?? 0) > 200) return Error("검색어는 200자 이내입니다.");
     var sent = box == "sent";
-    var sql = """
+    var sql = $"""
         SELECT m.Id,m.Title,m.Body,m.CreatedAt,u.Name,
           (SELECT ReadAt FROM Recipients WHERE MessageId=m.Id AND UserId=$user),
           (SELECT COUNT(*) FROM Recipients WHERE MessageId=m.Id),
           (SELECT COUNT(*) FROM Recipients WHERE MessageId=m.Id AND ReadAt IS NOT NULL),
-          (SELECT COUNT(*) FROM Attachments WHERE MessageId=m.Id),m.SenderId
+          (SELECT COUNT(*) FROM Attachments WHERE MessageId=m.Id),m.SenderId,
+          {MessageStorage.Kept}
         FROM Messages m JOIN Users u ON u.Id=m.SenderId
         WHERE
         """ + (box == "conversation" ? " (m.SenderId=$user OR EXISTS(SELECT 1 FROM Recipients r WHERE r.MessageId=m.Id AND r.UserId=$user)) " : sent ? " m.SenderId=$user " : " EXISTS(SELECT 1 FROM Recipients r WHERE r.MessageId=m.Id AND r.UserId=$user) ") +
         " AND NOT EXISTS(SELECT 1 FROM MessageRecalls mr WHERE mr.MessageId=m.Id) AND NOT EXISTS(SELECT 1 FROM ChatEntries ce WHERE ce.MessageId=m.Id) AND ($person='' OR m.SenderId=$person OR EXISTS(SELECT 1 FROM Recipients r WHERE r.MessageId=m.Id AND r.UserId=$person)) " +
         (box == "unread" ? " AND EXISTS(SELECT 1 FROM Recipients r WHERE r.MessageId=m.Id AND r.UserId=$user AND r.ReadAt IS NULL) " : "") +
-        " AND ($q='' OR instr(m.Title,$q)>0 OR instr(m.Body,$q)>0 OR instr(u.Name,$q)>0) AND m.CreatedAt>=$from AND m.CreatedAt<=$to ORDER BY m.CreatedAt DESC,m.Id DESC LIMIT 100 OFFSET $offset";
+        " AND ($q='' OR instr(u.Name,$q)>0 OR (NOT " + MessageStorage.Kept + " AND (instr(m.Title,$q)>0 OR instr(m.Body,$q)>0))) AND m.CreatedAt>=$from AND m.CreatedAt<=$to ORDER BY m.CreatedAt DESC,m.Id DESC LIMIT 100 OFFSET $offset";
     var rows = store.Query(sql, r => new
     {
-        id = r.GetString(0), title = r.GetString(1), preview = MessageText.Excerpt(r.GetString(2)),
+        id = r.GetString(0), title = r.GetBoolean(10) ? "" : r.GetString(1), preview = r.GetBoolean(10) ? "" : MessageText.Excerpt(r.GetString(2)),
         createdAt = r.GetInt64(3), senderName = r.GetString(4), readAt = r.IsDBNull(5) ? (long?)null : r.GetInt64(5),
         recipientCount = r.GetInt32(6), readCount = r.GetInt32(7), attachmentCount = r.GetInt32(8), senderId = r.GetString(9)
     }, ("$user", UserId(c)), ("$q", q ?? ""), ("$person", person ?? ""), ("$from", from ?? 0), ("$to", to ?? long.MaxValue), ("$offset", Math.Clamp(offset ?? 0, 0, 1_000_000)));
@@ -502,10 +505,12 @@ api.MapGet("/messages/{id}", (string id, bool? peek, HttpContext c) =>
 {
     // peek lets a PC save its copy of a new message without marking it read.
     using(var opened=store.Open())using(var tx=opened.BeginTransaction()){if(!MessageRecall.Read(opened,tx,id,UserId(c),peek!=true))return Results.NotFound();tx.Commit();}
-    var messages = store.Query("""
-        SELECT m.Id,m.SenderId,u.Name,m.Title,m.Body,m.CreatedAt,f.Payload FROM Messages m JOIN Users u ON u.Id=m.SenderId LEFT JOIN MessageFormats f ON f.MessageId=m.Id
+    var messages = store.Query($"""
+        SELECT m.Id,m.SenderId,u.Name,m.Title,m.Body,m.CreatedAt,f.Payload,
+          {MessageStorage.Kept}
+        FROM Messages m JOIN Users u ON u.Id=m.SenderId LEFT JOIN MessageFormats f ON f.MessageId=m.Id
         WHERE m.Id=$id AND (m.SenderId=$user OR EXISTS(SELECT 1 FROM Recipients WHERE MessageId=m.Id AND UserId=$user))
-        """, r => new { id = r.GetString(0), senderId = r.GetString(1), senderName = r.GetString(2), title = r.GetString(3), body = r.GetString(4), createdAt = r.GetInt64(5), format = r.IsDBNull(6) ? null : JsonSerializer.Deserialize<MessageFormat>(r.GetString(6)), purged = r.GetString(4).Length == 0 }, ("$id", id), ("$user", UserId(c)));
+        """, r => new { id = r.GetString(0), senderId = r.GetString(1), senderName = r.GetString(2), title = r.GetBoolean(7) ? "" : r.GetString(3), body = r.GetBoolean(7) ? "" : r.GetString(4), createdAt = r.GetInt64(5), format = r.GetBoolean(7) || r.IsDBNull(6) ? null : JsonSerializer.Deserialize<MessageFormat>(r.GetString(6)), purged = r.GetBoolean(7) || r.GetString(4).Length == 0 }, ("$id", id), ("$user", UserId(c)));
     if (messages.Count == 0) return Results.NotFound();
     var attachments = store.Query("SELECT Id,Name,Size,ExpiresAt,DeletedAt FROM Attachments WHERE MessageId=$id", r => new
     { id = r.GetString(0), name = r.GetString(1), size = r.GetInt64(2), expiresAt = r.GetInt64(3), expired = r.GetInt64(3) <= Maintenance.Now || !r.IsDBNull(4) }, ("$id", id));

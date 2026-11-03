@@ -8,13 +8,59 @@ public partial class MainWindow
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern nint GetForegroundWindow();
     [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool SetForegroundWindow(nint window);
     RemoteClient? remote;
-    string notificationTarget = "message";
+    Toast? toast;
+    public readonly HashSet<string> MutedRooms = [];
+    readonly Dictionary<string, long> chatSeen = [];
+    readonly HashSet<string> knownSurveys = [];
     public event Action<string>? ChatChanged;
     public event Action<string>? SurveyChanged;
-    void NotifyFeature(string text, string target)
-    { if (!DoNotDisturb.IsChecked) { notificationTarget = target; tray.ShowBalloonTip(4000, "교무톡", text, System.Windows.Forms.ToolTipIcon.Info); if (!Quiet.IsChecked) System.Media.SystemSounds.Asterisk.Play(); } }
-    void OpenNotification()
-    { if (notificationTarget == "chat") OpenChat(); else if (notificationTarget == "survey") OpenSurvey(); else if(notificationTarget=="timetable"&&Api is not null)new TimetableWindow(this).Show();else OpenMailbox("unread"); }
+    void ShowToast(string title, string text, string target, string? room = null)
+    {
+        if (DoNotDisturb.IsChecked) return;
+        if (toast is null) { toast = new Toast(); toast.Closed += (_, _) => toast = null; }
+        toast.Present(title, text, () => OpenNotification(target, room));
+        if (!Quiet.IsChecked) System.Media.SystemSounds.Asterisk.Play();
+    }
+    void NotifyFeature(string text, string target) => ShowToast(text, "눌러서 확인하세요.", target);
+    void OpenNotification(string target, string? room)
+    {
+        if (Api is null) return;
+        if (target == "chat")
+        {
+            if (OwnedWindows.OfType<ChatWindow>().FirstOrDefault() is not { } open) { new ChatWindow(this, people, null, room).Show(); return; }
+            open.Activate(); if (room is not null) _ = Run(() => open.ShowRoom(room));
+        }
+        else if (target == "survey") OpenSurvey(); else if (target == "timetable") new TimetableWindow(this).Show(); else OpenMailbox("unread");
+    }
+    // Everything unread in one number: mail and chat together, without rooms set to silent or the room being read right now.
+    async Task NotifyUnread(string target, string? room, ChatRoom[]? rooms = null)
+    {
+        if (Api is null) return;
+        await UpdateUnread();
+        rooms ??= await Archive.LocalRooms(await Api.Get<ChatRoom[]>("api/chats"));
+        var chats = rooms.Where(r => !MutedRooms.Contains(r.Id) && !Reading(r.Id)).Sum(r => r.Unread);
+        foreach (var known in rooms) chatSeen[known.Id] = known.LastAt;
+        if (unreadCount + chats == 0) return;
+        var goal = target == "message" && unreadCount > 0 || chats == 0 ? "message" : "chat";
+        ShowToast($"안 읽은 메시지 {unreadCount + chats}{(unreadCount == 100 ? "+" : "")}개", $"업무 메시지 {unreadCount}{(unreadCount == 100 ? "+" : "")} · 채팅 {chats}", goal, goal == "chat" ? room ?? rooms.FirstOrDefault(r => r.Unread > 0 && !MutedRooms.Contains(r.Id))?.Id : null);
+    }
+    bool Reading(string room) => OwnedWindows.OfType<ChatWindow>().Any(w => w.IsActive && w.RoomId == room);
+    async Task NotifyChat(string id)
+    {
+        if (Api is null) return;
+        var rooms = await Archive.LocalRooms(await Api.Get<ChatRoom[]>("api/chats"));
+        // Someone leaving or a room being made changes nothing to read; only a newer message from someone else does.
+        if (rooms.FirstOrDefault(r => r.Id == id) is not { Unread: > 0 } room || room.LastAt <= chatSeen.GetValueOrDefault(id)) { foreach (var known in rooms) chatSeen[known.Id] = known.LastAt; return; }
+        if (MutedRooms.Contains(id) || Reading(id)) { chatSeen[id] = room.LastAt; return; }
+        await NotifyUnread("chat", id, rooms);
+    }
+    async Task NotifySurvey(string id)
+    {
+        if (Api is null) return;
+        var survey = (await Api.Get<SurveyItem[]>("api/surveys")).FirstOrDefault(s => s.Id == id);
+        if (survey is { Anonymous: true } && survey.OwnerId == Api.Session!.User!.Id) await Archive.KeepBallots(await Api.Get<SurveyResults>($"api/surveys/{id}/results"), id);
+        if (survey is { Target: true, Answered: false, Closed: false } && survey.OwnerId != Api.Session!.User!.Id && knownSurveys.Add(id)) NotifyFeature("새 설문이 도착했습니다.", "survey");
+    }
     void OpenChatClick(object sender, RoutedEventArgs e) => OpenChat();
     void OpenSurveyClick(object sender, RoutedEventArgs e) => OpenSurvey();
     void OpenWorkClick(object sender, RoutedEventArgs e) { if (Api is not null) new WorkWindow(this).Show(); }
@@ -47,9 +93,27 @@ public partial class MainWindow
         await chat.CreateRoom([other.Id], "1학년 담임 협의");
         for (var i = 0; i < 30 && chat.RoomId is null; i++) await Task.Delay(50);
         chat.BodyBox.Text = "내일 조회 때 체험학습 안내문을 같이 나눠 주세요."; await chat.SendMessage();
-        var entries = await Api!.Get<ChatEntry[]>($"api/chats/{chat.RoomId}/messages");
-        if (!entries.Any(m => m.Body.Contains("체험학습 안내문"))) throw new InvalidOperationException("채팅 UI 전송 실패");
-        SavePreview(chat, Path.Combine(directory, "chat-preview.png")); chat.Close();
+        if (!Archive.ChatEntries(chat.RoomId!).Any(m => m.Body.Contains("체험학습 안내문"))) throw new InvalidOperationException("채팅 UI 전송 실패");
+        if ((await Api!.Get<ChatEntry[]>($"api/chats/{chat.RoomId}/messages")).Length != 0) throw new InvalidOperationException("이 PC가 저장한 채팅을 서버가 다시 내줌");
+        SavePreview(chat, Path.Combine(directory, "chat-preview.png"));
+        var waiting = Path.Combine(directory, "waiting-file.txt"); File.WriteAllText(waiting, "synthetic");
+        async Task Gone(string id) { try { await Api.Send<JsonElement>(HttpMethod.Delete, $"api/attachments/{id}"); } catch (ApiRequestException error) when ((int)error.StatusCode == 404) { return; } throw new InvalidOperationException("대기 목록에서 뺀 파일이 서버에 남음"); }
+        await Gone(await chat.VerifyTakeBack(waiting));
+        var writing = new ComposeWindow(this, people, other.Id, "파일 빼기 확인"); writing.Show(); await Gone(await writing.VerifyTakeBack(waiting)); File.Delete(waiting);
+        var verifiedRoom = chat.RoomId!;
+        await Api.Send<JsonElement>(HttpMethod.Post, $"api/chats/{verifiedRoom}/name", new { name = "내 이름표" }); await chat.ShowRoom(verifiedRoom);
+        if (chat.RoomTitle.Text != "내 이름표") throw new InvalidOperationException("대화방 이름 바꾸기 표시 실패");
+        await Api.Send<JsonElement>(HttpMethod.Post, $"api/chats/{verifiedRoom}/name", new { name = "" });
+        toast?.Close(); var wasQuiet = DoNotDisturb.IsChecked; DoNotDisturb.IsChecked = true; ShowToast("검증", "방해 금지", "chat");
+        if (toast is not null) throw new InvalidOperationException("방해 금지 중 알림 표시");
+        DoNotDisturb.IsChecked = false; var soundOff = Quiet.IsChecked; Quiet.IsChecked = true; ShowToast("안 읽은 메시지 3개", "업무 메시지 2 · 채팅 1", "chat");
+        if (toast is null) throw new InvalidOperationException("우측 하단 알림 표시 실패");
+        await Task.Delay(100); SavePreview(toast, Path.Combine(directory, "toast-preview.png")); toast.Close();
+        DoNotDisturb.IsChecked = wasQuiet; Quiet.IsChecked = soundOff;
+        MutedRooms.Add(verifiedRoom); SavePreferences();
+        if (JsonSerializer.Deserialize<Preferences>(File.ReadAllText(Path.Combine(LocalDirectory, "preferences.json")))!.MutedRooms?.Contains(verifiedRoom) != true) throw new InvalidOperationException("방 알림 끄기 저장 실패");
+        MutedRooms.Remove(verifiedRoom); SavePreferences();
+        chat.Close();
         var survey = new SurveyWindow(this, people, [Api.Session!.User!.Id]); survey.Show();
         survey.TitleBox.Text = "교무회의 시간 조사"; survey.DescriptionBox.Text = "회의 시간을 선택해 주세요.";
         survey.QuestionsPanel.Children.Clear(); survey.ResetQuestionsForVerification();
@@ -63,7 +127,20 @@ public partial class MainWindow
         if ((survey.SurveyList.SelectedItem as SurveyItem)?.Id != created.Id) throw new InvalidOperationException("설문 알림 갱신 시 선택 상태 유지 실패");
         var formula = result with { Responses = [result.Responses[0] with { Answers = ["=1+1", "쉼표, 줄바꿈\n검증"] }] };
         if (!SurveyWindow.Csv(formula).Contains("'=1+1")) throw new InvalidOperationException("CSV 수식 차단 실패");
-        SavePreview(survey, Path.Combine(directory, "survey-preview.png")); survey.Tabs.SelectedIndex = 1; SavePreview(survey, Path.Combine(directory, "survey-results-preview.png")); survey.Close();
+        survey.Tabs.SelectedIndex = 0; await Task.Delay(50); SavePreview(survey, Path.Combine(directory, "survey-preview.png")); survey.Tabs.SelectedIndex = 1; await Task.Delay(50); SavePreview(survey, Path.Combine(directory, "survey-results-preview.png"));
+        survey.TitleBox.Text = "익명 만족도 조사"; survey.AnonymousBox.IsChecked = true; survey.ResetQuestionsForVerification(); survey.QuestionsPanel.Children.Clear();
+        survey.AddQuestion("만족도", "choice", ["좋음", "보통"]); survey.AddQuestion("의견", "text");
+        survey.NewSurveyForVerification(); await Task.Delay(50); SavePreview(survey, Path.Combine(directory, "survey-new-preview.png"));
+        await survey.CreateSurvey();
+        var nameless = (await Api.Get<SurveyItem[]>("api/surveys")).First(s => s.Title == "익명 만족도 조사");
+        if (!nameless.Anonymous || survey.AnonymousBox.IsChecked == true) throw new InvalidOperationException("익명 설문 생성 실패");
+        await survey.ShowSurvey(nameless.Id); await survey.SubmitAnswers(["좋음", "익명 의견입니다."]);
+        var namelessDetail = await Api.Get<SurveyDetail>($"api/surveys/{nameless.Id}");
+        if (namelessDetail.CanAnswer || !namelessDetail.Answered || namelessDetail.Answers is not null) throw new InvalidOperationException("익명 응답 상태 실패");
+        var namelessResult = await Archive.KeepBallots(await Api.Get<SurveyResults>($"api/surveys/{nameless.Id}/results"), nameless.Id);
+        if ((await Api.Get<SurveyResults>($"api/surveys/{nameless.Id}/results")).Responses.Length != 0) throw new InvalidOperationException("익명 응답이 서버에 남음");
+        if (!namelessResult.Anonymous || namelessResult.Responses[0].Name.Length > 0 || SurveyWindow.Csv(namelessResult).Contains("이름") || !SurveyWindow.Csv(namelessResult).Contains("익명 의견입니다.")) throw new InvalidOperationException("익명 결과 또는 CSV 실패");
+        survey.Tabs.SelectedIndex = 1; await Task.Delay(50); SavePreview(survey, Path.Combine(directory, "survey-anonymous-preview.png")); survey.Close();
         var frame = RemoteDesktop.Capture(); if (frame.Length > 262144 || !RemoteDesktop.ValidFrame(frame) || RemoteDesktop.InputSize != 40) throw new InvalidOperationException("원격 화면 또는 Windows 입력 구조 검증 실패");
         await VerifyPeerSecurity(frame);
         var preview = new RemoteClient(this);

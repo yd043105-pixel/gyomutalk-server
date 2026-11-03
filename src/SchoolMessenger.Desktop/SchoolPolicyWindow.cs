@@ -16,7 +16,7 @@ public sealed class SchoolPolicyWindow:Window
     public SchoolPolicyWindow(Window owner,Api api)
     {
         Owner=owner;Title="학교별 약관 · 개인정보 설정 초안";Width=600;Height=700;WindowStartupLocation=WindowStartupLocation.CenterOwner;
-        var body=new StackPanel{Margin=new Thickness(24)};Content=new ScrollViewer{Content=body};
+        var body=new StackPanel{Margin=new Thickness(24)};AdminUi.Page(this,new ScrollViewer{Content=body,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
         void Text(string value)=>body.Children.Add(new TextBlock{Text=value,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,8,0,6)});
         TextBox Field(string label,string initial=""){Text(label);var field=new TextBox{Text=initial,MaxLength=150};body.Children.Add(field);return field;}
         Text("학교별 서버 운영 관리자가 작성합니다. 개발자 김동욱은 각 학교의 개인정보 보호책임자로 자동 지정되지 않습니다. 일반 회원은 이 설정을 변경할 수 없습니다.");

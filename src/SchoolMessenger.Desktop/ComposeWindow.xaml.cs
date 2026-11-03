@@ -71,15 +71,30 @@ public partial class ComposeWindow : Window
     { if (e.Data.GetData(System.Windows.DataFormats.FileDrop) is string[] paths) { AddPaths(paths); e.Handled = true; } }
     void FilesDragOver(object sender, System.Windows.DragEventArgs e)
     { if (e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop)) { e.Effects = pending is null && !sending ? System.Windows.DragDropEffects.Copy : System.Windows.DragDropEffects.None; e.Handled = true; } }
-    void RemoveFile(object sender, RoutedEventArgs e)
-    { if (pending is null && FilesList.SelectedItem is SourceFile file) files.Remove(file); }
+    async void RemoveFile(object sender, RoutedEventArgs e)
+    {
+        if (pending is not null || sending || ((System.Windows.Controls.Button)sender).Tag is not SourceFile file) return;
+        try { await TakeBack(file); } catch (Exception error) { Feedback.Text = error.Message; }
+    }
+    async Task TakeBack(SourceFile file)
+    {
+        var index = files.IndexOf(file); files.Remove(file);
+        if (index >= uploaded.Count) return;
+        var sent = uploaded[index]; uploaded.RemoveAt(index); SaveDraft();
+        await main.Api!.Send<JsonElement>(HttpMethod.Delete, $"api/attachments/{sent.Id}");
+    }
+    internal async Task<string> VerifyTakeBack(string path)
+    {
+        var file = new SourceFile(path); files.Add(file); var attachment = await main.Api!.Upload(path); uploaded.Add(attachment);
+        await TakeBack(file); sent = true; Close(); return attachment.Id;
+    }
     void Freeze()
     {
         CollectFiles.IsEnabled = false; SubmissionDate.IsEnabled = false;
         FormattingToolbar.IsEnabled = DraftListButton.IsEnabled = false;
         RecipientsButton.IsEnabled=SelfBox.IsEnabled=ScheduleSend.IsEnabled=ScheduleDate.IsEnabled=ScheduleTime.IsEnabled=DraftButton.IsEnabled=false;RefreshRecipients();
         TitleBox.IsEnabled = false; BodyBox.IsEnabled = false; PeopleList.IsEnabled = false; PeopleSearch.IsEnabled = false;
-        Department.IsEnabled = false; SendAll.IsEnabled = false; AddButton.IsEnabled = false; RemoveButton.IsEnabled = false;
+        Department.IsEnabled = false; SendAll.IsEnabled = false; AddButton.IsEnabled = false; FilesList.IsEnabled = false;
     }
     void Unfreeze()
     {
@@ -87,7 +102,7 @@ public partial class ComposeWindow : Window
         FormattingToolbar.IsEnabled = DraftListButton.IsEnabled = true;
         RecipientsButton.IsEnabled=SelfBox.IsEnabled=ScheduleSend.IsEnabled=DraftButton.IsEnabled=true;ScheduleChanged(this,new RoutedEventArgs());RefreshRecipients();
         TitleBox.IsEnabled = true; BodyBox.IsEnabled = true; PeopleList.IsEnabled = true; PeopleSearch.IsEnabled = true;
-        Department.IsEnabled = true; SendAll.IsEnabled = true; AddButton.IsEnabled = true; RemoveButton.IsEnabled = true;
+        Department.IsEnabled = true; SendAll.IsEnabled = true; AddButton.IsEnabled = true; FilesList.IsEnabled = true;
     }
     async void Send(object sender, RoutedEventArgs e)
     {
@@ -163,6 +178,11 @@ public partial class ComposeWindow : Window
         Department.SelectedIndex=0;SendAll.IsChecked=false;RefreshRecipients();
     }
 }
-record SourceFile(string Path) { public string Description => System.IO.Path.GetFileName(Path); }
+record SourceFile(string Path)
+{
+    [System.Text.Json.Serialization.JsonIgnore] public Attachment? Uploaded { get; set; }
+    public string Description => System.IO.Path.GetFileName(Path);
+    public string SizeLabel { get { var info = new FileInfo(Path); return !info.Exists ? "" : info.Length < 1_048_576 ? Math.Max(1, info.Length / 1024) + "KB" : (info.Length / 1_048_576.0).ToString("0.#") + "MB"; } }
+}
 record Pending(string ClientId, string Title, string Body, string[] RecipientIds, string[] AttachmentIds, bool All, string? Department, long? SubmissionDeadline = null,long? ScheduledAt=null,[property: System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] MessageFormat? Format=null);
 record Draft(string Server, string Title, string Body, string[] RecipientIds, string? Department, bool All, SourceFile[] Files, Attachment[] Uploaded, Pending? Pending, long? SubmissionDeadline = null,long? ScheduledAt=null,bool ReserveRequested=false,string? ReserveDate=null,string? ReserveTime=null,bool CollectRequested=false,string? CollectionDate=null,MessageFormat? Format=null,long SavedAt=0);

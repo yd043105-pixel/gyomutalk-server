@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
-import {mkdirSync,existsSync} from 'node:fs';
+import {mkdirSync,existsSync,readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import net from 'node:net';
 import path from 'node:path';
 
-// Message bodies live on PCs: the server keeps a body only until the sender and every recipient saved it (max 30 days).
+// Messages live on PCs: the server keeps title and body only until the sender and every recipient saved them (max 30 days),
+// and stops handing them to anyone whose own PC already confirmed a copy.
 const root=process.cwd(),sdk=path.join(root,'.tools/dotnet/dotnet.exe'),dotnet=existsSync(sdk)?sdk:'dotnet';
 const data=path.join(process.env.YY_TEST_DATA_ROOT??path.join(root,'.test-data'),'message-storage-'+randomUUID());mkdirSync(data,{recursive:true});
 const password='Synthetic-'+randomUUID();
@@ -33,20 +34,30 @@ try{
  const user=await sender.request('admin/users','POST',{username:'recipient',name:'가상 수신자',department:'가상부서',password,isAdmin:false,canBroadcast:false});
  const recipient=await new Client(base).login('recipient');
  const form=new FormData();form.append('file',new Blob(['가상 첨부']),'note.txt');const file=await sender.request('attachments','POST',form);
- const send=async body=>(await sender.request('messages','POST',{clientId:randomUUID(),title:'가상 제목',body,recipientIds:[user.id],attachmentIds:body==='본문 하나'?[file.id]:[],all:false})).id;
- const id=await send('본문 하나');
+ const send=async body=>(await sender.request('messages','POST',{clientId:randomUUID(),title:'SECRET-TITLE',body,recipientIds:[user.id],attachmentIds:body==='본문 하나'?[file.id]:[],all:false})).id;
+ const id=await send('본문 하나');const marked=await send('SECRET-MAIL-BODY');
 
  const peek=await recipient.request('messages/'+id+'?peek=true');
  assert.equal(peek.message.body,'본문 하나');assert.equal(peek.recipients[0].readAt,null);
  check('a PC can fetch a new message to save it without marking it read');
 
  await recipient.request('messages/'+id+'/stored','POST');
+ const kept=await recipient.request('messages/'+id+'?peek=true');
+ assert.equal(kept.message.body,'');assert.equal(kept.message.title,'');assert.equal(kept.message.purged,true);
+ const row=(await recipient.request('messages?box=received')).find(m=>m.id===id);assert.equal(row.title,'');assert.equal(row.preview,'');
+ assert.ok(!(await recipient.request('messages?box=received&q=SECRET-TITLE')).some(m=>m.id===id));
  assert.equal((await sender.request('messages/'+id+'?peek=true')).message.body,'본문 하나');
+ check('once my PC saved a message, the same account on another PC gets nothing, while others not yet saved still can');
  await sender.request('messages/'+id+'/stored','POST');
  const after=await recipient.request('messages/'+id);
- assert.equal(after.message.body,'');assert.equal(after.message.purged,true);assert.equal(after.message.title,'가상 제목');
- assert.equal((await recipient.request('messages?box=received'))[0].preview,'');
- check('the server drops the body only after the sender and every recipient saved it, keeping the title and receipts');
+ assert.equal(after.message.body,'');assert.equal(after.message.purged,true);assert.equal(after.recipients.length,1);
+ const inside=new DatabaseSync(path.join(data,'school.db'),{readOnly:true});
+ const stored=inside.prepare('SELECT Title,Body FROM Messages WHERE Id=?').get(id);inside.close();assert.equal(stored.Title,'');assert.equal(stored.Body,'');
+ check('title and body leave the server once the sender and every recipient saved it, keeping the receipts');
+ for(const who of [recipient,sender])await who.request('messages/'+marked+'/stored','POST');
+ await sender.request('admin/maintenance','POST');
+ const raw=readFileSync(path.join(data,'school.db')).toString('latin1');assert.ok(!raw.includes('SECRET-MAIL-BODY'));
+ check('the dropped text cannot be recovered from the database file');
 
  assert.equal(after.attachments[0].id,file.id);assert.equal(after.attachments[0].expired,false);
  const download=await fetch(base+'/api/attachments/'+file.id+'/download',{headers:{Cookie:[...recipient.cookies].map(([k,v])=>k+'='+v).join('; ')}});

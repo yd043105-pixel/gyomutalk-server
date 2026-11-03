@@ -26,10 +26,10 @@ public static class Appearance
         Color ColorOf(string hex) => (Color)ColorConverter.ConvertFromString(hex);
         void Brush(string key, string hex) => resources[key] = new SolidColorBrush(ColorOf(hex));
         Brush("Blue", palette.Accent); Brush("Navy", palette.Dark); Brush("Pale", palette.Tint);
-        Brush("Ink", "#182C47"); Brush("Muted", "#5A6B82"); Brush("Line", "#DFE7F1");
-        Brush("Soft", "#F3F6FB"); Brush("Surface", "#FFFFFF");
+        Brush("Ink", "#17233A"); Brush("Muted", "#5B6B80"); Brush("Line", "#E2E7EE");
+        Brush("Soft", "#F3F5F9"); Brush("Surface", "#FFFFFF");
         Brush("Glass", glass ? "#ECFFFFFF" : "#FFFFFF");
-        Brush("GlassLine", glass ? "#FFFFFFFF" : "#DFE7F1"); Brush("OnAccent", "#FFFFFF");
+        Brush("GlassLine", glass ? "#FFFFFFFF" : "#E2E7EE"); Brush("OnAccent", "#FFFFFF");
         Brush("MessageSectionTint","#EAF0FC");Brush("SchoolSectionTint","#E3F1EB");
         resources["Canvas"] = glass
             ? new LinearGradientBrush(ColorOf(palette.Tint), ColorOf("#F8FAFD"), 55)
