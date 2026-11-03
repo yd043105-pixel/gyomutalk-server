@@ -50,5 +50,13 @@ try{
  const teacherOnly=await new Client(base).login('가상교사2',temporary);
  await teacherOnly.request('admin/staff/activation-codes','POST',undefined,403);
  check('only administrators can download activation codes');
+ const stopped=(await admin.request('admin/users')).find(u=>u.username==='가상교사2');const patch=active=>admin.request('admin/users/'+stopped.id,'PATCH',{name:stopped.name,department:stopped.department,position:stopped.position,password:'',isAdmin:false,canBroadcast:false,active});
+ await patch(false);
+ const blocked=new Client(base);blocked.csrf=(await blocked.request('session')).csrfToken;
+ const told=await blocked.request('login','POST',{username:'가상교사2',password:temporary,rememberLogin:false},403);assert.match(told.error,/사용 중지/);
+ const hidden=await blocked.request('login','POST',{username:'가상교사2',password:'Wrong-'+randomUUID(),rememberLogin:false},401);assert.doesNotMatch(hidden.error,/사용 중지/);
+ check('a stopped account says so to someone with the right password, and a wrong guess learns nothing');
+ await patch(true);await new Client(base).login('가상교사2',temporary);
+ check('turning the account back on lets the same password sign in');
 }catch(e){console.error(logs);throw e;}
 finally{server.kill();}

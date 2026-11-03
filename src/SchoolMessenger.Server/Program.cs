@@ -239,9 +239,9 @@ app.MapPost("/api/login", async Task<IResult> (Login request, HttpContext c) =>
         if (hasher.VerifyHashedPassword(pendingUser, registration.PasswordHash, request.Password) != PasswordVerificationResult.Failed)
             return Error(registration.Status == "pending" ? "관리자 승인 대기 중입니다. 승인 후 로그인할 수 있습니다." : "계정 신청이 반려되었습니다. 정보를 확인하고 다시 신청하세요.", 403);
     }
-    if (user is not { Active: true } || user.LockedUntil > Maintenance.Now) return Error("계정과 비밀번호를 확인하세요. 반복 실패 시 15분 후 재시도하세요.", 401);
+    if (user is null || user.LockedUntil > Maintenance.Now) return Error("계정과 비밀번호를 확인하세요. 반복 실패 시 15분 후 재시도하세요.", 401);
     var initialProfile=StaffAccounts.Get(store,user.Id);
-    if(initialProfile is{NeedsActivation:true}&&initialProfile.ExpiresAt<=Maintenance.Now)return Error("초기 계정의 활성화 기간이 만료되었습니다. 관리자에게 재발급을 요청하세요.",401);
+    if(user.Active&&initialProfile is{NeedsActivation:true}&&initialProfile.ExpiresAt<=Maintenance.Now)return Error("초기 계정의 활성화 기간이 만료되었습니다. 관리자에게 재발급을 요청하세요.",401);
     var verified = hasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
     if (verified == PasswordVerificationResult.Failed)
     {
@@ -249,6 +249,8 @@ app.MapPost("/api/login", async Task<IResult> (Login request, HttpContext c) =>
             ("$until", Maintenance.Now + 900_000), ("$id", user.Id));
         return Error("계정과 비밀번호를 확인하세요. 반복 실패 시 15분 후 재시도하세요.", 401);
     }
+    // Only someone with the right password learns the account is stopped, so wrong guesses still look the same and count.
+    if (!user.Active) return Error("사용 중지된 계정입니다. 관리자에게 ‘다시 사용’을 요청하세요.", 403);
     if (verified == PasswordVerificationResult.SuccessRehashNeeded)
         store.Execute("UPDATE Users SET PasswordHash=$hash WHERE Id=$id AND PasswordHash=$old", ("$hash", hasher.HashPassword(user, request.Password)), ("$id", user.Id), ("$old", user.PasswordHash));
     store.Execute("UPDATE Users SET FailedAttempts=0,LockedUntil=0 WHERE Id=$id", ("$id", user.Id));
@@ -604,6 +606,7 @@ adminApi.MapPatch("/users/{id}", IResult (string id, UpdateUser request, HttpCon
     store.Execute("UPDATE Users SET Name=$name,Department=$department,Position=$position,Active=$active,IsAdmin=$admin,CanBroadcast=$broadcast,PasswordHash=$hash,SessionVersion=SessionVersion+1,FailedAttempts=0,LockedUntil=0 WHERE Id=$id",
         ("$name", request.Name.Trim()), ("$department", request.Department.Trim()),("$position",(request.Position??user.Position).Trim()), ("$active", request.Active), ("$admin", request.IsAdmin), ("$broadcast", request.CanBroadcast),
         ("$hash", string.IsNullOrEmpty(request.Password) ? user.PasswordHash : hasher.HashPassword(user, request.Password)), ("$id", id));
+    if (request.Active != user.Active) store.Execute("INSERT INTO OfficeAudit(ActorId,Action,ResourceId,CreatedAt) VALUES($actor,$action,$id,$now)", ("$actor", UserId(c)), ("$action", request.Active ? "staff.resume" : "staff.stop"), ("$id", id), ("$now", Maintenance.Now));
     return Results.Ok();
 });
 adminApi.MapGet("/status", (Maintenance maintenance, Presence presence) =>

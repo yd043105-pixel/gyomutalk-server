@@ -136,8 +136,10 @@ public sealed partial class OfficeWindow
             });
             reset.Click+=async(_,_)=>await Run(async()=>
             {
-                if(MessageBox.Show(InteractionOwner,s.Name+" 님의 계정을 초기화할까요?\n\n아이디 "+s.Username+"와 초기 비밀번호 12345678로 바뀌고, 모든 기기에서 로그아웃됩니다. 새 활성화 번호로 다시 시작해야 합니다.","교직원 계정 초기화",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+                if(MessageBox.Show(InteractionOwner,s.Name+" 님의 계정을 초기화할까요?\n\n아이디 "+s.Username+"와 초기 비밀번호 12345678로 바뀌고, 모든 기기에서 로그아웃됩니다. 새 활성화 번호로 다시 시작해야 합니다."+(s.Active?"":"\n\n지금 사용 중지 상태인 계정이며, 초기화하면 다시 사용할 수 있게 됩니다."),"교직원 계정 초기화",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
                 var result=await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff/"+s.Id+"/reset",new StaffAccountRequest(s.Username,s.Name,s.Department,null,"12345678",UseSharedPassword:true));
+                // New sign-in details are for handing to this person, so a stopped account comes back with them.
+                if(!s.Active)await api.Send<JsonElement>(HttpMethod.Patch,"api/admin/users/"+s.Id,new{name=s.Name,department=s.Department,position=s.Position,password="",isAdmin=s.Admin,canBroadcast=s.Broadcast,active=true});
                 MessageBox.Show(InteractionOwner,"개별 전달할 활성화 번호:\n"+result.GetProperty("activationCode").GetString()+"\n유효 기간: 7일. 번호는 이 화면에서만 표시됩니다.","계정 초기화");await StaffList();
             });
         }

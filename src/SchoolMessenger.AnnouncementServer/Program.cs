@@ -140,9 +140,11 @@ app.MapPost("/api/login",async Task<IResult>(Login request,HttpContext c)=>
 {
     if(!Username(request.Username)||request.Password?.Length is not (>=1 and <=128))return Error("계정과 비밀번호를 확인하세요.",401);
     var person=store.Username(request.Username!);
-    if(person is not{Active:true,PasswordHash:not null}||person.LockedUntil>Now||PortalGraduation.Expired(store,person.Id))return Error("계정과 비밀번호를 확인하세요.",401);
+    if(person is not{PasswordHash:not null}||person.LockedUntil>Now||PortalGraduation.Expired(store,person.Id))return Error("계정과 비밀번호를 확인하세요.",401);
     var verified=hasher.VerifyHashedPassword(person,person.PasswordHash,request.Password!);
     if(verified==PasswordVerificationResult.Failed){store.Execute("UPDATE People SET FailedAttempts=FailedAttempts+1,LockedUntil=CASE WHEN FailedAttempts+1>=5 THEN $until ELSE 0 END WHERE Id=$id",("$until",Now+900_000),("$id",person.Id));return Error("계정과 비밀번호를 확인하세요.",401);}
+    // Only someone with the right password learns the account is stopped, so wrong guesses still look the same and count.
+    if(!person.Active)return Error("사용 중지된 계정입니다. 학교에 문의하세요.",403);
     if(person.Role=="teacher"&&!VerifiedTeacher(store,person))return Error("학교 교직원 연결 확인을 기다리거나 관리자에게 문의하세요.",403);
     if(verified==PasswordVerificationResult.SuccessRehashNeeded)store.Execute("UPDATE People SET PasswordHash=$hash WHERE Id=$id AND PasswordHash=$old",("$hash",hasher.HashPassword(person,request.Password!)),("$id",person.Id),("$old",person.PasswordHash));
     store.Execute("UPDATE People SET FailedAttempts=0,LockedUntil=0 WHERE Id=$id",("$id",person.Id));
