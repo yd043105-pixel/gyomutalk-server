@@ -14,7 +14,7 @@ foreach(var bytes in new[]{new byte[513],"null"u8.ToArray(),"{}"u8.ToArray(),Sch
 foreach(var address in new[]{"http://10.0.0.1/","https://user:pass@10.0.0.1/","https://10.0.0.1/private","https://10.0.0.1/?secret=x"})Require(!SchoolDiscovery.Address(address,out _),"unsafe address accepted");
 Require(SchoolDiscovery.Address("https://school.example:7443/",out _),"valid address rejected");checks.Add("Packet and address boundaries reject malformed, oversized and credential-bearing hints");
 
-async Task<(SchoolDiscovery.Candidate[] Found,int Connections)> SearchFake(string scheme,bool wrongNonce)
+async Task<(SchoolDiscovery.Candidate[] Found,int Connections)> SearchFake(string scheme,bool wrongNonce,IPEndPoint? unanswered=null)
 {
     using var udp=new UdpClient(new IPEndPoint(IPAddress.Loopback,0));
     var tcp=new TcpListener(IPAddress.Loopback,0);tcp.Start();var port=((IPEndPoint)tcp.LocalEndpoint).Port;int connections=0;
@@ -44,7 +44,8 @@ async Task<(SchoolDiscovery.Candidate[] Found,int Connections)> SearchFake(strin
     });
     try
     {
-        var found=await SchoolDiscovery.Search(targets:[(IPEndPoint)udp.Client.LocalEndPoint!]);await reply;
+        IPEndPoint[] targets=unanswered is null?[(IPEndPoint)udp.Client.LocalEndPoint!]:[unanswered,(IPEndPoint)udp.Client.LocalEndPoint!];
+        var found=await SchoolDiscovery.Search(targets:targets);await reply;
         return(found,connections);
     }
     finally{stop.Cancel();tcp.Stop();await accept;}
@@ -52,4 +53,7 @@ async Task<(SchoolDiscovery.Candidate[] Found,int Connections)> SearchFake(strin
 var mismatch=await SearchFake("https",true);Require(mismatch.Found.Length==0&&mismatch.Connections==0,"mismatched nonce caused a connection");checks.Add("An unrelated nonce never causes an HTTPS connection");
 var plain=await SearchFake("http",false);Require(plain.Found.Length==0&&plain.Connections==0,"plaintext discovery caused a connection");checks.Add("Plain HTTP hints are ignored without contacting their advertised service");
 var selfSigned=await SearchFake("https",false);Require(selfSigned.Found.Length==1&&selfSigned.Found[0].Fingerprint.Length==64&&selfSigned.Connections==1,"a school server with its own certificate was not offered with its fingerprint: found="+selfSigned.Found.Length+" connections="+selfSigned.Connections);checks.Add("A school server with its own certificate is offered with its fingerprint for the connection-code check, never trusted");
+// A teacher PC runs no server, so its own address answers "nothing here", and Windows reports that on the next receive.
+int closedPort;using(var probe=new UdpClient(new IPEndPoint(IPAddress.Loopback,0)))closedPort=((IPEndPoint)probe.Client.LocalEndPoint!).Port;
+var beside=await SearchFake("https",false,new IPEndPoint(IPAddress.Loopback,closedPort));Require(beside.Found.Length==1,"a closed address beside the school server hid it: found="+beside.Found.Length);checks.Add("A closed address on this PC does not stop the search from finding the school server");
 Console.WriteLine(JsonSerializer.Serialize(new{checks,loopbackOnly=true,trustStoreChanged=false}));

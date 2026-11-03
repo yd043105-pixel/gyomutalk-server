@@ -63,10 +63,16 @@ public static class SchoolDiscovery
         var ip=a.Address.GetAddressBytes();var mask=a.IPv4Mask.GetAddressBytes();
         return new IPEndPoint(new IPAddress(Enumerable.Range(0,4).Select(i=>(byte)(ip[i]|~mask[i])).ToArray()),port);
     }).Append(new IPEndPoint(IPAddress.Loopback,port)).DistinctBy(e=>e.Address).ToArray();
+    // Windows reports "nothing listening there" from an earlier send as a broken connection on the next receive, which would end the whole search or listener.
+    public static void IgnoreUnreachable(UdpClient udp)
+    {
+        const int UdpConnectionReset=-1744830452;
+        if(OperatingSystem.IsWindows())udp.Client.IOControl(UdpConnectionReset,new byte[4],null);
+    }
     public static async Task<Candidate[]> Search(CancellationToken cancellation=default,IPEndPoint[]? targets=null)
     {
         using var deadline=CancellationTokenSource.CreateLinkedTokenSource(cancellation);deadline.CancelAfter(TimeSpan.FromSeconds(4));
-        using var udp=new UdpClient(new IPEndPoint(IPAddress.Any,0)){EnableBroadcast=true};
+        using var udp=new UdpClient(new IPEndPoint(IPAddress.Any,0)){EnableBroadcast=true};IgnoreUnreachable(udp);
         var nonce=Convert.ToHexString(RandomNumberGenerator.GetBytes(16));var query=Encode(new(Product,nonce));
         foreach(var target in targets??Targets())try{await udp.SendAsync(query,target,deadline.Token);}catch(SocketException){}
         var found=new Dictionary<string,(Uri Address,IPAddress Source)>();

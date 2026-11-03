@@ -38,7 +38,7 @@ public sealed class ServerDiscovery(Store store,IConfiguration configuration,ILo
                 if(!Current.Enabled){socket?.Dispose();socket=null;Listening=false;await Task.Delay(1000,stop);continue;}
                 if(socket is null)
                 {
-                    try{socket=new UdpClient(new IPEndPoint(IPAddress.Any,Port));socket.Client.ReceiveBufferSize=8192;Listening=true;LastError=null;}
+                    try{socket=new UdpClient(new IPEndPoint(IPAddress.Any,Port));SchoolDiscovery.IgnoreUnreachable(socket);socket.Client.ReceiveBufferSize=8192;Listening=true;LastError=null;}
                     catch(SocketException){LastError="자동검색 UDP 포트를 사용할 수 없습니다. 포트 중복·방화벽을 확인하세요.";await Task.Delay(5000,stop);continue;}
                 }
                 using var wait=CancellationTokenSource.CreateLinkedTokenSource(stop);wait.CancelAfter(1000);
