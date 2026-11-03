@@ -35,11 +35,14 @@ public sealed class Timetables:BackgroundService
             CREATE TABLE IF NOT EXISTS TimetableManagers(UserId TEXT PRIMARY KEY REFERENCES Users(Id));
             CREATE TABLE IF NOT EXISTS TimetableDrafts(Id TEXT PRIMARY KEY,Owner TEXT NOT NULL,Payload TEXT NOT NULL,ExpiresAt INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS TimetableCandidates(Id TEXT PRIMARY KEY,Owner TEXT NOT NULL,Payload TEXT NOT NULL,ExpiresAt INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS TimetableClasses(Id TEXT PRIMARY KEY,Name TEXT NOT NULL,Grade INTEGER NOT NULL);
             """);
     }
     bool Manager(string id)=>school.GetUser(id) is{Active:true} user&&(user.IsAdmin||Data.Query("SELECT 1 FROM TimetableManagers WHERE UserId=$id",r=>r.GetInt32(0),("$id",id)).Count>0);
     static string User(HttpContext c)=>c.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-    PortalDirectory Directory()=>announcements.TimetableDirectory??throw new FilePolicyException("학교 소식 서버의 학급 명부 연결을 확인하세요.",503);
+    bool Bridged=>config["Announcements:Address"] is {Length:>0};
+    // Without a news server the classes come from the uploaded workbooks, so staff timetables work on their own.
+    PortalDirectory Directory()=>announcements.TimetableDirectory??(Bridged?throw new FilePolicyException("학교 소식 서버의 학급 명부 연결을 확인하세요.",503):new(Data.Query("SELECT Id,Name,Grade FROM TimetableClasses ORDER BY Grade,Name",r=>new PortalClass(r.GetString(0),r.GetString(1),r.GetInt32(2))).ToArray(),[]));
     static IResult Error(FilePolicyException e)=>Results.Json(new{error=e.Message},statusCode:e.Status);
     static IResult Safe(Func<IResult> action){try{return action();}catch(FilePolicyException e){return Error(e);}}
     public static void Map(WebApplication app,Timetables service)
@@ -47,7 +50,7 @@ public sealed class Timetables:BackgroundService
         var api=app.MapGroup("/api/timetable").RequireAuthorization();
         api.MapGet("/setup",(HttpContext c)=>Safe(()=>Results.Ok(new{canManage=service.Manager(User(c)),isAdmin=service.school.GetUser(User(c))!.IsAdmin,
             classes=service.Directory().Classes,teachers=service.school.Users().Where(u=>u.Active).Select(u=>new{u.Id,u.Name,u.Department,u.Username}),homerooms=service.Data.Homerooms(),
-            revision=service.Data.Revision,pending=service.Data.Query("SELECT COUNT(*) FROM TimetableBatches WHERE Delivered=0",r=>r.GetInt32(0))[0],error=service.bridgeError})));
+            revision=service.Data.Revision,pending=service.Bridged?service.Data.Query("SELECT COUNT(*) FROM TimetableBatches WHERE Delivered=0",r=>r.GetInt32(0))[0]:0,error=service.bridgeError})));
         api.MapGet("/day",(string? date,string? classId,bool? mine,HttpContext c)=>Safe(()=>
         {
             var rooms=service.Directory().Classes;if(classId is not null&&!rooms.Any(r=>r.Id==classId))return Results.NotFound();
@@ -93,6 +96,7 @@ public sealed class Timetables:BackgroundService
             await using(var output=new FileStream(path,FileMode.CreateNew,FileAccess.Write,FileShare.None))await file.CopyToAsync(output,c.RequestAborted);
             await FilePolicy.Scan(path,name,environment.IsDevelopment(),config["School:ScannerPath"],c.RequestAborted);
             var parsed=TimetableWorkbook.Read(path,form["kind"].ToString());RequireManager(owner);
+            if(!Bridged)foreach(var room in parsed.Cells.DistinctBy(c=>Canonical(c.ClassKey)))Data.Execute("INSERT OR IGNORE INTO TimetableClasses VALUES($id,$name,$grade)",("$id",Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Canonical(room.ClassKey))))[..32]),("$name",room.ClassKey),("$grade",room.Grade));
             var id=Guid.NewGuid().ToString("N");Data.Execute("DELETE FROM TimetableDrafts WHERE ExpiresAt<=$now",("$now",Now));Data.Execute("DELETE FROM TimetableCandidates WHERE ExpiresAt<=$now",("$now",Now));
             if(Data.Query("SELECT COUNT(*) FROM TimetableDrafts WHERE Owner=$owner",r=>r.GetInt32(0),("$owner",owner))[0]>=20)throw new FilePolicyException("미게시 시간표가 많습니다. 기존 미리보기를 게시하거나 만료 후 다시 시도하세요.",429);
             Data.Execute("INSERT INTO TimetableDrafts VALUES($id,$owner,$payload,$expires)",("$id",id),("$owner",owner),("$payload",JsonSerializer.Serialize(new Draft(owner,name,parsed),TimetableData.Json)),("$expires",Now+86_400_000));
@@ -125,7 +129,8 @@ public sealed class Timetables:BackgroundService
     {
         var rooms=Directory().Classes;var users=school.Users();
         if(batch.Cells.Any(c=>!rooms.Any(r=>r.Id==c.ClassId)||c.TeacherId.Length>0&&!users.Any(u=>u.Id==c.TeacherId&&u.Active)))throw new FilePolicyException("학급·교사 연결이 변경되었습니다. 다시 미리보기하세요.",409);
-        var homes=Data.Homerooms();if(batch.Cells.Select(c=>c.ClassId).Distinct().Any(id=>!homes.Any(h=>h.ClassId==id&&users.Any(u=>u.Id==h.TeacherId&&u.Active))))throw new FilePolicyException("관리자가 해당 학급의 담임 계정을 먼저 연결해야 합니다.",409);
+        // Homeroom teachers pass changes on to families, which needs the news server.
+        var homes=Data.Homerooms();if(Bridged&&batch.Cells.Select(c=>c.ClassId).Distinct().Any(id=>!homes.Any(h=>h.ClassId==id&&users.Any(u=>u.Id==h.TeacherId&&u.Active))))throw new FilePolicyException("관리자가 해당 학급의 담임 계정을 먼저 연결해야 합니다.",409);
     }
     void ValidatePeriod(TimetableBatch batch)
     {
@@ -183,6 +188,7 @@ public sealed class Timetables:BackgroundService
     {
         ValidateLinks(batch);
         var notices=Notifications(batch,Changes(batch));var saved=Data.Insert(batch,notices);
+        if(!Bridged)Data.Execute("UPDATE TimetableBatches SET Delivered=1 WHERE Id=$id",("$id",saved.Id));
         // Persistence succeeds independently of connected desktops; their next refresh also reads the durable notices.
         foreach(var target in notices.Where(n=>school.GetUser(n.UserId) is{Active:true}))
             try{await hub.Clients.Group(target.UserId).SendAsync("TimetableChanged",saved.Start,saved.Revision);}catch{ /* The durable notice remains available after reconnection. */ }

@@ -55,7 +55,7 @@ public sealed partial class LocalServerWindow
         void Group(string label){var text=AdminUi.Label(label,"Faint",12,true);text.Margin=new Thickness(10,10,0,3);navigation.Children.Add(text);}
         Group("서버");
         foreach(var service in new[]{"office","announcements"})AddCard(navigation,service);
-        void Menu(string label,string page,string icon,string? role=null){var button=new Button{Content=NavigationLabel(label,icon),Uid=page,Margin=new Thickness(0,0,0,1)};NavigationState(button,false);System.Windows.Automation.AutomationProperties.SetName(button,label);button.Click+=async(_,_)=>await OpenAdministration(page,role);navigation.Children.Add(button);administrationNavigation.Add(button);}
+        void Menu(string label,string page,string icon,string? role=null){var button=new Button{Content=NavigationLabel(label,icon),Uid=page,Margin=new Thickness(0,0,0,1)};NavigationState(button,false);System.Windows.Automation.AutomationProperties.SetName(button,label);button.Click+=async(_,_)=>{if(page is "portal" or "sections"&&AppFeatures.Pending(this,label))return;await OpenAdministration(page,role);};navigation.Children.Add(button);administrationNavigation.Add(button);}
         Group("운영");Menu("운영 현황","resources","AdminOverviewIcon");
         Group("교직원");Menu("교직원·권한","members","AdminPeopleIcon","office");
         // Sections hold student accounts, so they sit with the student-parent service they depend on.
@@ -90,9 +90,9 @@ public sealed partial class LocalServerWindow
     void AddCard(StackPanel navigation,string service)
     {
         var card=new ServerCard(service,new LocalServerProcess(root,service));cards.Add(card);var office=service=="office";
-        var label=office?"교내 업무 서버":"학생·학부모 소식 서버";var navContent=NavigationLabel(office?"교내 업무":"학생·학부모 소식",office?"AdminServerIcon":"AdminStudentIcon");
+        var label=office?"교내 업무 서버":"학생·학부모 소식 서버";var navContent=NavigationLabel(office?"교내 업무":AppFeatures.LooksClosed?"학생·학부모":"학생·학부모 소식",office?"AdminServerIcon":"AdminStudentIcon");
         card.NavigationStatus.FontSize=12;card.NavigationStatus.FontWeight=FontWeights.Medium;card.NavigationStatus.Margin=new Thickness(4,0,0,0);card.NavigationStatus.VerticalAlignment=VerticalAlignment.Center;Grid.SetColumn(card.NavigationStatus,2);navContent.Children.Add(card.NavigationStatus);
-        card.Navigation.Content=navContent;card.Navigation.Margin=new Thickness(0,0,0,1);card.Navigation.Click+=(_,_)=>SelectCard(card);navigation.Children.Add(card.Navigation);
+        card.Navigation.Content=navContent;card.Navigation.Margin=new Thickness(0,0,0,1);card.Navigation.Click+=(_,_)=>{if(!office&&AppFeatures.Pending(this,label))return;SelectCard(card);};navigation.Children.Add(card.Navigation);
         System.Windows.Automation.AutomationProperties.SetName(card.Navigation,label+" 서버 선택");
         foreach(var height in new[]{GridLength.Auto,GridLength.Auto,new GridLength(1,GridUnitType.Star)})card.View.RowDefinitions.Add(new RowDefinition{Height=height});serverViews.Children.Add(card.View);
         // Header: title on the left, start/stop/sign-in on the right.
@@ -120,7 +120,7 @@ public sealed partial class LocalServerWindow
         Column(0,"교사 PC 접속 주소",card.AddressValue,"교사 PC 메신저가 같은 학교망에서 자동으로 찾습니다.",()=>card.AddressValue.Text);
         Column(1,"연결 확인 코드",card.Connection,"교사가 처음 접속할 때 화면의 코드와 같은지 확인합니다.",()=>card.Connection.Text);
         var schoolColumn=Column(2,"학교",card.SchoolValue,"",null);schoolColumn.Children.Add(card.SchoolNote);
-        var link=new Button{Content="학교 연결 QR · 서버 이전",HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,10,0,0),ToolTip="앱·교사 PC가 주소 없이 연결하는 QR, 휴대폰 소식 확인 시각, 새 서버로 이전"};link.Click+=(_,_)=>ShowSchoolLink(card);schoolColumn.Children.Add(link);
+        var link=new Button{Content=AppFeatures.Ready?"학교 연결 QR · 서버 이전":"서버 이전",HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,10,0,0),ToolTip=AppFeatures.Ready?"앱·교사 PC가 주소 없이 연결하는 QR, 휴대폰 소식 확인 시각, 새 서버로 이전":"서버를 새 PC로 옮길 때 교사 PC가 새 주소를 따라가게 합니다."};link.Click+=(_,_)=>ShowSchoolLink(card);schoolColumn.Children.Add(link);
         status.Children.Add(card.ConnectionPanel);
         card.StatusCard.Child=status;card.StatusCard.Margin=new Thickness(0,0,0,16);Grid.SetRow(card.StatusCard,1);card.View.Children.Add(card.StatusCard);
         BuildEmptyState(card);

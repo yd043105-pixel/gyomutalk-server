@@ -7,6 +7,9 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using SchoolMessenger.Shared;
 
 namespace SchoolMessenger.Desktop;
@@ -65,6 +68,36 @@ public sealed partial class LocalServerWindow
             Check(discovery.GetProperty("enabled").GetBoolean()&&discovery.GetProperty("address").GetString()!.StartsWith("https://",StringComparison.Ordinal),"teacher PC discovery is turned on with the HTTPS address");
             var link=SchoolLink(address,card.Fingerprint,school.Name,school.Address,"office");var linked=MoveFrom(link,0);
             Check(linked.Address==address+"/"&&linked.Fingerprint==card.Fingerprint&&link.Contains(Uri.EscapeDataString(school.Address)),"the school connection link carries the server address, its certificate and the school");
+            // The same start the administrator gets from the dialog: review record, loopback entrance and the read-only list together.
+            async Task<System.Net.HttpStatusCode> Outside(string path,string host="gyomutalk.school.example")
+            {
+                using var http=new HttpClient();using var request=new HttpRequestMessage(HttpMethod.Get,SimpleOperation.ExternalListener+path);request.Headers.Host=host;
+                using var response=await http.SendAsync(request);return response.StatusCode;
+            }
+            Check(ExternalHostFrom(" https://Gyomutalk.School.Example/ ").Equals("gyomutalk.school.example",StringComparison.OrdinalIgnoreCase)&&ExternalHostFrom("")==""&&new[]{"http://a.example","https://10.0.0.1","https://a.example:8443","https://a.example/x","localhost"}.All(bad=>{try{ExternalHostFrom(bad);return false;}catch(InvalidOperationException){return true;}}),"only a plain school domain is accepted as the public address");
+            await card.Host.Stop();card.ExternalHost="gyomutalk.school.example";await Start(card);
+            Check(await Ready()&&await Outside("/api/session")==System.Net.HttpStatusCode.OK&&await Outside("/api/admin/users")==System.Net.HttpStatusCode.Forbidden&&await Outside("/api/session","other.example")==System.Net.HttpStatusCode.NotFound,"with the public address set, the server opens the read-only entrance and passes its own review record");
+            Check(!System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(l=>l.Port==SimpleOperation.ExternalPort&&!System.Net.IPAddress.IsLoopback(l.Address)),"the entrance listens on this PC only");
+            await card.Host.Stop();card.ExternalHost="";await Start(card);var closedEntrance=false;try{await Outside("/health");}catch(HttpRequestException){closedEntrance=true;}
+            Check(await Ready()&&closedEntrance,"turning it off closes the entrance");
+            (string[] Texts,bool Qr) MoveDialog(bool ready,string file,Action? show=null)
+            {
+                AppFeatures.Ready=ready;string[] texts=[];var qr=false;
+                Dispatcher.BeginInvoke(new Action(()=>
+                {
+                    var dialog=OwnedWindows.Cast<Window>().Last();texts=ViewControls<TextBlock>(dialog).Select(t=>t.Text).ToArray();qr=ViewControls<Image>(dialog).Any(i=>i.IsVisible);
+                    var picture=new RenderTargetBitmap((int)dialog.ActualWidth,(int)dialog.ActualHeight,96,96,PixelFormats.Pbgra32);picture.Render((Visual)dialog.Content);
+                    var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(picture));using(var stream=File.Create(Path.Combine(outputDirectory,file)))png.Save(stream);
+                    dialog.Close();
+                }),System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                (show??(()=>ShowSchoolLink(card)))();AppFeatures.Ready=true;return (texts,qr);
+            }
+            var closed=MoveDialog(false,"move-dialog-preview.png");
+            Check(!closed.Qr&&closed.Texts.Contains("서버 이전")&&closed.Texts.Contains("이 서버의 연결 링크")&&!closed.Texts.Contains("휴대폰 소식 확인 시각")&&closed.Texts.Any(t=>t.Contains("개발 진행 중",StringComparison.Ordinal)),"while the apps are in development the move dialog keeps the server move and closes the QR and phone settings");
+            var open=MoveDialog(true,"school-link-preview.png");
+            Check(open.Qr&&open.Texts.Contains("학교 연결 QR")&&open.Texts.Contains("휴대폰 소식 확인 시각")&&open.Texts.Contains("서버 이전"),"once the apps ship the same dialog offers the QR and the phone check time");
+            var outsideDialog=MoveDialog(true,"external-preview.png",()=>ShowExternal(card));
+            Check(outsideDialog.Texts.Contains("학교 밖 조회")&&outsideDialog.Texts.Contains(SimpleOperation.ExternalListener)&&outsideDialog.Texts.Any(t=>t.Contains("Cloudflare",StringComparison.Ordinal)),"the outside-access dialog names the connector target and says the traffic passes through Cloudflare");
             var moved=new SchoolAppSettings.Moving("https://192.0.2.10:18443/",new string('C',64),DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()+SchoolAppSettings.MoveNoticeMilliseconds);
             SchoolAppSettings.Write(card.SimpleData.Text,new(CheckTime:"07:40",Moving:moved));
             using(var api=new Api(address))

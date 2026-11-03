@@ -136,13 +136,15 @@ MovingNotice.Use(app,store.Root);
 app.MapGet("/server-info",()=>new{product="Yeoyang.Office.Discovery.1",schoolName=deploymentReview.SchoolName??app.Configuration["Portal:Name"]??"학교",schoolAddress=app.Configuration["Portal:SchoolAddress"]??"",app=MovingNotice.Info(store.Root),directoryProduct="SchoolMessenger.School.1",schoolId=deploymentReview.SchoolId??app.Configuration["Operations:SchoolId"]??"",service="announcements"});
 OperationalHealth.Map(app,store.Open,store.Root,"Portal");
 app.MapGet("/api/session",(HttpContext c,IAntiforgery csrf)=>new PortalSession(app.Configuration["Portal:Name"]??"우리 학교",csrf.GetAndStoreTokens(c).RequestToken!,c.User.Identity?.IsAuthenticated==true?store.Public(store.Person(Id(c))!):null));
+// One wording for every failure, so the answer never tells whether an account exists or is locked.
+const string LoginFailed="아이디 또는 비밀번호가 맞지 않습니다. 5회 이상 틀리면 15분간 잠깁니다. 비밀번호를 모르면 담당자에게 문의하세요.";
 app.MapPost("/api/login",async Task<IResult>(Login request,HttpContext c)=>
 {
-    if(!Username(request.Username)||request.Password?.Length is not (>=1 and <=128))return Error("계정과 비밀번호를 확인하세요.",401);
+    if(!Username(request.Username)||request.Password?.Length is not (>=1 and <=128))return Error(LoginFailed,401);
     var person=store.Username(request.Username!);
-    if(person is not{PasswordHash:not null}||person.LockedUntil>Now||PortalGraduation.Expired(store,person.Id))return Error("계정과 비밀번호를 확인하세요.",401);
+    if(person is not{PasswordHash:not null}||person.LockedUntil>Now||PortalGraduation.Expired(store,person.Id))return Error(LoginFailed,401);
     var verified=hasher.VerifyHashedPassword(person,person.PasswordHash,request.Password!);
-    if(verified==PasswordVerificationResult.Failed){store.Execute("UPDATE People SET FailedAttempts=FailedAttempts+1,LockedUntil=CASE WHEN FailedAttempts+1>=5 THEN $until ELSE 0 END WHERE Id=$id",("$until",Now+900_000),("$id",person.Id));return Error("계정과 비밀번호를 확인하세요.",401);}
+    if(verified==PasswordVerificationResult.Failed){store.Execute("UPDATE People SET FailedAttempts=CASE WHEN LockedUntil>0 THEN 1 ELSE FailedAttempts+1 END,LockedUntil=CASE WHEN LockedUntil=0 AND FailedAttempts+1>=5 THEN $until ELSE 0 END WHERE Id=$id",("$until",Now+900_000),("$id",person.Id));return Error(LoginFailed,401);}
     // Only someone with the right password learns the account is stopped, so wrong guesses still look the same and count.
     if(!person.Active)return Error("사용 중지된 계정입니다. 학교에 문의하세요.",403);
     if(person.Role=="teacher"&&!VerifiedTeacher(store,person))return Error("학교 교직원 연결 확인을 기다리거나 관리자에게 문의하세요.",403);

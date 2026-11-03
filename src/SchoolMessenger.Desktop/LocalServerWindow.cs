@@ -34,6 +34,7 @@ public sealed partial class LocalServerWindow:Window
         public CheckBox Ups=new(){Content="정전 대비 UPS를 설치하고 시험했습니다",Margin=new Thickness(0,6,0,0)};
         public Button Activate=new(){Content="설치하기"};
         public bool Activated=true;
+        public string ExternalHost="";
         public SchoolPicker? SchoolPick;
         public TextBox Data=new(),Config=new(){IsReadOnly=true},Log=new(){IsReadOnly=true,TextWrapping=TextWrapping.Wrap,MaxHeight=100,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
         public TextBlock Status=Text("중지됨",16),Address=Text("",12);
@@ -54,14 +55,14 @@ public sealed partial class LocalServerWindow:Window
         public Grid ConnectionPanel=new(),DetailsGrid=new();
         public string ChecklistKey="";
     }
-    record Settings(string Service,bool Trial,string Data,string Config,bool Auto,int Mode=-1,string School="",string AdminUsername="admin",string SimpleData="",string Backup="",string Approval="",string ApprovalSha256="",DateTimeOffset? ReviewedAt=null,string SchoolId="",bool Activated=true,bool Ups=false,string SchoolAddress="");
+    record Settings(string Service,bool Trial,string Data,string Config,bool Auto,int Mode=-1,string School="",string AdminUsername="admin",string SimpleData="",string Backup="",string Approval="",string ApprovalSha256="",DateTimeOffset? ReviewedAt=null,string SchoolId="",bool Activated=true,bool Ups=false,string SchoolAddress="",string ExternalHost="");
     static bool Simple(ServerCard c)=>c.Mode.SelectedIndex==2;
     static string DataPath(ServerCard c)=>Simple(c)?c.SimpleData.Text:c.Data.Text;
     static bool Initialized(ServerCard c)=>File.Exists(Path.Combine(DataPath(c),".initialized"));
     static TextBlock Text(string value,int size=13)=>new(){Text=value,FontSize=size,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,5,0,5)};
     internal static string StartupCommand=>WindowsStartup.Command[..^" --startup".Length]+" --server-manager --startup";
     internal static WindowsStartup Startup(string? registry=null)=>new(registry??@"Software\Microsoft\Windows\CurrentVersion\Run","YeoyangMessengerServerManager",StartupCommand);
-    public LocalServerWindow():this(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..")),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"YeoyangMessengerServer"),null){}
+    public LocalServerWindow():this(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"..")),Environment.GetEnvironmentVariable("SCHOOL_UI_LOCALDIR")??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"YeoyangMessengerServer"),null){}
     internal LocalServerWindow(string installedRoot,string settingsDirectory,string? registry)
     {
         root=Path.GetFullPath(installedRoot);directory=settingsDirectory;Directory.CreateDirectory(directory);startup=Startup(registry);
@@ -86,7 +87,7 @@ public sealed partial class LocalServerWindow:Window
             c.Controls.Visibility=available?Visibility.Visible:Visibility.Collapsed;
             c.Activate.Visibility=c.Host.Installed&&!c.Activated?Visibility.Visible:Visibility.Collapsed;
             c.Status.Text=!available?"미설치":c.Busy?"처리 중…":running?"실행 중":"중지됨";
-            c.NavigationStatus.Text=c.Status.Text;c.Status.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,running?"Blue":"Muted");
+            c.NavigationStatus.Text=AppFeatures.LooksClosed&&c.Service!="office"?"개발 진행 중":c.Status.Text;c.Status.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,running?"Blue":"Muted");
             c.TrialFields.Visibility=trial?Visibility.Visible:Visibility.Collapsed;c.ProductionFields.Visibility=c.Mode.SelectedIndex==1?Visibility.Visible:Visibility.Collapsed;c.SimpleFields.Visibility=simple?Visibility.Visible:Visibility.Collapsed;
             // A simple-setup server can always get a new administrator password; the first one is set when it is created.
             var initialized=Initialized(c);
@@ -105,7 +106,7 @@ public sealed partial class LocalServerWindow:Window
             c.Admin.Content=adminSessions.ContainsKey(c.Service)?"관리 기능 열기":"관리자 로그인";
             c.Auto.IsEnabled=!c.Busy&&(c.Mode.SelectedIndex==1||Initialized(c));c.Log.Text=c.Host.Output;c.Details.Visibility=string.IsNullOrEmpty(c.Log.Text)?Visibility.Collapsed:Visibility.Visible;
             c.Address.Text=!available?(c.Host.Installed?"필요할 때 ‘설치하기’를 누르면 이 PC에서 사용할 수 있습니다.":"서버 설치 프로그램을 다시 실행해 이 서버를 추가하세요."):trial?(c.Service=="office"?"이 PC 접속 주소: http://localhost:5080":"이 PC 학교 소식 주소: http://localhost:5081"):simple?"교사 PC 접속 주소: "+string.Join(" 또는 ",SimpleOperation.Addresses(c.Service)):"학교 운영 설정의 HTTPS 주소로 접속합니다. 실행 후 관리자 로그인으로 연결을 확인하세요.";
-            AdminUi.SetBadge(c.StatusBadge,c.Status.Text,!available?"Neutral":c.Busy?"Warning":running?"Success":"Neutral");c.NavigationStatus.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,running?"Success":"Faint");
+            AdminUi.SetBadge(c.StatusBadge,c.Status.Text,!available?"Neutral":c.Busy?"Warning":running?"Success":"Neutral");c.NavigationStatus.SetResourceReference(System.Windows.Controls.TextBlock.ForegroundProperty,running&&!(AppFeatures.LooksClosed&&c.Service!="office")?"Success":"Faint");
             c.Summary.Text=!available?"":trial?"이 PC 시험 · 외부 접속 없음":simple?"학교 운영 · 간편 설정":"학교 운영 · 운영 설정 파일";
             c.StatusCard.Visibility=c.DetailsGrid.Visibility=available?Visibility.Visible:Visibility.Collapsed;c.Empty.Visibility=available?Visibility.Collapsed:Visibility.Visible;
             c.EmptyNote.Text=!c.Host.Installed?"서버 설치 프로그램을 다시 실행해 이 서버를 추가하세요.":"필요할 때 설치하면 됩니다. 교내 업무 서버와 따로 실행되며, 설치 파일은 이미 이 PC에 들어 있습니다.";
@@ -121,7 +122,7 @@ public sealed partial class LocalServerWindow:Window
     // Opened by Windows sign-in (startup entry): the school server set up with simple setup starts too, so a restarted
     // server PC serves teachers again without anyone opening the program.
     internal bool LaunchedAtSignIn=Environment.GetCommandLineArgs().Contains("--startup");
-    async Task StartSelected(){foreach(var card in cards.Where(c=>c.Host.Installed&&c.Activated&&(c.Auto.IsChecked==true||LaunchedAtSignIn&&Simple(c)&&Initialized(c))))await Start(card);}
+    async Task StartSelected(){foreach(var card in cards.Where(c=>(AppFeatures.Ready||c.Service=="office")&&c.Host.Installed&&c.Activated&&(c.Auto.IsChecked==true||LaunchedAtSignIn&&Simple(c)&&Initialized(c))))await Start(card);}
     async Task Start(ServerCard c)
     {
         if(c.Busy||c.Host.Running)return;c.Busy=true;c.Details.IsExpanded=false;Refresh();
@@ -155,7 +156,7 @@ public sealed partial class LocalServerWindow:Window
     void SaveSettings()
     {
         if(loadingSettings)return;
-        try{var path=Path.Combine(directory,"manager.json");var temp=path+".tmp";File.WriteAllText(temp,JsonSerializer.Serialize(cards.Select(c=>new Settings(c.Service,c.Mode.SelectedIndex==0,c.Data.Text,c.Config.Text,c.Auto.IsChecked==true,c.Mode.SelectedIndex,c.School.Text.Trim(),c.AdminUsername.Text.Trim(),c.SimpleData.Text,c.Backup.Text,c.Approval.Text,c.ApprovalSha256,c.ReviewedAt,c.SchoolId,c.Activated,c.Ups.IsChecked==true,c.SchoolPick?.Selected?.Address??""))));File.Move(temp,path,true);}
+        try{var path=Path.Combine(directory,"manager.json");var temp=path+".tmp";File.WriteAllText(temp,JsonSerializer.Serialize(cards.Select(c=>new Settings(c.Service,c.Mode.SelectedIndex==0,c.Data.Text,c.Config.Text,c.Auto.IsChecked==true,c.Mode.SelectedIndex,c.School.Text.Trim(),c.AdminUsername.Text.Trim(),c.SimpleData.Text,c.Backup.Text,c.Approval.Text,c.ApprovalSha256,c.ReviewedAt,c.SchoolId,c.Activated,c.Ups.IsChecked==true,c.SchoolPick?.Selected?.Address??"",c.ExternalHost))));File.Move(temp,path,true);}
         catch(Exception e)when(e is IOException or UnauthorizedAccessException){MessageBox.Show(this,"서버 관리 설정을 저장하지 못했습니다. 저장 공간과 폴더 권한을 확인하세요.\n"+e.Message,"설정 저장 실패");}
     }
     void LoadSettings()
@@ -165,7 +166,7 @@ public sealed partial class LocalServerWindow:Window
         {
             var path=Path.Combine(directory,"manager.json");if(!File.Exists(path))return;var values=JsonSerializer.Deserialize<Settings[]>(File.ReadAllText(path));
             foreach(var s in values??[]){var c=cards.FirstOrDefault(c=>c.Service==s.Service);if(c is null)continue;c.Data.Text=s.Data;c.Config.Text=s.Config;c.Mode.SelectedIndex=s.Mode is >=0 and <=2?s.Mode:s.Trial?0:1;c.Auto.IsChecked=s.Auto;
-                if(c.SchoolPick is {} pick)pick.Set(s.School,s.SchoolAddress);else c.School.Text=s.School;c.AdminUsername.Text=s.AdminUsername;if(s.SimpleData.Length>0)c.SimpleData.Text=s.SimpleData;if(s.Backup.Length>0)c.Backup.Text=s.Backup;c.Approval.Text=s.Approval;c.ApprovalSha256=s.ApprovalSha256;c.ReviewedAt=s.ReviewedAt;c.SchoolId=s.SchoolId;c.Activated=s.Activated;c.Ups.IsChecked=s.Ups;}
+                if(c.SchoolPick is {} pick)pick.Set(s.School,s.SchoolAddress);else c.School.Text=s.School;c.AdminUsername.Text=s.AdminUsername;if(s.SimpleData.Length>0)c.SimpleData.Text=s.SimpleData;if(s.Backup.Length>0)c.Backup.Text=s.Backup;c.Approval.Text=s.Approval;c.ApprovalSha256=s.ApprovalSha256;c.ReviewedAt=s.ReviewedAt;c.SchoolId=s.SchoolId;c.Activated=s.Activated;c.Ups.IsChecked=s.Ups;c.ExternalHost=s.ExternalHost;}
         }catch(Exception e)when(e is IOException or JsonException){MessageBox.Show(this,"서버 관리 설정을 읽지 못했습니다. 데이터·운영 설정 경로를 다시 확인하세요.");}
         finally{loadingSettings=false;}
     }

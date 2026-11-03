@@ -117,6 +117,7 @@ public sealed class DeploymentReview
                 if(string.IsNullOrWhiteSpace(host)||!config["Portal:AllowedHosts"]!.Split(',',StringSplitOptions.TrimEntries).Contains(host,StringComparer.OrdinalIgnoreCase))throw Invalid("review-tunnel-host-required");
                 result.Demand("tunnel",host,443);
             }
+            if(service=="office"&&config["School:ExternalHost"] is {Length:>0} outside)result.Demand("tunnel",outside,443);
             if(config.GetValue("FeedbackMail:Enabled",false))result.Demand("error-mail",config["FeedbackMail:Host"]??"",config.GetValue("FeedbackMail:Port",587),config["FeedbackMail:Recipient"]??"");
             if(config.GetValue("Operations:AlertMailEnabled",false))result.Demand("operations-mail",config["Operations:AlertMailHost"]??"",587,config["Operations:AlertMailRecipient"]??"");
             return result;

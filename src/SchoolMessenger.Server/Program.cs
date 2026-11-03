@@ -22,6 +22,7 @@ if(OperationsCommand.TryRun(builder.Configuration,"School","school.db"))return;
 if(BackendRecovery.TryRun(builder.Configuration,"School","school.db"))return;
 var deploymentReview=DeploymentReview.Load(builder.Configuration,builder.Environment.IsDevelopment(),"office");
 builder.Services.AddSingleton(deploymentReview);
+ExternalAccess.Validate(builder.Configuration);
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 210L * 1024 * 1024);
 if (builder.Configuration["School:CertificateThumbprint"] is { Length: > 0 } thumbprint)
 {
@@ -87,7 +88,7 @@ builder.Services.AddRateLimiter(o =>
         RateLimitPartition.GetFixedWindowLimiter(c.User.Identity?.IsAuthenticated==true?"user:"+c.User.FindFirstValue(ClaimTypes.NameIdentifier):"ip:"+(c.Connection.RemoteIpAddress?.ToString() ?? "local"), _ =>
             new FixedWindowRateLimiterOptions { PermitLimit = 600, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     o.AddPolicy("login", c => RateLimitPartition.GetFixedWindowLimiter(c.Connection.RemoteIpAddress?.ToString() ?? "local", _ =>
-        new FixedWindowRateLimiterOptions { PermitLimit = Math.Clamp(builder.Configuration.GetValue("School:LoginLimitPerMinute",120),20,300), Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+        new FixedWindowRateLimiterOptions { PermitLimit = ExternalAccess.Is(c) ? 20 : Math.Clamp(builder.Configuration.GetValue("School:LoginLimitPerMinute",120),20,300), Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     o.AddPolicy("credentials", c => RateLimitPartition.GetFixedWindowLimiter(c.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? c.Connection.RemoteIpAddress?.ToString() ?? "local", _ =>
         new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(15), QueueLimit = 0 }));
     o.AddPolicy("upload", _ => RateLimitPartition.GetConcurrencyLimiter("uploads", _ => new ConcurrencyLimiterOptions { PermitLimit = 4, QueueLimit = 0 }));
@@ -136,6 +137,7 @@ if (builder.Configuration["School:ResetAdminPassword"] is { Length: > 0 } newPas
 File.WriteAllText(Path.Combine(store.Root, ".initialized"), "initialized");
 var networks = (builder.Configuration["School:AllowedNetworks"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
     .Select(System.Net.IPNetwork.Parse).ToArray();
+ExternalAccess.Use(app);
 // Never accept credentials over plain HTTP from another computer, including Development.
 app.Use(async (context, next) =>
 {
@@ -151,7 +153,7 @@ app.Use(async (context, next) =>
     }
     if (!context.Request.IsHttps && context.Connection.RemoteIpAddress is { } ip && !System.Net.IPAddress.IsLoopback(ip))
     { context.Response.StatusCode = 400; await context.Response.WriteAsync("교내 접속에는 HTTPS가 필요합니다."); return; }
-    if (context.Connection.RemoteIpAddress is { } remote && !System.Net.IPAddress.IsLoopback(remote))
+    if (!ExternalAccess.Is(context) && context.Connection.RemoteIpAddress is { } remote && !System.Net.IPAddress.IsLoopback(remote))
     {
         if (remote.IsIPv4MappedToIPv6) remote = remote.MapToIPv4();
         if (!networks.Any(n => n.Contains(remote))) { context.Response.StatusCode = 403; return; }
@@ -227,11 +229,14 @@ app.MapGet("/api/session", (HttpContext c, IAntiforgery antiforgery) => Results.
 {
     schoolName = builder.Configuration["School:Name"],
     csrfToken = antiforgery.GetAndStoreTokens(c).RequestToken,
+    external = ExternalAccess.Is(c),
     user = c.User.Identity?.IsAuthenticated == true ? PublicUser(store.GetUser(UserId(c))!) : null
 }));
+// One wording for every failure, so the answer never tells whether an account exists or is locked.
+const string LoginFailed = "아이디 또는 비밀번호가 맞지 않습니다. 5회 이상 틀리면 15분간 잠깁니다. 비밀번호를 모르면 담당자에게 문의하세요.";
 app.MapPost("/api/login", async Task<IResult> (Login request, HttpContext c) =>
 {
-    if (request.Username is not {Length:>=1 and <=50} || request.Password is null || request.Password.Length > 128) return Error("계정과 비밀번호를 확인하세요.", 401);
+    if (request.Username is not {Length:>=1 and <=50} || request.Password is null || request.Password.Length > 128) return Error(LoginFailed, 401);
     var user = store.FindUser(request.Username.Trim());
     if (user is null && store.FindRegistration(request.Username.Trim()) is { } registration)
     {
@@ -239,18 +244,20 @@ app.MapPost("/api/login", async Task<IResult> (Login request, HttpContext c) =>
         if (hasher.VerifyHashedPassword(pendingUser, registration.PasswordHash, request.Password) != PasswordVerificationResult.Failed)
             return Error(registration.Status == "pending" ? "관리자 승인 대기 중입니다. 승인 후 로그인할 수 있습니다." : "계정 신청이 반려되었습니다. 정보를 확인하고 다시 신청하세요.", 403);
     }
-    if (user is null || user.LockedUntil > Maintenance.Now) return Error("계정과 비밀번호를 확인하세요. 반복 실패 시 15분 후 재시도하세요.", 401);
+    if (user is null || user.LockedUntil > Maintenance.Now) return Error(LoginFailed, 401);
     var initialProfile=StaffAccounts.Get(store,user.Id);
     if(user.Active&&initialProfile is{NeedsActivation:true}&&initialProfile.ExpiresAt<=Maintenance.Now)return Error("초기 계정의 활성화 기간이 만료되었습니다. 관리자에게 재발급을 요청하세요.",401);
     var verified = hasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
     if (verified == PasswordVerificationResult.Failed)
     {
-        store.Execute("UPDATE Users SET FailedAttempts=FailedAttempts+1, LockedUntil=CASE WHEN FailedAttempts+1>=5 THEN $until ELSE 0 END WHERE Id=$id",
+        store.Execute("UPDATE Users SET FailedAttempts=CASE WHEN LockedUntil>0 THEN 1 ELSE FailedAttempts+1 END, LockedUntil=CASE WHEN LockedUntil=0 AND FailedAttempts+1>=5 THEN $until ELSE 0 END WHERE Id=$id",
             ("$until", Maintenance.Now + 900_000), ("$id", user.Id));
-        return Error("계정과 비밀번호를 확인하세요. 반복 실패 시 15분 후 재시도하세요.", 401);
+        return Error(LoginFailed, 401);
     }
     // Only someone with the right password learns the account is stopped, so wrong guesses still look the same and count.
     if (!user.Active) return Error("사용 중지된 계정입니다. 관리자에게 ‘다시 사용’을 요청하세요.", 403);
+    // The shared first password must never open a session from outside, so first-time setup stays inside the school.
+    if (ExternalAccess.Is(c) && initialProfile is {NeedsActivation:true} or {SharedPassword:true}) return Error("처음 설정은 학교 안 PC에서 마친 뒤 학교 밖에서 로그인하세요.", 403);
     if (verified == PasswordVerificationResult.SuccessRehashNeeded)
         store.Execute("UPDATE Users SET PasswordHash=$hash WHERE Id=$id AND PasswordHash=$old", ("$hash", hasher.HashPassword(user, request.Password)), ("$id", user.Id), ("$old", user.PasswordHash));
     store.Execute("UPDATE Users SET FailedAttempts=0,LockedUntil=0 WHERE Id=$id", ("$id", user.Id));

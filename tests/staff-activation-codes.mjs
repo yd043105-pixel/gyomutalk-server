@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {mkdirSync,existsSync} from 'node:fs';
+import {DatabaseSync} from 'node:sqlite';
 import net from 'node:net';
 import path from 'node:path';
 
@@ -58,5 +59,20 @@ try{
  check('a stopped account says so to someone with the right password, and a wrong guess learns nothing');
  await patch(true);await new Client(base).login('가상교사2',temporary);
  check('turning the account back on lets the same password sign in');
+ const lockout=new Client(base);lockout.csrf=(await lockout.request('session')).csrfToken;
+ const attempt=(username,secret,status)=>lockout.request('login','POST',{username,password:secret,rememberLogin:false},status);
+ const wrong=async times=>{let last;for(let i=0;i<times;i++)last=await attempt('가상교사2','Wrong-'+randomUUID(),401);return last;};
+ const unknown=await attempt('없는계정','Wrong-'+randomUUID(),401);assert.match(unknown.error,/5회 이상 틀리면 15분간 잠깁니다/);assert.match(unknown.error,/담당자에게 문의/);
+ assert.deepEqual(await wrong(1),unknown);
+ await wrong(3);await new Client(base).login('가상교사2',temporary);
+ check('four wrong passwords do not lock an account, and a right one clears the count');
+ await wrong(5);
+ assert.deepEqual(await attempt('가상교사2',temporary,401),unknown);
+ check('five wrong passwords lock the account, the right password is refused, and the answer matches an unknown account');
+ const database=new DatabaseSync(path.join(data,'school.db'));const lockedUntil=database.prepare("SELECT LockedUntil FROM Users WHERE Username='가상교사2'").get().LockedUntil;
+ const minutes=(lockedUntil-Date.now())/60000;assert.ok(minutes>14&&minutes<=15,'locked for '+minutes+' minutes');
+ database.prepare("UPDATE Users SET LockedUntil=1 WHERE Username='가상교사2'").run();database.close();
+ await wrong(1);await new Client(base).login('가상교사2',temporary);
+ check('the lock lasts 15 minutes, and one mistake afterwards does not lock again');
 }catch(e){console.error(logs);throw e;}
 finally{server.kill();}

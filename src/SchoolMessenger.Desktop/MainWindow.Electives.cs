@@ -9,7 +9,7 @@ namespace SchoolMessenger.Desktop;
 public partial class MainWindow
 {
     async void OpenElectivesClick(object sender,RoutedEventArgs e)
-    {await Run(async()=>{if(await RefreshNavigationAccess())new ElectiveWindow(this).Show();});}
+    {if(AppFeatures.Pending(this,"수강신청"))return;await Run(async()=>{if(await RefreshNavigationAccess())new ElectiveWindow(this).Show();});}
     async Task VerifyElectivesUi()
     {
         var output=Environment.GetEnvironmentVariable("SCHOOL_UI_OUTPUT")??Path.Combine(LocalDirectory,"elective-ui.json");ElectiveWindow? window=null;

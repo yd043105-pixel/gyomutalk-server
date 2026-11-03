@@ -61,7 +61,8 @@ internal sealed class LocalServerProcess(string root,string service)
             if(password.Length is <12 or >128||string.IsNullOrWhiteSpace(password))throw new InvalidOperationException("새 관리자 비밀번호는 12~128자로 입력하세요.");
             start.Environment["School__ResetAdminPassword"]=password;
         }
-        start.ArgumentList.Add("--urls");start.ArgumentList.Add(SimpleOperation.Listener(service));
+        start.ArgumentList.Add("--urls");start.ArgumentList.Add(SimpleOperation.Listener(service)+(setup.ExternalHost.Length>0?";"+SimpleOperation.ExternalListener:""));
+        start.Environment["School__ExternalHost"]=setup.ExternalHost;start.Environment["School__ExternalPort"]=setup.ExternalHost.Length>0?SimpleOperation.ExternalPort.ToString():"0";
         Launch(start,true);
     }
     public void Start(bool trial,string data,string config,string password,string bridgeKey)

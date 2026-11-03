@@ -13,7 +13,7 @@ namespace SchoolMessenger.Desktop;
 
 // "간편 설정": a school runs the server with only its name, an administrator account and the principal's
 // approval document. Certificate, listener, LAN filter, discovery and the school review record are derived here.
-internal sealed record SimpleSetup(string Service,string School,string AdminUsername,string Data,string Backup,string Approval,string ApprovalSha256,DateTimeOffset ReviewedAt,string SchoolId,string SchoolAddress="");
+internal sealed record SimpleSetup(string Service,string School,string AdminUsername,string Data,string Backup,string Approval,string ApprovalSha256,DateTimeOffset ReviewedAt,string SchoolId,string SchoolAddress="",string ExternalHost="");
 
 internal static class SimpleOperation
 {
@@ -34,6 +34,9 @@ internal static class SimpleOperation
     // Verification binds to loopback so a developer PC does not get a firewall prompt.
     internal static string Bind="0.0.0.0";
     public static string Listener(string service)=>"https://"+Bind+":"+Port(service);
+    // Where the tunnel connector on this PC delivers outside requests; never reachable from another computer.
+    public static int ExternalPort=>Port("office")+100;
+    public static string ExternalListener=>"http://127.0.0.1:"+ExternalPort;
     public static (IPAddress Address,int Prefix)[] LocalNetworks()=>NetworkInterface.GetAllNetworkInterfaces()
         .Where(n=>n.OperationalStatus==OperationalStatus.Up&&n.NetworkInterfaceType is not (NetworkInterfaceType.Loopback or NetworkInterfaceType.Tunnel))
         .SelectMany(n=>n.GetIPProperties().UnicastAddresses)
@@ -71,10 +74,10 @@ internal static class SimpleOperation
         var review=new
         {
             schema=1,status="approved",school=s.School,schoolId=s.SchoolId,service=s.Service,basis="school-education-41-7",institutionType="education-site",
-            reviewAuthority="학교장",reviewedAt=s.ReviewedAt,expiresAt=s.ReviewedAt.AddYears(1),listenUrls=new[]{Listener(s.Service)},
+            reviewAuthority="학교장",reviewedAt=s.ReviewedAt,expiresAt=s.ReviewedAt.AddYears(1),listenUrls=s.ExternalHost.Length>0?new[]{Listener(s.Service),ExternalListener}:new[]{Listener(s.Service)},
             storageCountries=new[]{"KR"},managementCountries=new[]{"KR"},
             documents=new Dictionary<string,object>{["decision"]=evidence,["security"]=evidence,["education-applicability"]=evidence},
-            externalServices=Array.Empty<object>()
+            externalServices=s.ExternalHost.Length>0?new object[]{new{purpose="tunnel",host=s.ExternalHost,port=443,recipient="",provider="Cloudflare",kind="third-party-cloud",processingCountries=new[]{"US"},evidenceId="security"}}:Array.Empty<object>()
         };
         var path=Path.Combine(directory,"review-"+s.Service+".json");var temp=path+".tmp";
         File.WriteAllText(temp,JsonSerializer.Serialize(review,Json));File.Move(temp,path,true);return path;
