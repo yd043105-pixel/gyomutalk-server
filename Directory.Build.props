@@ -1,7 +1,7 @@
 <Project>
   <PropertyGroup>
-    <!-- Raise this for each public release so installed PCs are offered the update. -->
-    <Version>1.0.1</Version>
+    <!-- Beta releases count 0.0.1, 0.0.2, ...; the official release starts at 1.0.0. Raise it for each public release so installed PCs are offered the update. -->
+    <Version>0.0.1</Version>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <RuntimeFrameworkVersion Condition="'$(MSBuildProjectName)' == 'SchoolMessenger.Server' Or '$(MSBuildProjectName)' == 'SchoolMessenger.AnnouncementServer' Or '$(MSBuildProjectName)' == 'SchoolMessenger.Desktop'">10.0.13</RuntimeFrameworkVersion>
     <Nullable>enable</Nullable>

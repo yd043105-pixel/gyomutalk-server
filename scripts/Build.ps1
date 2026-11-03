@@ -10,7 +10,7 @@ $releaseNotes = Get-Content -LiteralPath (Join-Path $projectRoot 'src\SchoolMess
 if (-not $Version) { $Version = $releaseNotes.version }
 if ($Version -ne $releaseNotes.version) { throw 'Release version must match the bundled updates.json version.' }
 $buildProperties = [xml](Get-Content -LiteralPath (Join-Path $projectRoot 'Directory.Build.props') -Raw)
-if ($Version -ne $buildProperties.Project.PropertyGroup.Version) { throw 'Release version must match Directory.Build.props. Keep 1.0.0 until the first release is authorized.' }
+if ($Version -ne $buildProperties.Project.PropertyGroup.Version) { throw 'Release version must match Directory.Build.props. Update both together for each release.' }
 $localDotnet = Join-Path $projectRoot '.tools\dotnet\dotnet.exe'
 if (Test-Path -LiteralPath $localDotnet) { $dotnetExecutable = $localDotnet }
 else { $dotnetExecutable = (Get-Command dotnet -ErrorAction Stop).Source }
