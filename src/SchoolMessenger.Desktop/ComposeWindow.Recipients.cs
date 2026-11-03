@@ -9,7 +9,7 @@ public partial class ComposeWindow
 {
     void RefreshRecipients()
     {
-        RecipientChips.Children.Clear();var selected=people.Where(p=>p.Selected).ToArray();RecipientCount.Text=$"받는 사람 · {selected.Length}명";
+        RecipientChips.Children.Clear();var selected=people.Where(p=>p.Selected).ToArray();SelfBox.IsChecked=selected.Any(p=>p.Id==main.Api?.Session?.User?.Id);RecipientCount.Text=$"받는 사람 · {selected.Length}명";
         if(selected.Length==0){RecipientChips.Children.Add(new TextBlock{Text="수신자를 추가하거나 조직도에서 선택하세요.",Margin=new Thickness(8),Foreground=(Brush)FindResource("Muted"),FontSize=11});return;}
         foreach(var person in selected)
         {
@@ -21,8 +21,8 @@ public partial class ComposeWindow
     void SendToSelf(object sender,RoutedEventArgs e)
     {
         if(pending is not null||sending)return;
-        foreach(var person in people)person.Selected=person.Id==main.Api!.Session!.User!.Id;
-        RefreshRecipients();Feedback.Text="받는 사람을 나로 지정했습니다.";
+        foreach(var person in people)if(person.Id==main.Api!.Session!.User!.Id)person.Selected=SelfBox.IsChecked==true;
+        RefreshRecipients();
     }
     void ChooseRecipients(object sender,RoutedEventArgs e)
     {

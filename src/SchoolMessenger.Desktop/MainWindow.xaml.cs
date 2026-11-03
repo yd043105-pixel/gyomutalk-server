@@ -347,7 +347,10 @@ public partial class MainWindow : Window
             var dialog = new ComposeWindow(this, contacts, recipient, title ?? (filesOnly ? "파일 전달" : null), selected);
             if (filesOnly) { dialog.BodyBox.Text = "첨부파일을 전달합니다."; dialog.Loaded += (_, _) => dialog.ChooseFiles(); }
             if ((forwardBody ?? body) is { } text) dialog.BodyBox.Text = text;
-            dialog.ShowDialog(); SavePreferences(); await Refresh();
+            dialog.Closed += async (_, _) => { if (closingWindows || Api is null) return; SavePreferences(); await Run(Refresh); };
+            var open = OwnedWindows.OfType<ComposeWindow>().Count(w => w != dialog); dialog.Show();
+            // Otherwise a new window lands exactly on the last one and looks like nothing happened.
+            if (open > 0) { dialog.Left += open % 6 * 28; dialog.Top += open % 6 * 28; }
         });
     }
     void OpenMailboxClick(object sender, RoutedEventArgs e) => OpenMailbox((string)((System.Windows.Controls.Button)sender).Tag);
@@ -397,13 +400,14 @@ public partial class MainWindow : Window
         => await SignOut();
     async Task SignOut()
     { try { if (Api is not null) await Api.Send<JsonElement>(HttpMethod.Post, "api/logout"); } catch (Exception error) { LoginMessage(error.Message); } finally { RememberLogin.IsChecked = false; await Disconnect(); } }
+    bool closingWindows;
     async Task Disconnect()
     {
         schoolName="학교";Title="교무톡";
         savedLogin.Clear();
         ElectivesButton.Visibility=Visibility.Collapsed;
         if (remote is not null) { await remote.DisposeAsync(); remote = null; }
-        timer.Stop(); activityTimer.Stop();sentAway=null; foreach (var window in OwnedWindows.Cast<Window>().ToArray()) window.Close();
+        timer.Stop(); activityTimer.Stop();sentAway=null; closingWindows=true; foreach (var window in OwnedWindows.Cast<Window>().ToArray()) window.Close(); closingWindows=false;
         if (hub is not null) { await hub.DisposeAsync(); hub = null; } Api?.Dispose(); Api = null;
         OrganizationTree.Items.Clear(); people = []; selectedPeople.Clear(); Workspace.Visibility = Visibility.Collapsed; LoginPanel.Visibility = Visibility.Visible;
     }
@@ -578,6 +582,9 @@ public partial class MainWindow : Window
             ((System.Windows.Controls.Button)inbox.Template.FindName("CloseAction", inbox)).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             for (var i = 0; i < 20 && inbox.IsVisible; i++) await Task.Delay(25);
             if (inbox.IsVisible) throw new InvalidOperationException("제목줄 닫기 버튼 실패");
+            await WriteMessage(); await WriteMessage(); var composing = OwnedWindows.OfType<ComposeWindow>().ToArray();
+            if (composing.Length != 2 || !IsEnabled || composing[0].IsEnabled != true || composing[0].Left == composing[1].Left) throw new InvalidOperationException("메시지 창 여러 개 열기 실패");
+            foreach (var window in composing) window.CloseUnsaved();
             var compose = new ComposeWindow(this, people, null, "학년 협의회 일정 안내",people.Select(p=>p.Id).Take(2).ToArray()); compose.Show();
             compose.BodyBox.Text = "다음 주 화요일 7교시에 학년 협의회가 있습니다. 협의 안건을 미리 보내 주세요.";compose.VerifyEditor(); SavePreview(compose, Path.Combine(directory, "compose-preview.png"));
             compose.ScheduleSend.IsChecked=true;SavePreview(compose,Path.Combine(directory,"scheduled-compose-preview.png"));compose.ScheduleSend.IsChecked=false;

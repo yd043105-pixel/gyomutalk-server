@@ -10,6 +10,8 @@ namespace SchoolMessenger.Desktop;
 
 public partial class ComposeWindow
 {
+    // Two windows on one draft file would overwrite each other.
+    bool OpenElsewhere(string path) => main.OwnedWindows.OfType<ComposeWindow>().Any(w => w != this && string.Equals(w.draftPath, path, StringComparison.OrdinalIgnoreCase));
     string NewDraftPath() => Path.Combine(draftDirectory, Guid.NewGuid().ToString("N") + ".dpapi");
     void UpdateDraftCount() => DraftListButton.Content = $"임시저장 목록 ({Directory.EnumerateFiles(draftDirectory, "*.dpapi").Count()})";
     void DeleteSavedDraft(string path)
@@ -87,7 +89,7 @@ public partial class ComposeWindow
             void Refresh()
             {
                 var rows = new List<SavedDraftRow>(); var failed = 0;
-                foreach (var path in Directory.EnumerateFiles(draftDirectory, "*.dpapi").OrderByDescending(File.GetLastWriteTimeUtc).Take(1000))
+                foreach (var path in Directory.EnumerateFiles(draftDirectory, "*.dpapi").Where(p => !OpenElsewhere(p)).OrderByDescending(File.GetLastWriteTimeUtc).Take(1000))
                 {
                     try
                     {

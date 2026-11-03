@@ -6,13 +6,17 @@ namespace SchoolMessenger.Desktop;
 
 public partial class ComposeWindow
 {
+    internal void CloseUnsaved(){sent=true;Close();}
     internal void VerifyEditor()
     {
         var original=people.Where(p=>p.Selected).Select(p=>p.Id).ToArray();
-        SelfButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        if(people.Count(p=>p.Selected)!=1||!people.Single(p=>p.Selected).Id.Equals(main.Api!.Session!.User!.Id))throw new InvalidOperationException("나에게 전송 수신자 검증 실패");
+        var me=main.Api!.Session!.User!.Id;void Self(bool on){SelfBox.IsChecked=on;SelfBox.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));}
+        Self(false);var others=people.Where(p=>p.Selected).Select(p=>p.Id).ToArray();
+        Self(true);if(!people.Where(p=>p.Selected).Select(p=>p.Id).Order().SequenceEqual(others.Append(me).Order()))throw new InvalidOperationException("나에게도 보내기가 기존 수신자를 지웠습니다");
+        Self(false);if(!people.Where(p=>p.Selected).Select(p=>p.Id).Order().SequenceEqual(others.Order()))throw new InvalidOperationException("나에게도 보내기 해제 실패");
+        foreach(var person in people)person.Selected=person.Id==me;RefreshRecipients();if(SelfBox.IsChecked!=true)throw new InvalidOperationException("나에게도 보내기 표시 실패");
         var chip=(Border)RecipientChips.Children[0];((StackPanel)chip.Child).Children.OfType<Button>().Single().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        if(people.Any(p=>p.Selected))throw new InvalidOperationException("수신자 삭제 검증 실패");
+        if(people.Any(p=>p.Selected)||SelfBox.IsChecked!=false)throw new InvalidOperationException("수신자 삭제 검증 실패");
         foreach(var person in people)person.Selected=original.Contains(person.Id);RefreshRecipients();
         ScheduleSend.IsChecked=true;ScheduleTime.Text="14:";
         DraftButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

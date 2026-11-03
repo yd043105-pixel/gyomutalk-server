@@ -72,18 +72,45 @@ public static class FilePolicy
         if (extension is ".jpg" or ".jpeg") return length >= 3 && bytes[..3].SequenceEqual(new byte[] { 255, 216, 255 });
         return extension is ".txt" or ".csv";
     }
+    enum ScanOutcome { Clean, Refused, Unavailable }
+    // MpCmdRun says this when it cannot scan at all, typically because Defender is switched off beside another antivirus.
+    // Anything else that is not a clean result is refused, so an answer we cannot read never counts as safe.
+    static async Task<ScanOutcome> RunScanner(string path, string? scannerPath, CancellationToken cancellation)
+    {
+        var scanner = scannerPath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Windows Defender", "MpCmdRun.exe");
+        if (!File.Exists(scanner)) return ScanOutcome.Unavailable;
+        var info = new ProcessStartInfo(scanner) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        foreach (var argument in new[] { "-Scan", "-ScanType", "3", "-File", path, "-DisableRemediation" }) info.ArgumentList.Add(argument);
+        using var scan = Process.Start(info) ?? throw new FilePolicyException("파일 검사기를 실행하지 못했습니다.", 503);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(60));
+        try
+        {
+            var output = scan.StandardOutput.ReadToEndAsync(timeout.Token); var errors = scan.StandardError.ReadToEndAsync(timeout.Token);
+            await scan.WaitForExitAsync(timeout.Token);
+            if (scan.ExitCode == 0) return File.Exists(path) ? ScanOutcome.Clean : ScanOutcome.Refused;
+            return File.Exists(path) && (await output + await errors).Contains("CmdTool: Failed with hr", StringComparison.Ordinal) ? ScanOutcome.Unavailable : ScanOutcome.Refused;
+        }
+        catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+        { if (!scan.HasExited) scan.Kill(true); throw new FilePolicyException("파일 검사가 오래 걸려 중단했습니다. 다시 시도하세요.", 503); }
+        catch { if (!scan.HasExited) scan.Kill(true); throw; }
+    }
     public static async Task Scan(string path, string name, bool development, string? scannerPath, CancellationToken cancellation)
     {
         if (!Signature(path, Path.GetExtension(name).ToLowerInvariant())) throw new FilePolicyException("파일 내용과 확장자가 일치하지 않습니다.");
         if (development) return;
-        var scanner = scannerPath ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Windows Defender", "MpCmdRun.exe");
-        if (!File.Exists(scanner)) throw new FilePolicyException("첨부파일 검사기를 사용할 수 없습니다. 관리자에게 문의하세요.", 503);
-        var info = new ProcessStartInfo(scanner) { UseShellExecute = false, CreateNoWindow = true };
-        foreach (var argument in new[] { "-Scan", "-ScanType", "3", "-File", path, "-DisableRemediation" }) info.ArgumentList.Add(argument);
-        using var scan = Process.Start(info) ?? throw new FilePolicyException("파일 검사기를 실행하지 못했습니다.", 503);
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(60));
-        try { await scan.WaitForExitAsync(timeout.Token); }
-        catch { if (!scan.HasExited) scan.Kill(true); throw; }
-        if (scan.ExitCode != 0 || !File.Exists(path)) throw new FilePolicyException("파일 검사 실패 또는 위험 파일입니다.", 422);
+        var outcome = await RunScanner(path, scannerPath, cancellation);
+        if (outcome == ScanOutcome.Unavailable)
+            // Reading the saved file gives a real-time antivirus its chance to block or remove it; this does not prove it looked.
+            try { await File.ReadAllBytesAsync(path, cancellation); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException) { outcome = ScanOutcome.Refused; }
+        if (outcome == ScanOutcome.Refused) throw new FilePolicyException("파일 검사에서 문제가 발견되어 올릴 수 없습니다.", 422);
+    }
+    // For the administrator's checklist: whether uploads on this PC really go through a scanner.
+    public static async Task<bool> ScannerWorks(string? scannerPath = null)
+    {
+        var probe = Path.Combine(Path.GetTempPath(), "gyomutalk-scan-" + Guid.NewGuid().ToString("N") + ".txt");
+        try { await File.WriteAllTextAsync(probe, "scanner check"); return await RunScanner(probe, scannerPath, CancellationToken.None) == ScanOutcome.Clean; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or FilePolicyException or System.ComponentModel.Win32Exception) { return false; }
+        finally { try { File.Delete(probe); } catch (IOException) { } }
     }
 }

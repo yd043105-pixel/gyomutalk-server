@@ -31,6 +31,7 @@ try {
         node tests\staff-activation-codes.mjs
         node tests\external-access.mjs
         node tests\discovery-listener.mjs
+        node tests\file-scan.mjs
         node tests\school-move.mjs
         if ($LASTEXITCODE -ne 0) { throw 'Guardian QR invite verification failed' }
         node tests\school-directory-servers.mjs

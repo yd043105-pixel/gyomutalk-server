@@ -344,20 +344,8 @@ api.MapPost("/attachments", async Task<IResult> (HttpContext c) =>
         await using (var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
             await file.CopyToAsync(output, c.RequestAborted);
         using(var state=store.Open())StoredFiles.State(state,"office",id,"scanning");
-        if (!FileSignatureMatches(path, extension)) { File.Delete(path); return Error("파일 내용과 확장자가 일치하지 않습니다."); }
-        if (!app.Environment.IsDevelopment())
-        {
-            var scanner = builder.Configuration["School:ScannerPath"] ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Windows Defender", "MpCmdRun.exe");
-            if (!File.Exists(scanner)) { File.Delete(path); return Error("첨부파일 검사기를 사용할 수 없습니다. 관리자에게 문의하세요.", 503); }
-            var info = new ProcessStartInfo(scanner) { UseShellExecute = false, CreateNoWindow = true };
-            foreach (var argument in new[] { "-Scan", "-ScanType", "3", "-File", path, "-DisableRemediation" }) info.ArgumentList.Add(argument);
-            using var scan = Process.Start(info)!;
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(c.RequestAborted);
-            timeout.CancelAfter(TimeSpan.FromSeconds(60));
-            try { await scan.WaitForExitAsync(timeout.Token); }
-            catch { if (!scan.HasExited) scan.Kill(true); throw; }
-            if (scan.ExitCode != 0 || !File.Exists(path)) { File.Delete(path); return Error("파일 검사 실패 또는 위험 파일입니다.", 422); }
-        }
+        try { await FilePolicy.Scan(path, name, app.Environment.IsDevelopment(), builder.Configuration["School:ScannerPath"], c.RequestAborted); }
+        catch (FilePolicyException e) { return Error(e.Message, e.Status); }
         using var uploadDb=store.Open();using var uploadTx=uploadDb.BeginTransaction();
         using var uploadInsert=Store.Command(uploadDb,"""
             INSERT INTO Attachments(Id,OwnerId,Name,Size,UploadedAt,ExpiresAt)
@@ -647,18 +635,6 @@ static bool ValidProfile(string? username, string? name, string? department) => 
     !string.IsNullOrWhiteSpace(name) && name.Length <= 50 && !string.IsNullOrWhiteSpace(department) && department.Length <= 50;
 static void InsertUser(Store store, User u, string hash) => store.Execute("INSERT INTO Users(Id,Username,Name,Department,PasswordHash,IsAdmin,CanBroadcast) VALUES($id,$username,$name,$department,$hash,$admin,$broadcast)",
     ("$id", u.Id), ("$username", u.Username), ("$name", u.Name), ("$department", u.Department), ("$hash", hash), ("$admin", u.IsAdmin), ("$broadcast", u.CanBroadcast));
-static bool FileSignatureMatches(string path, string extension)
-{
-    Span<byte> bytes = stackalloc byte[8];
-    using var stream = File.OpenRead(path);
-    var length = stream.Read(bytes);
-    if (extension is ".docx" or ".xlsx" or ".pptx" or ".hwpx" or ".zip") return length >= 4 && bytes[0] == 0x50 && bytes[1] == 0x4b && bytes[2] == 0x03 && bytes[3] == 0x04;
-    if (extension is ".doc" or ".xls" or ".ppt" or ".hwp") return length == 8 && bytes.SequenceEqual(new byte[] { 0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1 });
-    if (extension == ".pdf") return length >= 5 && bytes[..5].SequenceEqual("%PDF-"u8);
-    if (extension == ".png") return length == 8 && bytes.SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 });
-    if (extension is ".jpg" or ".jpeg") return length >= 3 && bytes[..3].SequenceEqual(new byte[] { 255, 216, 255 });
-    return extension is ".txt" or ".csv";
-}
 record Login(string? Username, string? Password, bool RememberLogin = false);
 record RegistrationRequest(string? Username, string? Name, string? Department, string? Password,SchoolMessenger.Contracts.RegistrationAcceptance? Agreement=null);
 record PasswordChange(string? CurrentPassword, string? NewPassword);

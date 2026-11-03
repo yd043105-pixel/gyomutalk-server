@@ -55,6 +55,8 @@ public sealed partial class LocalServerWindow
             {
                 await api.Login("it.manager",password);
                 Check(api.Session?.User?.IsAdmin==true,"the administrator ID chosen at setup signs in over HTTPS");
+                var capture=Path.Combine(outputDirectory,"capture.png");File.WriteAllBytes(capture,[137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1,8,6,0,0,0,31,21,196,137,0,0,0,10,73,68,65,84,120,156,99,0,1,0,0,5,0,1,13,10,45,180,0,0,0,0,73,69,78,68,174,66,96,130]);
+                Check((await api.Upload(capture)).Id.Length>0,"a captured image uploads through this PC's real scanner path, whichever antivirus runs here");
                 var info=await api.Get<JsonElement>("server-info");
                 var signup=await api.Get<JsonElement>("api/registration/policy");var terms=signup.GetProperty("documents")[0].GetProperty("body").GetString()!;
                 Check(signup.GetProperty("canRegister").GetBoolean()&&!signup.GetProperty("draft").GetBoolean()&&signup.GetProperty("operator").GetString()==school.Name&&terms.Contains("교무실 031-000-0000")&&!terms.Contains("{{")&&!terms.Contains("초안"),"the confirmed school terms open sign-up as the official service, with the school's name and contact");

@@ -77,7 +77,7 @@ public partial class ComposeWindow : Window
     {
         CollectFiles.IsEnabled = false; SubmissionDate.IsEnabled = false;
         FormattingToolbar.IsEnabled = DraftListButton.IsEnabled = false;
-        RecipientsButton.IsEnabled=SelfButton.IsEnabled=ScheduleSend.IsEnabled=ScheduleDate.IsEnabled=ScheduleTime.IsEnabled=DraftButton.IsEnabled=false;RefreshRecipients();
+        RecipientsButton.IsEnabled=SelfBox.IsEnabled=ScheduleSend.IsEnabled=ScheduleDate.IsEnabled=ScheduleTime.IsEnabled=DraftButton.IsEnabled=false;RefreshRecipients();
         TitleBox.IsEnabled = false; BodyBox.IsEnabled = false; PeopleList.IsEnabled = false; PeopleSearch.IsEnabled = false;
         Department.IsEnabled = false; SendAll.IsEnabled = false; AddButton.IsEnabled = false; RemoveButton.IsEnabled = false;
     }
@@ -85,7 +85,7 @@ public partial class ComposeWindow : Window
     {
         CollectFiles.IsEnabled = true; SubmissionDate.IsEnabled = true;
         FormattingToolbar.IsEnabled = DraftListButton.IsEnabled = true;
-        RecipientsButton.IsEnabled=SelfButton.IsEnabled=ScheduleSend.IsEnabled=DraftButton.IsEnabled=true;ScheduleChanged(this,new RoutedEventArgs());RefreshRecipients();
+        RecipientsButton.IsEnabled=SelfBox.IsEnabled=ScheduleSend.IsEnabled=DraftButton.IsEnabled=true;ScheduleChanged(this,new RoutedEventArgs());RefreshRecipients();
         TitleBox.IsEnabled = true; BodyBox.IsEnabled = true; PeopleList.IsEnabled = true; PeopleSearch.IsEnabled = true;
         Department.IsEnabled = true; SendAll.IsEnabled = true; AddButton.IsEnabled = true; RemoveButton.IsEnabled = true;
     }
