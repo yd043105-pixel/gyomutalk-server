@@ -62,7 +62,8 @@ public sealed class MessageArchive(string root,Api api)
             }
             if(newest==0)return;
             var all=kept.Values.OrderBy(e=>e.Sequence).ToArray();Write(Named("chat-",room),all);rooms[room]=all;
-            await api.Send<JsonElement>(HttpMethod.Post,$"api/chats/{room}/stored",new{sequence=newest});
+            // A server not yet updated cannot take the confirmation; it hands the same messages out again until it can.
+            try{await api.Send<JsonElement>(HttpMethod.Post,$"api/chats/{room}/stored",new{sequence=newest});}catch(ApiRequestException){}
         }
         finally{gate.Release();}
     }
