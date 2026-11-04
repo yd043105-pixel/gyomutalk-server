@@ -462,7 +462,6 @@ IResult SendStoredMessage(SendMessage request, HttpContext c, IHubContext<Messag
             // A one-to-one room someone cleared from their list comes back with the next message.
             using var show = Store.Command(connection, "UPDATE ChatMembers SET Hidden=0 WHERE RoomId=$room AND Hidden=1", transaction, ("$room", roomId)); show.ExecuteNonQuery();
         }
-        TaskFeatures.Extract(connection, transaction, recipients.Where(u => u != sender.Id), id, request.Body!, now);
         if (request.SubmissionDeadline is { } due)
         {
             using var taskRequest = Store.Command(connection, "INSERT INTO SubmissionRequests(MessageId,Deadline) VALUES($id,$due)", transaction, ("$id", id), ("$due", due)); taskRequest.ExecuteNonQuery();

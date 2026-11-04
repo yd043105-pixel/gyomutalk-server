@@ -102,6 +102,8 @@ public sealed class WorkWindow : Window
         var rows = await api.Get<JsonElement[]>($"api/{view}?offset={offset}");
         if (currentView != view) return;
         feedback.Text="";more.Visibility=rows.Length==100?Visibility.Visible:Visibility.Collapsed;
+        // Suggestions come from this PC's copies; they sit after the tasks in progress, as they always have.
+        if(currentView=="todos"&&offset==0)rows=rows.TakeWhile(r=>String(r,"status")=="open").Concat(main.Archive.AllSuggestions().Select(s=>JsonSerializer.SerializeToElement(new{id=s.Id,title=s.Title,dueDate=s.DueDate,status="suggested",revision=0,sourceId=s.MessageId,evidence=s.Evidence,updatedAt=s.CreatedAt}))).Concat(rows.SkipWhile(r=>String(r,"status")=="open")).ToArray();
         rendering = true;
         try { displayedDay=KoreanToday;list.ItemsSource = rows.Select(v => (currentView == "todos" ? Status(v.GetProperty("status").GetString()!) + (String(v,"dueDate") is {Length:>0} due ? " · " + due : "") : v.GetProperty("ownerName").GetString() + " · " + v.GetProperty("submittedCount").GetInt32() + "/" + v.GetProperty("targetCount").GetInt32() + "명 제출") is var summary && currentView == "todos" ? WithBadge(v, summary) : new WorkRow(v, v.GetProperty("title").GetString()!.ReplaceLineEndings(" "), summary)).ToArray(); list.SelectedItem = list.Items.Cast<WorkRow>().FirstOrDefault(r => r.Value.GetProperty("id").GetString() == previous); }
         finally { rendering = false; }
@@ -132,7 +134,7 @@ public sealed class WorkWindow : Window
         detail.Children.Clear(); detail.Children.Add(Text(item is null ? "할 일 추가" : "할 일 수정", 16));
         if (item is { } original)
         {
-            detail.Children.Add(Text(String(original, "evidence"), 12));
+            if (String(original, "evidence") is { Length: > 0 } evidence) detail.Children.Add(Text(evidence, 12));
             var counter=Text(Deadline(String(original,"dueDate"),String(original,"status"),KoreanToday),14);counter.Tag="deadline-counter";detail.Children.Add(counter);
             if (String(original, "sourceId") is { Length: > 0 } source)
                 detail.Children.Add(Action("원본 메시지 보기", async () => { var originalMessage = main.Archive.Merge(await api.Get<Detail>($"api/messages/{source}")); if (originalMessage.Message.Purged) { MessageBox.Show(this, "메시지는 받은 PC에만 저장됩니다. 이 PC에는 사본이 없어 내용을 볼 수 없습니다.", "원본 메시지"); return; } var window = new Window { Owner = this, Title = originalMessage.Message.Title, Width = 550, Height = 450, Style=(Style)FindResource("SchoolWindow"), Content = new ScrollViewer { Content = Text(originalMessage.Message.Body), Margin = new Thickness(20) } }; window.Show(); }));
@@ -147,6 +149,12 @@ public sealed class WorkWindow : Window
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; var cancel = Action("취소", () => { detail.Children.Clear(); list.SelectedItem = null; return Task.CompletedTask; }); buttons.Children.Add(cancel); detail.Children.Add(buttons);
         buttons.Children.Add(Action(item is { } candidate && String(candidate, "status") == "suggested" ? "확인 후 등록" : "저장", async () =>
         {
+            if (item is { } suggested && String(suggested, "status") == "suggested")
+            {
+                if (statuses[status.SelectedIndex] != "dismissed") await api.Send<JsonElement>(HttpMethod.Post, "api/todos", new { title = title.Text, dueDate = due.SelectedDate?.ToString("yyyy-MM-dd"), status = "open", revision = 0, sourceId = String(suggested, "sourceId") });
+                main.Archive.Decide(String(suggested, "sourceId"), String(suggested, "id"));
+                detail.Children.Clear(); await Reload(); feedback.Text = "저장했습니다."; return;
+            }
             await api.Send<JsonElement>(item is null ? HttpMethod.Post : HttpMethod.Patch, "api/todos" + (item is { } todo ? "/" + String(todo, "id") : ""), new { title = title.Text, dueDate = due.SelectedDate?.ToString("yyyy-MM-dd"), status = statuses[status.SelectedIndex], revision = item is { } old ? old.GetProperty("revision").GetInt32() : 0 });
             detail.Children.Clear(); await Reload(); feedback.Text = "저장했습니다.";
         },true));

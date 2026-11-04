@@ -96,6 +96,10 @@ public partial class MainWindow
         if (!Archive.ChatEntries(chat.RoomId!).Any(m => m.Body.Contains("체험학습 안내문"))) throw new InvalidOperationException("채팅 UI 전송 실패");
         if ((await Api!.Get<ChatEntry[]>($"api/chats/{chat.RoomId}/messages")).Length != 0) throw new InvalidOperationException("이 PC가 저장한 채팅을 서버가 다시 내줌");
         SavePreview(chat, Path.Combine(directory, "chat-preview.png"));
+        if (Archive.Search("이 문구는 어디에도 없습니다").Any()) throw new InvalidOperationException("메시지 검색 결과 오류");
+        var askingFor = (await Api.Send<JsonElement>(HttpMethod.Post, "api/messages", new { clientId = Guid.NewGuid().ToString(), title = "검증", body = "다음 주 수요일까지 명단을 제출해 주세요.", recipientIds = new[] { Api.Session!.User!.Id }, attachmentIds = Array.Empty<string>(), all = false })).GetProperty("id").GetString()!;
+        Archive.Save(await Api.Get<Detail>("api/messages/" + askingFor + "?peek=true"));
+        if (Archive.Suggestions(askingFor).Length != 0) throw new InvalidOperationException("내가 보낸 메시지를 할 일 후보로 추천");
         var waiting = Path.Combine(directory, "waiting-file.txt"); File.WriteAllText(waiting, "synthetic");
         async Task Gone(string id) { try { await Api.Send<JsonElement>(HttpMethod.Delete, $"api/attachments/{id}"); } catch (ApiRequestException error) when ((int)error.StatusCode == 404) { return; } throw new InvalidOperationException("대기 목록에서 뺀 파일이 서버에 남음"); }
         await Gone(await chat.VerifyTakeBack(waiting));

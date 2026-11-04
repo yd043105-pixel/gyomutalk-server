@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
+import {spawn,spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {mkdirSync,existsSync,readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
@@ -83,16 +83,19 @@ try{
  check('an unsaved body is dropped after 30 days, newer ones are kept');
 
  // Requests as they appear in real office notices; the server dates them in Korean time.
- const kst=new Date(Date.now()+9*3_600_000),day=n=>new Date(kst.getTime()+n*86_400_000).toISOString().slice(0,10);
- const monday=-((kst.getUTCDay()+6)%7);
  await send('담임 선생님께서는 11월 7일까지 학급별 인솔 명단을 제출해 주세요.');
  await send('내일 오후 3시에 교무회의가 있습니다. 각 부서에서는 안건을 준비해 주세요.');
  await send('다음 주 수요일까지 과학실을 열어 주세요.\n11월 19일(목) 오후 2시까지 행정실로 서류를 보내 주세요.\n자세한 내용은 첨부 파일을 참고하시기 바랍니다.');
- const todos=await recipient.request('todos'),due=title=>todos.find(t=>t.title===title)?.dueDate,titles=todos.map(t=>t.title).join(' / ');
- assert.match(due('학급별 인솔 명단 제출')??'',/-11-07$/,titles);
- assert.equal(due('안건 준비'),day(1),titles);
- assert.equal(due('과학실 열기'),day(monday+9),titles);
- assert.match(due('행정실로 서류 보내기')??'',/-11-19$/,titles);
- assert.ok(!todos.some(t=>t.title.includes('참고')),titles);
+ assert.deepEqual(await recipient.request('todos'),[]);
+ check('the server draws no task suggestions from message text');
+ const asked=await recipient.request('todos','POST',{title:'가상 할 일',dueDate:null,status:'open',revision:0,sourceId:id});
+ const added=(await recipient.request('todos')).find(t=>t.id===asked.id);assert.equal(added.sourceId,id);assert.equal(added.evidence,'');
+ await (await new Client(base).login('outsider')).request('todos','POST',{title:'남의 메시지',dueDate:null,status:'open',revision:0,sourceId:id},404);
+ check('a task added from a suggestion keeps its link to my message and no wording of it');
+ await recipient.request('todos/'+asked.id,'PATCH',{title:'가상 할 일',dueDate:null,status:'dismissed',revision:added.revision});
+ assert.deepEqual(await recipient.request('todos'),[]);
+ check('a task set aside leaves the server');
+ const rules=spawnSync(dotnet,['run','--project',path.join(root,'tests/TaskChecks')],{encoding:'utf8',cwd:root,windowsHide:true});
+ assert.equal(rules.status,0,rules.stdout+rules.stderr);
  check('task suggestions drop the addressee, take a date from the previous sentence and understand next week');
 }finally{if(server.exitCode===null){server.kill();await new Promise(r=>server.once('exit',r));}}

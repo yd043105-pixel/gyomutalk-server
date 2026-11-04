@@ -111,7 +111,7 @@ public partial class MailboxWindow : Window
         FileList.ItemsSource = detail.Attachments; ReceiptList.ItemsSource = detail.Recipients;
         AttachmentHeader.Visibility = detail.Attachments.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
         EmptyHint.Visibility = Visibility.Collapsed; DetailPanel.Visibility = Visibility.Visible;
-        await LoadTaskPrompt(id);
+        LoadTaskPrompt(id);
         }
         finally{detailsOpening--;}
     }

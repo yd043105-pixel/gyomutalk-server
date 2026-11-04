@@ -25,6 +25,7 @@ public record ChatEntry(long Sequence, string Id, string SenderId, string Sender
     public static string? Me { get; set; }
     public bool Mine => SenderId == Me;
 }
+public record Suggestion(string Id, string MessageId, string Title, string Evidence, string? DueDate, long CreatedAt);
 public record ChatPending(string Server, string RoomId, string ClientId, string Body, string[] AttachmentIds);
 public record SurveyQuestion(string Text, string Kind, bool Required, string[] Options);
 public record SurveyItem(string Id, string OwnerId, string Title, string OwnerName, long Deadline, bool Closed, int TargetCount, int ResponseCount, bool Answered, bool Anonymous = false, bool Target = false)

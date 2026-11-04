@@ -23,7 +23,7 @@
 ./scripts/Build-ServerInstaller.ps1
 ```
 
-GitHub Actions의 제품별 검증이 성공하면 Artifacts에서 시험 산출물을 내려받습니다. 서버와 Windows 교무톡은 v0.0.2 Release가 공개되어 있고, PC 프로그램은 서명된 업데이트 피드를 하루 한 번 확인합니다([업데이트 안내](docs/desktop-updates.md)). Windows 설치파일은 아직 코드 서명 전이라 설치할 때 SmartScreen 경고가 뜰 수 있습니다. Mac은 Developer ID 서명·공증 전이라 Release가 없습니다.
+GitHub Actions의 제품별 검증이 성공하면 Artifacts에서 시험 산출물을 내려받습니다. 서버와 Windows 교무톡은 v0.0.3 Release가 공개되어 있고, PC 프로그램은 서명된 업데이트 피드를 하루 한 번 확인합니다([업데이트 안내](docs/desktop-updates.md)). Windows 설치파일은 아직 코드 서명 전이라 설치할 때 SmartScreen 경고가 뜰 수 있습니다. Mac은 Developer ID 서명·공증 전이라 Release가 없습니다.
 
 서버: [gyomutalk-server](https://github.com/yd043105-pixel/gyomutalk-server) / Windows: [gyomutalk-windows](https://github.com/yd043105-pixel/gyomutalk-windows) / Mac: [gyomutalk-mac](https://github.com/yd043105-pixel/gyomutalk-mac)
 

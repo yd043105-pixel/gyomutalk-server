@@ -85,6 +85,26 @@ public sealed class MessageArchive(string root,Api api)
         finally{gate.Release();}
     }
     public bool Has(string id)=>File.Exists(FilePath(id));
+    // Messages from before suggestions moved here are not looked through again.
+    static readonly long SuggestionsFrom=new DateTimeOffset(2026,11,4,0,0,0,TimeSpan.FromHours(9)).ToUnixTimeMilliseconds();
+    Dictionary<string,Suggestion[]>? suggestions;
+    string SuggestionsPath=>Path.Combine(directory,"suggestions.dpapi");
+    Dictionary<string,Suggestion[]> Book()=>suggestions??=Read<Dictionary<string,Suggestion[]>>(SuggestionsPath)??new();
+    // Decided suggestions stay as an empty entry so the same message is not suggested twice.
+    void Suggest(Detail value)
+    {
+        var me=api.Session!.User!.Id;var m=value.Message;var book=Book();
+        if(m.Purged||m.SenderId==me||m.CreatedAt<SuggestionsFrom||book.ContainsKey(m.Id)||value.Recipients.All(r=>r.Id!=me)||m.Body.StartsWith("[시스템 자동 알림]",StringComparison.Ordinal))return;
+        book[m.Id]=TaskCandidates.Candidates(m.Body,m.CreatedAt).Select(c=>new Suggestion(Guid.NewGuid().ToString("N"),m.Id,c.Title,c.Evidence,c.DueDate,m.CreatedAt)).ToArray();
+        Write(SuggestionsPath,book);
+    }
+    public Suggestion[] Suggestions(string message)=>Book().GetValueOrDefault(message)??[];
+    public Suggestion[] AllSuggestions()=>Book().Values.SelectMany(s=>s).OrderBy(s=>s.DueDate is null).ThenBy(s=>s.DueDate,StringComparer.Ordinal).ToArray();
+    public void Decide(string message,string suggestion)
+    {
+        var book=Book();if(!book.TryGetValue(message,out var rows))return;
+        book[message]=rows.Where(s=>s.Id!=suggestion).ToArray();Write(SuggestionsPath,book);
+    }
     string FilePath(string id){if(!Guid.TryParseExact(id,"N",out _))throw new InvalidOperationException("메시지 번호가 올바르지 않습니다.");return Path.Combine(directory,id+".dpapi");}
     public void Save(Detail value)
     {
@@ -92,8 +112,9 @@ public sealed class MessageArchive(string root,Api api)
         Directory.CreateDirectory(directory);var path=FilePath(value.Message.Id);var temporary=path+".tmp";
         try{File.WriteAllBytes(temporary,ProtectedData.Protect(JsonSerializer.SerializeToUtf8Bytes(value),null,DataProtectionScope.CurrentUser));File.Move(temporary,path,true);}
         finally{if(File.Exists(temporary))File.Delete(temporary);}
+        Suggest(value);
     }
-    public void Remove(string id){recalled.Add(id);File.Delete(FilePath(id));}
+    public void Remove(string id){recalled.Add(id);File.Delete(FilePath(id));if(Book().Remove(id))Write(SuggestionsPath,Book());}
     public Detail? Load(string id)
     {
         var path=FilePath(id);if(!File.Exists(path))return null;
@@ -109,7 +130,8 @@ public sealed class MessageArchive(string root,Api api)
     public IEnumerable<Detail> Search(string query)
     {
         if(!Directory.Exists(directory))yield break;
-        foreach(var path in Directory.EnumerateFiles(directory,"*.dpapi"))
+        // Chat, survey and suggestion files sit beside the messages under other names.
+        foreach(var path in Directory.EnumerateFiles(directory,"*.dpapi").Where(p=>Guid.TryParseExact(Path.GetFileNameWithoutExtension(p),"N",out _)))
             if(Load(Path.GetFileNameWithoutExtension(path)) is{} value&&(value.Message.Title.Contains(query,StringComparison.CurrentCultureIgnoreCase)||value.Message.Body.Contains(query,StringComparison.CurrentCultureIgnoreCase)))yield return value;
     }
     async Task Keep(string id)
