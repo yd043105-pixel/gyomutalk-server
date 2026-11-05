@@ -22,15 +22,47 @@ public sealed class TimetableData(Func<SqliteConnection> open)
     public long Revision=>Query("SELECT COALESCE(MAX(Revision),0) FROM TimetableBatches",r=>r.GetInt64(0))[0];
     public TimetableBatch[] Batches()=>Query("SELECT Payload FROM TimetableBatches ORDER BY Revision",r=>JsonSerializer.Deserialize<TimetableBatch>(r.GetString(0),Json)!).ToArray();
     public TimetableBatch? ByClient(string owner,string client)=>Query("SELECT Payload FROM TimetableBatches WHERE Owner=$owner AND ClientId=$client",r=>JsonSerializer.Deserialize<TimetableBatch>(r.GetString(0),Json)!, ("$owner",owner),("$client",client)).FirstOrDefault();
-    public TimetableBatch Insert(TimetableBatch source,TimetableNotice[] notices)
+    public TimetableBatch Insert(TimetableBatch source, TimetableNotice[] notices) =>
+        Publish([(source, notices)], [], [])[0];
+
+    public TimetableBatch[] Publish((TimetableBatch Batch, TimetableNotice[] Notices)[] entries,
+        TimetableSwap[] approvals, TimetableBundle[] bundles)
     {
-        using var db=open();using var tx=db.BeginTransaction();
-        using(var insert=Command(db,"INSERT INTO TimetableBatches(Id,Owner,ClientId,Payload) VALUES($id,$owner,$client,'')",("$id",source.Id),("$owner",source.Owner),("$client",source.ClientId))){insert.Transaction=tx;insert.ExecuteNonQuery();}
-        long revision;using(var last=Command(db,"SELECT last_insert_rowid()")){last.Transaction=tx;revision=(long)last.ExecuteScalar()!;}
-        var batch=source with{Revision=revision};using(var update=Command(db,"UPDATE TimetableBatches SET Payload=$payload WHERE Id=$id",("$payload",JsonSerializer.Serialize(batch,Json)),("$id",batch.Id))){update.Transaction=tx;update.ExecuteNonQuery();}
-        foreach(var n in notices){using var add=Command(db,"INSERT INTO TimetableNotices VALUES($revision,$user,$payload,NULL)",("$revision",revision),("$user",n.UserId),("$payload",JsonSerializer.Serialize(n with{Revision=revision},Json)));add.Transaction=tx;add.ExecuteNonQuery();}
-        tx.Commit();return batch;
+        using var db = open();
+        using var tx = db.BeginTransaction();
+        void Write(string sql, params (string Key, object? Value)[] values)
+        {
+            using var command = Command(db, sql, values);
+            command.Transaction = tx;
+            if (command.ExecuteNonQuery() != 1) throw new FilePolicyException("게시할 내용이 바뀌었습니다. 다시 확인하세요.", 409);
+        }
+
+        var saved = new List<TimetableBatch>();
+        foreach (var (source, notices) in entries)
+        {
+            Write("INSERT INTO TimetableBatches(Id,Owner,ClientId,Payload,Delivered) VALUES($id,$owner,$client,'',1)",
+                ("$id", source.Id), ("$owner", source.Owner), ("$client", source.ClientId));
+            using var last = Command(db, "SELECT last_insert_rowid()");
+            last.Transaction = tx;
+            var batch = source with { Revision = (long)last.ExecuteScalar()! };
+            Write("UPDATE TimetableBatches SET Payload=$payload WHERE Id=$id",
+                ("$payload", JsonSerializer.Serialize(batch, Json)), ("$id", batch.Id));
+            foreach (var notice in notices)
+                Write("INSERT INTO TimetableNotices VALUES($revision,$user,$payload,NULL)", ("$revision", batch.Revision),
+                    ("$user", notice.UserId), ("$payload", JsonSerializer.Serialize(notice with { Revision = batch.Revision }, Json)));
+            saved.Add(batch);
+        }
+        foreach (var approval in approvals)
+            Write("UPDATE TimetableSwaps SET Status='approved',Payload=$payload WHERE Id=$id AND Status='pending'",
+                ("$id", approval.Id), ("$payload", JsonSerializer.Serialize(approval with { PublishedRevision = saved[^1].Revision }, Json)));
+        foreach (var bundle in bundles)
+            Write("UPDATE TimetableBundles SET Payload=$payload WHERE Id=$id", ("$id", bundle.Id),
+                ("$payload", JsonSerializer.Serialize(bundle, Json)));
+
+        tx.Commit();
+        return saved.ToArray();
     }
+
     public void Replicate(TimetableDelivery delivery)
     {
         var batch=delivery.Batch;

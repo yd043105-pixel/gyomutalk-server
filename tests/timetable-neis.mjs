@@ -5,6 +5,7 @@ import {mkdirSync,existsSync} from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import {DatabaseSync} from 'node:sqlite';
 
 // NEIS timetable workbooks, built here with synthetic names in the same layout: pages repeat their headers, a day runs across pages,
 // and the changed-lessons file lists only what moved.
@@ -144,5 +145,75 @@ try{
  const empty=await duty.request('timetable/preview','POST',{draftId:emptyDraft.draftId,draftIds:[emptyDraft.draftId],start:'',end:'',classes:[],teachers:[]},undefined).catch(e=>e);
  assert.ok(String(empty.message??'').includes('400')||String(empty.message??'').includes('반영할'));
  check('uploading only an empty changes file says there is nothing to apply');
+
+ const uid=()=>randomUUID().replaceAll('-','');
+ const mondayText=dayText(date(0));
+ const pos=(day,period)=>({date:day,classId:firstClass,period});
+ const plan=(actor=teacher,dependencies=[],dates=[mondayText,thursday])=>actor.request('timetable/swap-plan','POST',{dates,dependencies});
+ const pair=(first,second)=>({first,second});
+ const simple=[pair(pos(mondayText,1),pos(mondayText,2))];
+ const requestSwap=async (exchanges,dependencies=[],status=200)=>teacher.request('timetable/swaps','POST',{
+  id:uid(),revision:(await plan(teacher,dependencies)).revision,exchanges,dependencies,reason:'출장 일정 조정'
+ },status);
+ await requestSwap([pair(pos(mondayText,1),pos(mondayText,3))],[],403);
+ const pendingSwap=await requestSwap(simple);
+ const visible=(await homeroom.request('timetable/swaps')).find(s=>s.id===pendingSwap.id);
+ assert.equal(visible.status,'pending');assert.equal(visible.reason,'');assert.equal(visible.changes.length,2);
+ const originalMonday=await homeroom.request('timetable/day?date='+mondayText+'&classId='+firstClass);
+ assert.equal(originalMonday.slots[0].subject,'자율·자치활동');
+ const projected=await plan(homeroom,[pendingSwap.id]);
+ assert.equal(projected.slots.find(s=>s.position.date===mondayText&&s.position.classId===firstClass&&s.position.period===1).lesson.subject,'국어');
+ const child=await requestSwap(simple,[pendingSwap.id]);
+ await homeroom.request('timetable/swaps/'+pendingSwap.id+'/decision','POST',{status:'cancelled'},403);
+ await teacher.request('timetable/swaps/'+pendingSwap.id+'/decision','POST',{status:'cancelled'});
+ assert.equal((await homeroom.request('timetable/swaps')).find(s=>s.id===child.id).status,'review');
+ await teacher.request('timetable/swap-plan','POST',{dates:[mondayText],dependencies:[child.id]},409);
+ await duty.request('timetable/swaps/'+child.id+'/decision','POST',{status:'rejected'});
+ check('pending exchanges are visible with private reasons, projection leaves official data alone, and cancelling a predecessor flags its dependent');
+
+ const bundle={id:uid(),name:'가상 연강',kind:'consecutive',slots:[pos(mondayText,1),pos(mondayText,2)]};
+ await teacher.request('timetable/bundles','POST',bundle,403);
+ await duty.request('timetable/bundles','POST',bundle);
+ await requestSwap(simple,[],409);
+ const complete=[pair(pos(mondayText,1),pos(thursday,1)),pair(pos(mondayText,2),pos(thursday,2))];
+ const approval=await requestSwap(complete);
+ const stage=async (bytes)=>{
+  const draft=await duty.upload(bytes,'승인 시간표.xlsx');
+  return duty.request('timetable/preview','POST',{draftId:draft.draftId,start:'',end:'',classes:[],teachers:[]});
+ };
+ const wrong=await stage(classroom);
+ const commit=(candidateId,swapIds,clientId=uid(),status=200,actor=duty)=>actor.request('timetable/publish','POST',{candidateId,swapIds,clientId},status);
+ await commit(wrong.candidateId,[approval.id],uid(),403,teacher);
+ await commit(wrong.candidateId,[approval.id],uid(),409);
+ assert.equal((await teacher.request('timetable/swaps')).find(s=>s.id===approval.id).status,'pending');
+ assert.deepEqual(await homeroom.request('timetable/day?date='+mondayText+'&classId='+firstClass),originalMonday);
+ const corrected=weekly('전체시간표 (변경수업)',(c,d,p)=>c===1&&p===1?
+  d===0?'음악(가상교사)':d===3?'자율·자치활동(가상담임)':'':'',p=>p+'교시');
+ const final=await stage(corrected);
+ assert.equal(final.batches.length,2);
+ const stamp=uid();
+ const noticesBeforeFailure=await teacher.request('timetable/notices');
+ const fixtureDb=new DatabaseSync(path.join(data,'school.db'),{timeout:5000});
+ try {
+  fixtureDb.exec('CREATE TRIGGER fail_second_timetable_batch BEFORE INSERT ON TimetableBatches WHEN (SELECT MAX(Revision) FROM TimetableBatches) > '+originalMonday.revision+" BEGIN SELECT RAISE(ABORT,'synthetic publish failure'); END");
+  await commit(final.candidateId,[approval.id],stamp,500);
+  assert.deepEqual(await homeroom.request('timetable/day?date='+mondayText+'&classId='+firstClass),originalMonday);
+  assert.equal((await teacher.request('timetable/swaps')).find(s=>s.id===approval.id).status,'pending');
+  assert.deepEqual(await teacher.request('timetable/notices'),noticesBeforeFailure);
+ } finally {
+  fixtureDb.exec('DROP TRIGGER IF EXISTS fail_second_timetable_batch');
+  fixtureDb.close();
+ }
+ const firstPublish=await commit(final.candidateId,[approval.id],stamp);
+ assert.equal((await commit(final.candidateId,[approval.id],stamp)).id,firstPublish.id);
+ await commit(final.candidateId,[],stamp,409);
+ const record=(await teacher.request('timetable/swaps')).find(s=>s.id===approval.id);
+ assert.equal(record.status,'approved');assert.equal(record.reviewerName,'가상담당');
+ assert.ok(record.publishedRevision>firstPublish.revision);
+ await duty.request('timetable/'+firstPublish.id+'/cancel','POST',{candidateId:'',clientId:uid()},409);
+ assert.equal((await teacher.request('timetable/day?date='+mondayText+'&classId='+firstClass)).slots[0].subject,'음악');
+ assert.equal((await teacher.request('timetable/day?date='+thursday+'&classId='+firstClass)).slots[0].subject,'자율·자치활동');
+ assert.deepEqual((await duty.request('timetable/bundles')).find(b=>b.id===bundle.id).slots,[pos(thursday,1),pos(thursday,2)]);
+ check('bundle requests move all members together, wrong imports leave requests and official dates untouched, and matching multi-day publication approves exactly once');
 }catch(e){console.error(logs.slice(-2500));throw e;}
 finally{if(server.exitCode===null){server.kill();await new Promise(r=>server.once('exit',r));}}

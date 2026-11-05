@@ -9,7 +9,7 @@ using SchoolMessenger.Shared;
 
 namespace SchoolMessenger.Server;
 
-public sealed class Timetables
+public sealed partial class Timetables
 {
     readonly Store school;
     readonly IConfiguration config;
@@ -27,7 +27,7 @@ public sealed class Timetables
     {
         this.review=review;
         this.school=school;this.config=config;this.environment=environment;this.hub=hub;
-        Data=new(school.Open);Data.Initialize();
+        Data=new(school.Open);Data.Initialize();InitializeSwaps();
         Data.Execute("""
             CREATE TABLE IF NOT EXISTS TimetableManagers(UserId TEXT PRIMARY KEY REFERENCES Users(Id));
             CREATE TABLE IF NOT EXISTS TimetableDrafts(Id TEXT PRIMARY KEY,Owner TEXT NOT NULL,Payload TEXT NOT NULL,ExpiresAt INTEGER NOT NULL);
@@ -44,6 +44,7 @@ public sealed class Timetables
     public static void Map(WebApplication app,Timetables service)
     {
         var api=app.MapGroup("/api/timetable").RequireAuthorization();
+        service.MapSwaps(api);
         api.MapGet("/setup",(HttpContext c)=>Safe(()=>Results.Ok(new{canManage=service.Manager(User(c)),isAdmin=service.school.GetUser(User(c))!.IsAdmin,
             classes=service.Directory().Classes,teachers=service.school.Users().Where(u=>u.Active).Select(u=>new{u.Id,u.Name,u.Department,u.Username}),homerooms=service.Homerooms(),myClasses=service.Homerooms().Where(h=>h.TeacherId==User(c)).Select(h=>h.ClassId),
             revision=service.Data.Revision,pending=0,error=(string?)null})));
@@ -55,7 +56,7 @@ public sealed class Timetables
         }));
         api.MapGet("/notices",(HttpContext c)=>Results.Ok(service.Data.Notices(User(c))));
         api.MapPost("/notices/{revision:long}/read",(long revision,HttpContext c)=>{service.Data.Execute("UPDATE TimetableNotices SET ReadAt=COALESCE(ReadAt,$now) WHERE Revision=$rev AND UserId=$user",("$now",Now),("$rev",revision),("$user",User(c)));return Results.Ok();});
-        api.MapGet("/history",(HttpContext c)=>Safe(()=>{service.RequireManager(User(c));return Results.Ok(service.Data.Batches().OrderByDescending(b=>b.Revision).Take(200).Select(b=>new{b.Id,b.Revision,b.Kind,b.Start,b.End,b.Date,b.FileName,b.PublishedAt,b.Withdrawn,classes=b.Cells.Select(s=>s.ClassName).Distinct()}));}));
+        api.MapGet("/history",(HttpContext c)=>Safe(()=>{service.RequireManager(User(c));return Results.Ok(service.Data.Batches().OrderByDescending(b=>b.Revision).Take(200).Select(b=>new{b.Id,b.Revision,b.Kind,b.Start,b.End,b.Date,b.FileName,b.PublishedAt,b.Withdrawn,approvedSwapCount=b.ApprovedSwapIds?.Length??0,classes=b.Cells.Select(s=>s.ClassName).Distinct()}));}));
         api.MapPost("/import",async Task<IResult>(HttpContext c)=>
         {
             try{return await service.Import(c);}catch(FilePolicyException e){return Error(e);}
@@ -143,7 +144,7 @@ public sealed class Timetables
         void Plan(string kind,int year,int semester,string start,string end,string? date,string file,TimetableCell[] cells)
         {
             var batch=new TimetableBatch(Guid.NewGuid().ToString("N"),Data.Revision+1+planned.Count,owner,"00000000000000000000000000000000",kind,year,semester,start,end,date,file[..Math.Min(file.Length,200)],Now,false,cells);
-            TimetableData.Validate(batch);ValidateLinks(batch);if(kind=="base")ValidatePeriod(batch);
+            TimetableData.Validate(batch);ValidateLinks(batch);if(kind=="base")ValidatePeriod(batch,seen);
             changes.AddRange(Changes(batch,seen));planned.Add(batch);seen.Add(batch);
         }
         foreach(var draft in drafts.Where(d=>d.Workbook.Kind=="base"))
@@ -181,9 +182,9 @@ public sealed class Timetables
         if(batch.Cells.Any(c=>!rooms.Any(r=>r.Id==c.ClassId)||c.TeacherId.Length>0&&!users.Any(u=>u.Id==c.TeacherId&&u.Active)))throw new FilePolicyException("학급·교사 연결이 변경되었습니다. 다시 미리보기하세요.",409);
         // Homeroom teachers pass changes on to families, which needs the news server.
     }
-    void ValidatePeriod(TimetableBatch batch)
+    void ValidatePeriod(TimetableBatch batch,IEnumerable<TimetableBatch> previous)
     {
-        var previous=Data.Batches();foreach(var room in batch.Cells.Select(c=>c.ClassId).Distinct())
+        foreach(var room in batch.Cells.Select(c=>c.ClassId).Distinct())
         {
             var active=previous.Where(b=>b.Kind=="base"&&b.Cells.Any(c=>c.ClassId==room)).GroupBy(b=>(b.Start,b.End)).Select(g=>g.MaxBy(b=>b.Revision)!).Where(b=>!b.Withdrawn);
             if(active.Any(b=>string.CompareOrdinal(b.Start,batch.End)<=0&&string.CompareOrdinal(b.End,batch.Start)>=0&&(b.Start!=batch.Start||b.End!=batch.End)))throw new FilePolicyException("기초시간표 적용 기간이 겹칩니다. 기존 기간을 취소하거나 같은 기간으로 교체하세요.",409);
@@ -206,54 +207,101 @@ public sealed class Timetables
         }
         return result.ToArray();
     }
-    TimetableNotice[] Notifications(TimetableBatch batch,Change[] changes)
+    TimetableNotice[] Notifications(TimetableBatch batch,Change[] changes,TimetableSwap[]? approvals=null)
     {
         var directory=Directory();var classes=changes.Select(c=>c.ClassId).Distinct().ToArray();var recipients=new Dictionary<string,HashSet<string>>();
         void Add(string user,string room){if(user.Length==0)return;if(!recipients.TryGetValue(user,out var scope))recipients[user]=scope=[];scope.Add(room);}
         foreach(var change in changes){Add(change.BeforeTeacherId,change.ClassId);Add(change.TeacherId,change.ClassId);}
+        foreach (var request in approvals ?? [])
+            foreach (var change in request.Changes.Where(c => c.Position.Date == batch.Date))
+            {
+                Add(request.Owner, change.Position.ClassId);
+                Add(change.Before.TeacherId, change.Position.ClassId);
+                Add(change.After.TeacherId, change.Position.ClassId);
+            }
         var homes=Homerooms();foreach(var home in homes.Where(h=>classes.Contains(h.ClassId)))if(school.GetUser(home.TeacherId) is{Active:true})Add(home.TeacherId,home.ClassId);
         // Each teacher reads their own change; the rest of the school reads the general line.
         string Title(string user)
         {
             if(batch.Withdrawn)return "시간표 등록이 취소되었습니다";
-            var mine=changes.Where(c=>c.BeforeTeacherId==user||c.TeacherId==user||homes.Any(h=>h.TeacherId==user&&h.ClassId==c.ClassId)).ToArray();if(mine.Length==0)return "학교 시간표가 변경되었습니다";
+            var mine=changes.Where(c=>c.BeforeTeacherId==user||c.TeacherId==user||homes.Any(h=>h.TeacherId==user&&h.ClassId==c.ClassId)).ToArray();if(mine.Length==0)return approvals is { Length: >0 } ? "수업 교체 신청을 승인·게시했습니다" : "학교 시간표가 변경되었습니다";
             string Lesson(string subject,string teacher)=>subject.Length==0?"수업 없음":subject+"("+teacher+")";
             var day=TimetableData.Date(mine[0].Date);var line=$"{day.Month}.{day.Day}({"일월화수목금토"[(int)day.DayOfWeek]}) {mine[0].ClassName} {mine[0].Period}교시 {Lesson(mine[0].BeforeSubject,mine[0].BeforeTeacher)} → {Lesson(mine[0].Subject,mine[0].Teacher)}";
             return mine.Length==1?line:line+$" 외 {mine.Length-1}건";
         }
         return recipients.Select(r=>new TimetableNotice(batch.Revision,r.Key,batch.Start,r.Value.ToArray(),Title(r.Key),batch.PublishedAt)).ToArray();
     }
-    async Task<IResult> Publish(TimetableCommit request,string owner)
+    async Task<IResult> Publish(TimetableCommit request, string owner)
     {
-        RequireManager(owner);if(!Guid.TryParseExact(request.ClientId,"N",out _))throw new FilePolicyException("게시 요청 번호를 확인하세요.");
-        var candidate=Load<Candidate>("TimetableCandidates",request.CandidateId,owner);TimetableBatch? first=null;var resumed=false;
-        // A retry after a failure part way picks up at the first day not yet saved.
-        for(var i=0;i<candidate.Batches.Length;i++)
+        RequireManager(owner);
+        if (!ValidId(request.ClientId) || !ValidId(request.CandidateId))
+            throw new FilePolicyException("게시 요청 번호를 확인하세요.");
+        var ids = SwapIds(request.SwapIds).Order(StringComparer.Ordinal).ToArray();
+        if (Data.ByClient(owner, request.ClientId) is { PublicationCandidateId: not null } prior)
         {
-            var client=i==0?request.ClientId:Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(request.ClientId+"|"+i)))[..32].ToLowerInvariant();
-            if(Data.ByClient(owner,client) is{} existing){if(existing.Id!=candidate.Batches[i].Id)throw new FilePolicyException("같은 요청 번호로 다른 시간표를 게시할 수 없습니다.",409);first??=existing;resumed=true;continue;}
-            if(!resumed&&i==0&&candidate.Revision!=Data.Revision)throw new FilePolicyException("다른 시간표가 게시되었습니다. 변경 전후를 다시 미리보기하세요.",409);
-            var batch=candidate.Batches[i] with{ClientId=client,PublishedAt=Now};ValidateLinks(batch);if(batch.Kind=="base")ValidatePeriod(batch);
-            var saved=await Commit(batch);first??=saved;
+            if (prior.PublicationCandidateId != request.CandidateId || !(prior.ApprovedSwapIds ?? []).SequenceEqual(ids))
+                throw new FilePolicyException("같은 요청 번호로 다른 시간표를 게시할 수 없습니다.", 409);
+            return Results.Ok(prior);
         }
-        return Results.Ok(first);
+
+        var candidate = Load<Candidate>("TimetableCandidates", request.CandidateId, owner);
+        var official = Data.Batches();
+        var remaining = new List<TimetableBatch>();
+        TimetableBatch? first = null;
+        for (var i = 0; i < candidate.Batches.Length; i++)
+        {
+            var client = i == 0 ? request.ClientId : Convert.ToHexString(SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(request.ClientId + "|" + i)))[..32].ToLowerInvariant();
+            if (Data.ByClient(owner, client) is { } existing)
+            {
+                if (existing.Id != candidate.Batches[i].Id || ids.Length > 0)
+                    throw new FilePolicyException("같은 요청 번호로 다른 시간표를 게시할 수 없습니다.", 409);
+                first ??= existing;
+                continue;
+            }
+
+            var batch = candidate.Batches[i] with { ClientId = client, PublishedAt = Now };
+            ValidateLinks(batch);
+            if (batch.Kind == "base") ValidatePeriod(batch, official.Concat(remaining));
+            batch = batch with { PublicationCandidateId = i == 0 ? request.CandidateId : null, ApprovedSwapIds = ids };
+            remaining.Add(batch);
+        }
+        if (remaining.Count == 0) return Results.Ok(first);
+        if (first is null && candidate.Revision != Data.Revision)
+            throw new FilePolicyException("다른 시간표가 게시되었습니다. 변경 전후를 다시 미리보기하세요.", 409);
+        var (approvals, bundles) = VerifySwapPublication(ids, remaining.ToArray(), official, owner);
+        var timeline = official.ToList();
+        var entries = remaining.Select(batch =>
+        {
+            var notices = Notifications(batch, Changes(batch, timeline), approvals);
+            timeline.Add(batch);
+            return (Batch: batch, Notices: notices);
+        }).ToArray();
+        var saved = Data.Publish(entries, approvals, bundles);
+        for (var i = 0; i < saved.Length; i++) await SendNotices(saved[i], entries[i].Notices);
+        return Results.Ok(first ?? saved[0]);
     }
+
     async Task<IResult> Cancel(string id,string client,string owner)
     {
         RequireManager(owner);if(!Guid.TryParseExact(client,"N",out _))throw new FilePolicyException("취소 요청 번호를 확인하세요.");
         if(Data.ByClient(owner,client) is{} existing){if(existing.FileName!="취소:"+id)throw new FilePolicyException("취소 요청 번호가 중복입니다.",409);return Results.Ok(existing);}
         var rows=Data.Batches();var original=rows.FirstOrDefault(b=>b.Id==id);if(original is null||original.Withdrawn)throw new FilePolicyException("취소할 게시본이 없습니다.",404);
+        if(original.ApprovedSwapIds is { Length: > 0 }) throw new FilePolicyException("교체 승인과 함께 게시한 시간표입니다. 나이스에서 다시 수정한 파일을 올려주세요.",409);
         if(original.Cells.Select(c=>c.ClassId).Distinct().Any(room=>rows.Where(b=>b.Kind==original.Kind&&(b.Kind=="daily"?b.Date==original.Date:b.Start==original.Start&&b.End==original.End)&&b.Cells.Any(c=>c.ClassId==room)).MaxBy(b=>b.Revision)?.Id!=id))throw new FilePolicyException("일부 학급의 새 게시본이 있습니다. 현재 게시본을 확인하세요.",409);
-        var batch=original with{Id=Guid.NewGuid().ToString("N"),Revision=Data.Revision+1,Owner=owner,ClientId=client,PublishedAt=Now,Withdrawn=true,FileName="취소:"+id};return Results.Ok(await Commit(batch));
+        var batch=original with{Id=Guid.NewGuid().ToString("N"),Revision=Data.Revision+1,Owner=owner,ClientId=client,PublishedAt=Now,Withdrawn=true,FileName="취소:"+id,PublicationCandidateId=null,ApprovedSwapIds=null};return Results.Ok(await Commit(batch));
     }
     async Task<TimetableBatch> Commit(TimetableBatch batch)
     {
         ValidateLinks(batch);
         var notices=Notifications(batch,Changes(batch,Data.Batches()));var saved=Data.Insert(batch,notices);
-        Data.Execute("UPDATE TimetableBatches SET Delivered=1 WHERE Id=$id",("$id",saved.Id));
+        await SendNotices(saved, notices);
+        return saved;
+    }
+    async Task SendNotices(TimetableBatch saved, TimetableNotice[] notices)
+    {
         // Persistence succeeds independently of connected desktops; their next refresh also reads the durable notices.
         foreach(var target in notices.Where(n=>school.GetUser(n.UserId) is{Active:true}))
             try{await hub.Clients.Group(target.UserId).SendAsync("TimetableChanged",saved.Start,saved.Revision);}catch{ /* The durable notice remains available after reconnection. */ }
-        return saved;
     }
 }

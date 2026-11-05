@@ -12,7 +12,7 @@ using SchoolMessenger.Contracts;
 
 namespace SchoolMessenger.Desktop;
 
-public sealed class TimetableWindow:Window
+public sealed partial class TimetableWindow:Window
 {
     readonly Api api;
     readonly StackPanel body=new(){Margin=new Thickness(24)};
@@ -22,8 +22,7 @@ public sealed class TimetableWindow:Window
     bool busy;
     readonly ScrollViewer pageScroll=new(){VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
     JsonElement setup;
-    string? draft,candidate,requestId;
-    JsonElement imported;
+    string? candidate,requestId;
     readonly Dictionary<string,ComboBox> classLinks=[],teacherLinks=[];
     DatePicker? start,end;
     public TimetableWindow(MainWindow main,string? selectedDate=null)
@@ -71,6 +70,7 @@ public sealed class TimetableWindow:Window
             note.Click+=async(_,_)=>await Run(async()=>{selected=DateTime.Parse(n.Date);weekly=false;var choice=choices.FirstOrDefault(c=>n.ClassIds.Contains(c.Id));if(choice is not null)scope.SelectedItem=choice;await api.Send<JsonElement>(HttpMethod.Post,$"api/timetable/notices/{n.Revision}/read");await Load();});body.Children.Add(note);
         }
         await Show();
+        AddScheduleActions();
         if(setup.GetProperty("canManage").GetBoolean()||setup.GetProperty("isAdmin").GetBoolean())
         {
             var tools=new WrapPanel{Margin=new Thickness(0,12,0,0)};body.Children.Add(tools);
@@ -94,6 +94,8 @@ public sealed class TimetableWindow:Window
             var day=await api.Get<TimetableDay>("api/timetable/day?date="+first.AddDays(i).ToString("yyyy-MM-dd")+(mine?"&mine=true":"&classId="+choice.Id));
             if(revision is not null&&revision!=day.Revision)throw new InvalidOperationException("조회 중 시간표가 갱신되었습니다. 다시 조회하세요.");revision=day.Revision;days.Add(day);
         }
+        printDays = days.ToArray();
+        printTitle = choice.Name + " 시간표";
         var lessons=days.SelectMany(d=>d.Slots).Where(s=>s.Subject.Length>0).ToArray();var published=days.Max(d=>d.PublishedAt);
         if(published==0&&lessons.Length==0){view.Children.Add(AdminUi.Empty("아직 올라온 시간표가 없습니다",setup.GetProperty("canManage").GetBoolean()?"아래 ‘시간표 올리기’로 나이스에서 받은 파일을 올려 주세요.":"시간표 담당자가 올리면 여기에 표시됩니다."));return;}
         if(days.Any(d=>d.MissingClasses.Length>0))view.Children.Add(AdminUi.Label("일부 학급의 적용 가능한 기초시간표가 없습니다.","Warning",12));
@@ -151,9 +153,11 @@ public sealed class TimetableWindow:Window
     }
     readonly List<(string Name,JsonElement Value)> imports=[];
     public async Task Refresh(){if(view.Parent==body)await Run(Load);}
-    async Task Choose()
+    Task Choose() => Choose([]);
+    async Task Choose(string[] approvalIds)
     {
         var dialog=new Microsoft.Win32.OpenFileDialog{Title="나이스에서 받은 시간표 파일 선택",Filter="시간표 엑셀 (*.xlsx)|*.xlsx",Multiselect=true};if(dialog.ShowDialog(this)!=true)return;
+        publishingSwaps = approvalIds;
         imports.Clear();
         foreach(var path in dialog.FileNames)
         {
@@ -200,7 +204,7 @@ public sealed class TimetableWindow:Window
         var links=teacherLinks.Where(c=>c.Value.SelectedItem is Choice).Select(c=>new TimetableLink(c.Key,((Choice)c.Value.SelectedItem).Id)).ToArray();
         var value=await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/preview",new TimetablePreviewRequest(ids[0],start?.SelectedDate?.ToString("yyyy-MM-dd")??"",end?.SelectedDate?.ToString("yyyy-MM-dd")??"",[],links,ids));
         candidate=value.GetProperty("candidateId").GetString();requestId=Guid.NewGuid().ToString("N");pageScroll.ScrollToTop();
-        body.Children.Clear();body.Children.Add(AdminUi.Heading("게시 전 확인",22));var count=value.GetProperty("changedCount").GetInt32();
+        body.Children.Clear();body.Children.Add(AdminUi.Heading(publishingSwaps.Length == 0 ? "게시 전 확인" : $"교체 신청 {publishingSwaps.Length}건 승인·게시",22));var count=value.GetProperty("changedCount").GetInt32();
         var intro=AdminUi.Label(count==0?"지금 시간표와 달라지는 수업이 없습니다. 게시해도 알림은 가지 않습니다.":$"달라지는 수업 {count}개 · 게시하면 관련 선생님과 담임 선생님께 알림이 갑니다.");intro.Margin=new Thickness(0,8,0,16);body.Children.Add(intro);body.Children.Add(feedback);
         var list=new StackPanel();var shown=0;
         foreach(var c in value.GetProperty("changes").EnumerateArray())
@@ -211,12 +215,12 @@ public sealed class TimetableWindow:Window
         if(count>40)list.Children.Add(AdminUi.Label($"외 {count-40}개","Muted",12));if(count>0)body.Children.Add(AdminUi.Card(list,16));
         var actions=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,16,0,0)};body.Children.Add(actions);
         var cancel=new Button{Content="취소",Margin=new Thickness(0,0,8,0)};cancel.SetResourceReference(StyleProperty,"SubtleButton");cancel.Click+=async(_,_)=>await Run(Load);actions.Children.Add(cancel);
-        var publish=new Button{Content="게시"};publish.SetResourceReference(StyleProperty,"PrimaryButton");publish.Click+=async(_,_)=>await Run(async()=>{await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/publish",new TimetableCommit(candidate!,requestId!));await Load();feedback.Text="게시했습니다.";});actions.Children.Add(publish);
+        var publish=new Button{Content=publishingSwaps.Length == 0 ? "게시" : "승인·시간표 게시"};publish.SetResourceReference(StyleProperty,"PrimaryButton");publish.Click+=async(_,_)=>await Run(async()=>{await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/publish",new TimetableCommit(candidate!,requestId!,publishingSwaps));await Load();feedback.Text="게시했습니다.";});actions.Children.Add(publish);
     }
     async Task History()
     {
         var rows=await api.Get<JsonElement[]>("api/timetable/history");body.Children.Clear();body.Children.Add(Text("시간표 게시 이력",24));body.Children.Add(feedback);Action("조회 화면으로",Load);
-        foreach(var r in rows){body.Children.Add(Text($"#{r.GetProperty("revision")} {r.GetProperty("fileName").GetString()}\n{r.GetProperty("start").GetString()} ~ {r.GetProperty("end").GetString()}"));if(!r.GetProperty("withdrawn").GetBoolean())Action("이 게시본 취소",async()=>{if(MessageBox.Show(this,"일자별 표 취소 시 기초시간표로 돌아갑니다. 취소할까요?","시간표 취소",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/"+r.GetProperty("id").GetString()+"/cancel",new TimetableCommit("",Guid.NewGuid().ToString("N")));await History();});}
+        foreach(var r in rows){body.Children.Add(Text($"#{r.GetProperty("revision")} {r.GetProperty("fileName").GetString()}\n{r.GetProperty("start").GetString()} ~ {r.GetProperty("end").GetString()}"));if(r.TryGetProperty("approvedSwapCount",out var approvals)&&approvals.GetInt32()>0)body.Children.Add(Text($"교체 신청 {approvals.GetInt32()}건 승인·게시",12));else if(!r.GetProperty("withdrawn").GetBoolean())Action("이 게시본 취소",async()=>{if(MessageBox.Show(this,"일자별 표 취소 시 기초시간표로 돌아갑니다. 취소할까요?","시간표 취소",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/"+r.GetProperty("id").GetString()+"/cancel",new TimetableCommit("",Guid.NewGuid().ToString("N")));await History();});}
     }
     async Task Administration()
     {
