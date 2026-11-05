@@ -1,5 +1,11 @@
 name: Publish signed desktop update
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Exact version tag to publish after verification
+        required: true
+        type: string
   release:
     types: [published]
 permissions:
@@ -14,7 +20,7 @@ jobs:
     permissions:
       contents: write
     env:
-      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -36,7 +42,18 @@ jobs:
           Copy-Item "artifacts/gyomutalk-server-$version-trial.exe" $asset
           python scripts/Create-UpdateFeed.py --asset $asset --tag $env:RELEASE_TAG --output artifacts/appcast.xml
           if ($LASTEXITCODE -ne 0) { throw 'Signing refused' }
+          $existing=gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft --jq .isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            if ($existing -ne 'true' -and $env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { throw 'Published release assets must not be overwritten' }
+          } else {
+            gh release create $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --draft --title "교무톡 서버관리자 $version" --notes-file "docs/releases/$version.md"
+            if ($LASTEXITCODE -ne 0) { throw 'Release draft creation failed' }
+          }
           gh release upload $env:RELEASE_TAG $asset "$asset.sha256" --repo $env:GITHUB_REPOSITORY
           if ($LASTEXITCODE -ne 0) { throw 'Installer upload failed' }
           gh release upload $env:RELEASE_TAG artifacts/appcast.xml --repo $env:GITHUB_REPOSITORY
           if ($LASTEXITCODE -ne 0) { throw 'Feed upload failed' }
+          if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') {
+            gh release edit $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --draft=false --latest
+            if ($LASTEXITCODE -ne 0) { throw 'Publishing the verified release failed' }
+          }
