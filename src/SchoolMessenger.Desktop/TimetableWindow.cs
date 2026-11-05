@@ -205,7 +205,10 @@ public sealed partial class TimetableWindow:Window
         var value=await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/preview",new TimetablePreviewRequest(ids[0],start?.SelectedDate?.ToString("yyyy-MM-dd")??"",end?.SelectedDate?.ToString("yyyy-MM-dd")??"",[],links,ids));
         candidate=value.GetProperty("candidateId").GetString();requestId=Guid.NewGuid().ToString("N");pageScroll.ScrollToTop();
         body.Children.Clear();body.Children.Add(AdminUi.Heading(publishingSwaps.Length == 0 ? "게시 전 확인" : $"교체 신청 {publishingSwaps.Length}건 승인·게시",22));var count=value.GetProperty("changedCount").GetInt32();
-        var intro=AdminUi.Label(count==0?"지금 시간표와 달라지는 수업이 없습니다. 게시해도 알림은 가지 않습니다.":$"달라지는 수업 {count}개 · 게시하면 관련 선생님과 담임 선생님께 알림이 갑니다.");intro.Margin=new Thickness(0,8,0,16);body.Children.Add(intro);body.Children.Add(feedback);
+        var description=count>0?$"달라지는 수업 {count}개 · 게시하면 관련 선생님과 담임 선생님께 알림이 갑니다."
+            :publishingSwaps.Length>0?"지금 시간표와 달라지는 수업이 없습니다. 게시하면 관련 선생님께 승인 알림이 갑니다."
+            :"지금 시간표와 달라지는 수업이 없습니다. 게시해도 알림은 가지 않습니다.";
+        var intro=AdminUi.Label(description);intro.Margin=new Thickness(0,8,0,16);body.Children.Add(intro);body.Children.Add(feedback);
         var list=new StackPanel();var shown=0;
         foreach(var c in value.GetProperty("changes").EnumerateArray())
         {

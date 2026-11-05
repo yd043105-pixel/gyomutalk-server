@@ -208,6 +208,12 @@ public sealed partial class TimetableWindow
         SchedulePage("교체 신청 현황");
         Action("새로 고침", SwapQueue);
         var selectedRequests = new Dictionary<string, CheckBox>();
+        if (CanManageSchedule && rows.Any(s => s.Status == "pending")) Action("선택 신청 승인·나이스 파일 선택", async () =>
+        {
+            var ids = selectedRequests.Where(p => p.Value.IsChecked == true).Select(p => p.Key).ToArray();
+            if (ids.Length == 0) throw new InvalidOperationException("파일에 반영한 신청을 선택하세요.");
+            await Choose(ids);
+        });
         foreach (var swap in rows)
         {
             var panel = new StackPanel();
@@ -249,12 +255,6 @@ public sealed partial class TimetableWindow
             body.Children.Add(card);
         }
         if (rows.Length == 0) body.Children.Add(Text("아직 교체 신청이 없습니다."));
-        if (selectedRequests.Count > 0) Action("선택 신청 승인·나이스 파일 선택", async () =>
-        {
-            var ids = selectedRequests.Where(p => p.Value.IsChecked == true).Select(p => p.Key).ToArray();
-            if (ids.Length == 0) throw new InvalidOperationException("파일에 반영한 신청을 선택하세요.");
-            await Choose(ids);
-        });
     }
 
     async Task BundleEditor()
