@@ -23,11 +23,20 @@ public sealed partial class TimetableWindow
 
     void AddScheduleActions()
     {
-        Action("수업 교체 신청", SwapEditor);
-        Action("교체 신청 현황", SwapQueue);
-        if (CanManageSchedule) Action("묶음수업 설정", BundleEditor);
+        var tools = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
+        void Add(string label, Func<Task> action)
+        {
+            var button = new Button { Content = label, Margin = new Thickness(0, 0, 8, 4) };
+            button.SetResourceReference(StyleProperty, "SubtleButton");
+            button.Click += async (_, _) => await Run(action);
+            tools.Children.Add(button);
+        }
+        Add("수업 교체 신청", SwapEditor);
+        Add("교체 신청 현황", SwapQueue);
+        if (CanManageSchedule) Add("묶음수업 설정", BundleEditor);
         if (printDays.Any(day => day.PublishedAt > 0))
-            Action("게시 시간표 인쇄", () => { PrintTimetable(); return Task.CompletedTask; });
+            Add("게시 시간표 인쇄", () => { PrintTimetable(); return Task.CompletedTask; });
+        body.Children.Insert(body.Children.IndexOf(view), tools);
     }
 
     void SchedulePage(string title)
