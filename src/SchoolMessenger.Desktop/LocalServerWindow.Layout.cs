@@ -54,12 +54,12 @@ public sealed partial class LocalServerWindow
         var views=new Grid();views.Children.Add(serverViews);views.Children.Add(administrationView);main.Children.Add(views);
         void Group(string label){var text=AdminUi.Label(label,"Faint",12,true);text.Margin=new Thickness(10,10,0,3);navigation.Children.Add(text);}
         Group("서버");
-        foreach(var service in new[]{"office","announcements"})AddCard(navigation,service);
-        void Menu(string label,string page,string icon,string? role=null){var button=new Button{Content=NavigationLabel(label,icon),Uid=page,Margin=new Thickness(0,0,0,1)};NavigationState(button,false);System.Windows.Automation.AutomationProperties.SetName(button,label);button.Click+=async(_,_)=>{if(page is "portal" or "sections"&&AppFeatures.Pending(this,label))return;await OpenAdministration(page,role);};navigation.Children.Add(button);administrationNavigation.Add(button);}
+        foreach(var service in new[]{"office"})AddCard(navigation,service);
+        void Menu(string label,string page,string icon,string? role=null){var button=new Button{Content=NavigationLabel(label,icon),Uid=page,Margin=new Thickness(0,0,0,1)};NavigationState(button,false);System.Windows.Automation.AutomationProperties.SetName(button,label);button.Click+=async(_,_)=>{await OpenAdministration(page,role);};navigation.Children.Add(button);administrationNavigation.Add(button);}
         Group("운영");Menu("운영 현황","resources","AdminOverviewIcon");
         Group("교직원");Menu("교직원·권한","members","AdminPeopleIcon","office");
         // Sections hold student accounts, so they sit with the student-parent service they depend on.
-        Group("학생·학부모");Menu("가입·학급 명부","portal","AdminStudentIcon","announcements");Menu("선택과목 분반","sections","AdminClassIcon","office");
+
         Group("학교 설정");Menu("특별실","rooms","AdminRoomIcon","office");Menu("학사일정","calendar","AdminCalendarIcon","office");Menu("약관·개인정보","policy","AdminDocIcon");
         Group("기록");Menu("오류·의견","feedback","AdminChatIcon");Menu("운영 변경 기록","audit","AdminHistoryIcon","office");
         SelectCard(cards.FirstOrDefault(c=>c.Host.Installed)??cards[0]);
@@ -90,16 +90,16 @@ public sealed partial class LocalServerWindow
     void AddCard(StackPanel navigation,string service)
     {
         var card=new ServerCard(service,new LocalServerProcess(root,service));cards.Add(card);var office=service=="office";
-        var label=office?"교내 업무 서버":"학생·학부모 소식 서버";var navContent=NavigationLabel(office?"교내 업무":AppFeatures.LooksClosed?"학생·학부모":"학생·학부모 소식",office?"AdminServerIcon":"AdminStudentIcon");
+        var label="교내 업무 서버";var navContent=NavigationLabel("교내 업무",office?"AdminServerIcon":"AdminStudentIcon");
         card.NavigationStatus.FontSize=12;card.NavigationStatus.FontWeight=FontWeights.Medium;card.NavigationStatus.Margin=new Thickness(4,0,0,0);card.NavigationStatus.VerticalAlignment=VerticalAlignment.Center;Grid.SetColumn(card.NavigationStatus,2);navContent.Children.Add(card.NavigationStatus);
-        card.Navigation.Content=navContent;card.Navigation.Margin=new Thickness(0,0,0,1);card.Navigation.Click+=(_,_)=>{if(!office&&AppFeatures.Pending(this,label))return;SelectCard(card);};navigation.Children.Add(card.Navigation);
+        card.Navigation.Content=navContent;card.Navigation.Margin=new Thickness(0,0,0,1);card.Navigation.Click+=(_,_)=>{SelectCard(card);};navigation.Children.Add(card.Navigation);
         System.Windows.Automation.AutomationProperties.SetName(card.Navigation,label+" 서버 선택");
         foreach(var height in new[]{GridLength.Auto,GridLength.Auto,new GridLength(1,GridUnitType.Star)})card.View.RowDefinitions.Add(new RowDefinition{Height=height});serverViews.Children.Add(card.View);
         // Header: title on the left, start/stop/sign-in on the right.
         var header=new DockPanel{Margin=new Thickness(0,0,0,16)};
         var actions=new StackPanel{Orientation=Orientation.Horizontal,VerticalAlignment=VerticalAlignment.Bottom};card.Start.SetResourceReference(StyleProperty,"PrimaryButton");card.Admin.Content="관리자 로그인";
         foreach(var button in new[]{card.Start,card.Stop,card.Admin}){button.Margin=new Thickness(8,0,0,0);actions.Children.Add(button);}DockPanel.SetDock(actions,Dock.Right);header.Children.Add(actions);
-        var heading=new StackPanel();heading.Children.Add(AdminUi.Heading(label,22));var sub=AdminUi.Label(office?"교직원 메신저와 교사용 앱의 업무를 연결합니다.":"학생·학부모 앱으로 학교 공지와 가정통신문을 전달합니다.","Muted",14);sub.Margin=new Thickness(0,4,0,0);heading.Children.Add(sub);header.Children.Add(heading);card.View.Children.Add(header);
+        var heading=new StackPanel();heading.Children.Add(AdminUi.Heading(label,22));var sub=AdminUi.Label("교직원 PC의 메시지와 학교 업무를 연결합니다.","Muted",14);sub.Margin=new Thickness(0,4,0,0);heading.Children.Add(sub);header.Children.Add(heading);card.View.Children.Add(header);
         // Status card: badge, mode and the connection details teachers need.
         var status=new StackPanel();var line=new StackPanel{Orientation=Orientation.Horizontal};
         card.Status.FontSize=12;card.Status.FontWeight=FontWeights.SemiBold;card.Status.Margin=new Thickness(0);card.Status.VerticalAlignment=VerticalAlignment.Center;
@@ -120,7 +120,7 @@ public sealed partial class LocalServerWindow
         Column(0,"교사 PC 접속 주소",card.AddressValue,"교사 PC 메신저가 같은 학교망에서 자동으로 찾습니다.",()=>card.AddressValue.Text);
         Column(1,"연결 확인 코드",card.Connection,"교사가 처음 접속할 때 화면의 코드와 같은지 확인합니다.",()=>card.Connection.Text);
         var schoolColumn=Column(2,"학교",card.SchoolValue,"",null);schoolColumn.Children.Add(card.SchoolNote);
-        var link=new Button{Content=AppFeatures.Ready?"학교 연결 QR · 서버 이전":"서버 이전",HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,10,0,0),ToolTip=AppFeatures.Ready?"앱·교사 PC가 주소 없이 연결하는 QR, 휴대폰 소식 확인 시각, 새 서버로 이전":"서버를 새 PC로 옮길 때 교사 PC가 새 주소를 따라가게 합니다."};link.Click+=(_,_)=>ShowSchoolLink(card);schoolColumn.Children.Add(link);
+        var link=new Button{Content="서버 이전",HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,10,0,0),ToolTip="서버를 새 PC로 옮길 때 교사 PC가 새 주소를 따라가게 합니다."};link.Click+=(_,_)=>ShowSchoolLink(card);schoolColumn.Children.Add(link);
         status.Children.Add(card.ConnectionPanel);
         card.StatusCard.Child=status;card.StatusCard.Margin=new Thickness(0,0,0,16);Grid.SetRow(card.StatusCard,1);card.View.Children.Add(card.StatusCard);
         BuildEmptyState(card);
@@ -179,20 +179,13 @@ public sealed partial class LocalServerWindow
     }
     void BuildEmptyState(ServerCard card)
     {
-        var news=card.Service=="announcements";var content=new StackPanel{HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center,MaxWidth=480};
-        var ring=new Border{Width=64,Height=64,CornerRadius=new CornerRadius(32),HorizontalAlignment=HorizontalAlignment.Center,Child=AdminUi.Icon(news?"AdminStudentIcon":"AdminServerIcon",30,news?"News":"Blue")};ring.SetResourceReference(Border.BackgroundProperty,news?"NewsTint":"Pale");content.Children.Add(ring);
+        var content=new StackPanel{HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center,MaxWidth=480};
+        var ring=new Border{Width=64,Height=64,CornerRadius=new CornerRadius(32),HorizontalAlignment=HorizontalAlignment.Center,Child=AdminUi.Icon("AdminServerIcon",30,"Blue")};ring.SetResourceReference(Border.BackgroundProperty,"Pale");content.Children.Add(ring);
         var badge=AdminUi.Badge("미설치","Neutral");badge.HorizontalAlignment=HorizontalAlignment.Center;badge.Margin=new Thickness(0,14,0,0);content.Children.Add(badge);
         var title=AdminUi.Heading("아직 설치하지 않았습니다",22);title.TextAlignment=TextAlignment.Center;title.Margin=new Thickness(0,10,0,8);content.Children.Add(title);
         card.EmptyNote.TextAlignment=TextAlignment.Center;content.Children.Add(card.EmptyNote);
-        if(news)
-        {
-            var list=new StackPanel();list.Children.Add(AdminUi.Group("설치 전에 준비할 것"));
-            foreach(var item in new[]{"학부모 휴대폰이 학교 밖에서 접속할 주소(도메인 또는 터널)","학생·학부모 개인정보 수집·이용 동의 절차","학교장 승인 문서 (교내 업무 서버와 같은 문서 사용 가능)"})
-            {var row=new DockPanel{Margin=new Thickness(0,0,0,6)};var mark=AdminUi.Icon("AdminCheckIcon",14,"News");mark.Margin=new Thickness(0,0,8,0);row.Children.Add(mark);row.Children.Add(AdminUi.Label(item,"Ink",13));list.Children.Add(row);}
-            var box=new Border{Child=list,Padding=new Thickness(18,14,18,10),CornerRadius=new CornerRadius(8),Margin=new Thickness(0,16,0,0)};box.SetResourceReference(Border.BackgroundProperty,"Subtle");content.Children.Add(box);
-        }
         var buttons=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,18,0,0)};
-        card.Activate.Content=AdminUi.IconLabel("AdminDownloadIcon","설치하기");card.Activate.SetResourceReference(StyleProperty,news?"NewsButton":"PrimaryButton");card.Activate.Margin=new Thickness(0,0,8,0);System.Windows.Automation.AutomationProperties.SetName(card.Activate,"설치하기");card.Activate.Click+=(_,_)=>ActivateService(card);buttons.Children.Add(card.Activate);
+        card.Activate.Content=AdminUi.IconLabel("AdminDownloadIcon","설치하기");card.Activate.SetResourceReference(StyleProperty,"PrimaryButton");card.Activate.Margin=new Thickness(0,0,8,0);System.Windows.Automation.AutomationProperties.SetName(card.Activate,"설치하기");card.Activate.Click+=(_,_)=>ActivateService(card);buttons.Children.Add(card.Activate);
         var guide=new Button{Content="설치 안내 보기"};guide.Click+=(_,_)=>OpenGuide();buttons.Children.Add(guide);content.Children.Add(buttons);
         card.Empty.Child=content;Grid.SetRow(card.Empty,1);Grid.SetRowSpan(card.Empty,2);card.View.Children.Add(card.Empty);
     }

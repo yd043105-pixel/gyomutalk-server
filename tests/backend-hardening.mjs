@@ -5,7 +5,6 @@ import {mkdirSync,writeFileSync,readFileSync,existsSync,readdirSync} from 'node:
 import {DatabaseSync} from 'node:sqlite';
 import net from 'node:net';
 import path from 'node:path';
-import {bridgeHeaders,bridgeFetch} from './bridge-client.mjs';
 import {writeDeploymentReviewFixture} from './deployment-review-fixture.mjs';
 
 const root=process.cwd(),sdk=path.join(root,'.tools/dotnet/dotnet.exe');
@@ -29,7 +28,7 @@ class Client{
  }
  async login(username='admin'){this.csrf=(await this.request('session')).csrfToken;await this.request('login','POST',{username,password,rememberLogin:true});const s=await this.request('session');this.csrf=s.csrfToken;this.user=s.user;return this;}
 }
-for(const project of ['Server','AnnouncementServer']){
+for(const project of ['Server']){
  const portal=project==='AnnouncementServer',prefix=portal?'Portal':'School',dbName=portal?'announcements.db':'school.db';
  const data=path.join(testRoot,project),base='http://127.0.0.1:'+await port();let server,logs='';
  const env={...process.env,ASPNETCORE_ENVIRONMENT:'Development',[prefix+'__DataDirectory']:data,[prefix+'__AdminPassword']:password,Portal__BridgeKey:key,Portal__BridgeKeys__rotated:rotation,School__CleanupSeconds:'1',Portal__CleanupSeconds:'1',School__LoginLimitPerMinute:'300'};
@@ -44,8 +43,7 @@ for(const project of ['Server','AnnouncementServer']){
   check(project+': selected session revoked without revoking the current device');
   const status=await a.request('admin/backend-status');engines[project]=status.sqliteVersion;
   await new Client(base).request('admin/backend-status','GET',undefined,401);await wait(async()=>(await a.request('admin/backend-status')).jobs.some(j=>j.name==='backup'&&j.lastSuccess));
-  const nonceUrl=base+'/bridge/directory',signed=portal?bridgeHeaders(key,nonceUrl):null;
-  if(portal){assert.equal((await fetch(nonceUrl,{headers:signed})).status,200);assert.equal((await bridgeFetch(rotation,nonceUrl,{}, {keyId:'rotated'})).status,200);assert.equal((await bridgeFetch(key,nonceUrl,{}, {keyId:'missing'})).status,401);}
+
   const live=path.join(data,dbName);function openDb(){const db=new DatabaseSync(live);db.exec("PRAGMA busy_timeout=30000");return db;}let db=openDb();
   assert.equal(db.prepare('PRAGMA journal_mode').get().journal_mode,'wal');assert.equal(db.prepare('PRAGMA quick_check').get().quick_check,'ok');assert.equal(db.prepare('PRAGMA foreign_key_check').all().length,0);
   assert.ok(db.prepare('SELECT COUNT(*) AS n FROM BackendAudit').get().n>0);
@@ -87,42 +85,10 @@ for(const project of ['Server','AnnouncementServer']){
    db=openDb();db.prepare('UPDATE MessageEvents SET DeliveredAt=NULL,NextAttempt=? WHERE Sequence=(SELECT MAX(Sequence) FROM MessageEvents)').run(Date.now()+60000);db.close();
 
   }
-  if(portal){
-   // Synthetic seeded accounts isolate login throughput from separately tested signup/approval flows.
-   db=openDb();const fixtureHash=db.prepare("SELECT PasswordHash FROM People WHERE Username='admin'").get().PasswordHash;
-   const seed=db.prepare("INSERT INTO People(Id,Username,Name,Role,PasswordHash) VALUES(?,?,?,'parent',?)");db.exec('BEGIN');for(let i=0;i<100;i++)seed.run(randomUUID().replaceAll('-',''),'load.parent.'+i,'가상 부하 보호자 '+i,fixtureHash);db.exec('COMMIT');db.close();
-   const parents=await Promise.all(Array.from({length:100},(_,i)=>new Client(base).login('load.parent.'+i)));assert.equal(new Set(parents.map(p=>p.user.id)).size,100);for(const parent of parents)assert.equal((await parent.request('sessions')).length,1);
-   check('100 distinct synthetic parent accounts can sign in concurrently behind a shared IP; session ownership stays separate');
-  }
-  if(portal){
-   const room=await a.request('admin/classes','POST',{name:'가상 정책 학급',grade:1});
-   const student=await a.request('admin/people','POST',{name:'가상 정책 학생',role:'student',classId:room.id,internalUserId:null,classIds:[],canBroadcast:false});
-   const policy=await(new Client(base)).request('registration/policy');const agreement={revision:policy.revision,acceptedIds:policy.documents.filter(d=>d.required).map(d=>d.id)};
-   const parent=new Client(base);parent.csrf=(await parent.request('session')).csrfToken;await parent.request('register','POST',{name:'가상 보호자',username:'review.parent',password,role:'parent',agreement});
-   await stop(server);env.ASPNETCORE_ENVIRONMENT='Production';env.Operations__SchoolId='YY-SYNTHETIC-ONLY';env.Operations__SecurityReviewFile=writeDeploymentReviewFixture(path.join(testRoot,'review-'+project),portal?'announcements':'office',base);await start();await a.login();await parent.login('review.parent');
-   let code=(await a.request('admin/people/'+student.id+'/student-code')).code;
-   db=openDb();db.prepare('INSERT OR REPLACE INTO FamilyCodeAttempts(ParentId,Failures,LockedUntil) VALUES(?,4,0)').run(parent.user.id);db.close();
-   const pending=await parent.request('settings/children','POST',{code});assert.equal(pending.membership,'pending');db=openDb();assert.equal(db.prepare('SELECT Failures FROM FamilyCodeAttempts WHERE ParentId=?').get(parent.user.id).Failures,0);db.close();assert.equal((await parent.request('children')).length,0);await parent.request('announcements','GET',undefined,403);
-   code=(await a.request('admin/people/'+student.id+'/student-code/reissue','POST')).code;
-   await a.request('admin/guardian-requests/'+parent.user.id+'/'+student.id+'/approve','POST',undefined,409);
-   await parent.request('settings/children','POST',{code});await a.request('admin/guardian-requests/'+parent.user.id+'/'+student.id+'/approve','POST');assert.equal((await parent.request('children')).length,1);
-   check('production guardian policy requires school review; pending relation grants no data and retired codes cannot be approved');
-   await a.request('admin/families/'+parent.user.id+'/'+student.id,'DELETE');await parent.login('review.parent');
-   await stop(server);env.Portal__GuardianBindingMode='CodeOnly';await start();await a.login();code=(await a.request('admin/people/'+student.id+'/student-code')).code;await parent.login('review.parent');await parent.request('settings/children','POST',{code},503);
-   await stop(server);env.Portal__GuardianCodeOnlyApproved='true';await start();await parent.login('review.parent');assert.equal((await parent.request('settings/children','POST',{code})).membership,'regular');
-   check('production code-only binding requires explicit school approval; development instant binding remains compatible');
-   await stop(server);env.ASPNETCORE_ENVIRONMENT='Development';delete env.Portal__GuardianBindingMode;delete env.Portal__GuardianCodeOnlyApproved;await start();
-  }
-  if(portal){
-   await stop(server);env.Portal__BridgeKey='';env.Portal__BridgeKeyValidity__rotated__NotAfter=String(Math.floor(Date.now()/1000)-1);await start();
-   assert.equal((await bridgeFetch(rotation,nonceUrl,{}, {keyId:'rotated'})).status,401);
-   await stop(server);delete env.Portal__BridgeKeyValidity__rotated__NotAfter;await start();
-   assert.equal((await bridgeFetch(rotation,nonceUrl,{}, {keyId:'rotated'})).status,200);assert.equal((await bridgeFetch(key,nonceUrl)).status,401);
-   check('rotation can remove the legacy key; expired key validity is rejected and active named key works');
-   await stop(server);env.Portal__BridgeKey=key;await start();
-  }
+
+
+
   await stop(server);await start();
-  if(portal)assert.equal((await fetch(nonceUrl,{headers:signed})).status,401);
   const restored=await new Client(base).login();if(!portal){
    assert.ok((await restored.request('messages/changes')).events.length>0);db=openDb();const queued=db.prepare('SELECT Sequence,DeliveredAt FROM MessageEvents ORDER BY Sequence DESC LIMIT 1').get();assert.equal(queued.DeliveredAt,null);db.prepare('UPDATE MessageEvents SET NextAttempt=0 WHERE Sequence=?').run(queued.Sequence);db.close();
    await wait(()=>{const reader=openDb();try{return reader.prepare('SELECT DeliveredAt FROM MessageEvents WHERE Sequence=?').get(queued.Sequence).DeliveredAt!==null;}finally{reader.close();}});check('pending transactional event survives process exit and is dispatched after restart');
@@ -135,7 +101,6 @@ for(const project of ['Server','AnnouncementServer']){
   const corrupt=path.join(testRoot,project+'-corrupt.db');writeFileSync(corrupt,'invalid database');assert.notEqual((await command(corrupt)).exit,0);
   db=openDb();assert.equal(db.prepare('PRAGMA quick_check').get().quick_check,'ok');db.close();
   assert.equal((await command(snapshot)).exit,0);await start();await restored.request(portal?'admin/status':'messages','GET',undefined,401);const recoveryAdmin=await new Client(base).login();
-  assert.equal((await recoveryAdmin.request('admin/recovery-status')).reviewRequired,true);if(!portal){await recoveryAdmin.request('admin/users','POST',{username:'recovery.peer',name:'가상 복원 관리자',department:'가상부서',password,isAdmin:true,canBroadcast:false});const peer=await new Client(base).login('recovery.peer');await peer.request('admin/users','GET',undefined,503);}const awaiting=await bridgeFetch(key,base+'/bridge/directory');if(portal)assert.equal(awaiting.status,503);
   await recoveryAdmin.request('admin/recovery-confirm','POST',{confirmed:false},400);await recoveryAdmin.request('admin/recovery-confirm','POST',{confirmed:true});assert.equal((await recoveryAdmin.request('admin/recovery-status')).reviewRequired,false);
   check(project+': restore pauses ordinary service until an administrator explicitly confirms school access review');
   check(project+': live restore blocked, migration snapshot saved, corrupt backup rejected, valid restore revokes old sessions');

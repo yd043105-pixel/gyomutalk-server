@@ -7,7 +7,7 @@ $ErrorActionPreference='Stop'
 function Read-OperationsConfig([string]$Path,[bool]$ExternalOnly=$false,[bool]$MailOnly=$false) {
     $config=Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
     if($config.PSObject.Properties['resourceProfile'] -and $config.resourceProfile -notin @('low-memory','balanced')){throw '부하 설정은 low-memory 또는 balanced입니다.'}
-    if($config.schema -ne 1 -or $config.service -notin @('office','announcements')){throw '운영 설정의 형식과 서버 종류를 확인하세요.'}
+    if($config.schema -ne 1 -or $config.service -ne 'office'){throw '운영 설정의 형식과 서버 종류를 확인하세요.'}
     if(-not $ExternalOnly -and -not $MailOnly -and $config.PSObject.Properties['registrationPolicyFile'] -and $config.registrationPolicyFile){
         $policyPath=[string]$config.registrationPolicyFile
         if(-not [IO.Path]::IsPathRooted($policyPath) -or $policyPath -ne [IO.Path]::GetFullPath($policyPath) -or -not(Test-Path -LiteralPath $policyPath -PathType Leaf)){throw '학교별 약관 파일에는 존재하는 파일의 절대 경로가 필요합니다.'}

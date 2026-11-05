@@ -57,7 +57,10 @@ try{
         if(-not(Test-Path -LiteralPath (Join-Path $install $path))){throw "Missing installed file: $path"}
     }
     if(Test-Path -LiteralPath (Join-Path $install 'announcement-server\SchoolMessenger.AnnouncementServer.exe')){throw 'Unselected public server was installed'}
-    $key=Key;if($null -eq $key){throw 'Uninstall registration missing'};$key.Dispose()
+    $key=Key;if($null -eq $key){throw 'Uninstall registration missing'}
+    $displayIcon=[string]$key.GetValue('DisplayIcon');$key.Dispose()
+    if(-not(Test-Path -LiteralPath ($displayIcon -replace ',\d+$',''))){throw "Apps list icon missing: $displayIcon"}
+    Check 'The Windows apps list shows the administrator program with its own icon'
     Check 'Office selection installs the self-contained server, administrator messenger and operating tools; unselected public server is absent'
     $shortcutPath=Join-Path ([Environment]::GetFolderPath('Programs')) ($testGroup+'\관리자 프로그램.lnk')
     if(-not(Test-Path -LiteralPath $shortcutPath)){throw 'Server manager shortcut missing'}
@@ -86,11 +89,6 @@ try{
         Uninstall
         if(Test-Path -LiteralPath $shortcutPath){throw 'Uninstall left the trial shortcut behind'}
         if(Test-Path -LiteralPath $desktop){throw 'Uninstall left its desktop shortcut behind'}
-        Setup 'public-manager' -Components 'announcements' -CreateIcons
-        if(-not(Test-Path -LiteralPath (Join-Path $install 'announcement-server\SchoolMessenger.AnnouncementServer.exe')) -or -not(Test-Path -LiteralPath (Join-Path $install 'admin\SchoolMessenger.exe')) -or (Test-Path -LiteralPath (Join-Path $install 'server\SchoolMessenger.Server.exe'))){throw 'Public role manager payload is incorrect'}
-        if(Test-Path -LiteralPath $desktop){throw 'Unselected desktop shortcut was created'}
-        Check 'Public-only installation includes its server manager while unchecked desktop creation remains off'
-        Uninstall
         Setup 'administrator-only' -InstallType 'administrator' -CreateIcons
         if(-not(Test-Path -LiteralPath (Join-Path $install 'admin\SchoolMessenger.exe')) -or (Test-Path -LiteralPath (Join-Path $install 'server\SchoolMessenger.Server.exe')) -or (Test-Path -LiteralPath (Join-Path $install 'announcement-server\SchoolMessenger.AnnouncementServer.exe')) -or -not(Test-Path -LiteralPath $shortcutPath)){throw 'Administrator-only installation incorrectly requires backend payloads'}
         Check 'Administrator-only custom installation has the management program and shortcut without installing either backend'
@@ -134,11 +132,8 @@ try{
     if((Get-FileHash -LiteralPath $db).Hash -ne $dbHash){throw 'Uninstall changed the operating database'}
     if(Test-Path -LiteralPath (Join-Path $install 'server\SchoolMessenger.Server.exe')){throw 'Owned executable was not removed'}
     Check 'Uninstall removes program files and retains the real synthetic DB, attachments, added configuration and external secrets'
-    Setup 'public-only' -Components 'announcements'
-    if(-not(Test-Path -LiteralPath (Join-Path $install 'announcement-server\SchoolMessenger.AnnouncementServer.exe')) -or (Test-Path -LiteralPath (Join-Path $install 'server\SchoolMessenger.Server.exe')) -or -not(Test-Path -LiteralPath (Join-Path $install 'admin\SchoolMessenger.exe'))){throw 'Public-only selection must include its local server manager'}
-    Uninstall
     $tasksAfter=@(TaskNames)
     if(($tasksBefore -join "`n") -ne ($tasksAfter -join "`n")){throw 'Installer changed operational scheduled tasks'}
-    Check 'Public-only installation and reinstallation work; no server tasks are registered or changed'
+    Check 'PC-only installation and reinstallation work; no server tasks are registered or changed'
     @{version=$version;verifiedAt=[DateTimeOffset]::UtcNow.ToString('o');checks=@($checks);testDirectory=$work;realSchoolData=$false;tasksRegistered=$false;productionElevationTested=$false}|ConvertTo-Json -Depth 4|Set-Content -LiteralPath (Join-Path $OutputDirectory 'server-installer-checks.json') -Encoding UTF8
 }finally{foreach($process in $owned){StopFixture $process}}

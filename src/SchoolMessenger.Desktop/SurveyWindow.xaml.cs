@@ -21,7 +21,7 @@ public partial class SurveyWindow : Window
     string Me => main.Api!.Session!.User!.Id;
     public SurveyWindow(MainWindow main, Person[] people, string[]? targets = null)
     {
-        this.main = main; this.people = people; Owner = main; InitializeComponent(); StatusTone.Watch(Feedback); StatusTone.Watch(CreateFeedback); UpdateTabs();
+        this.main = main; this.people = people; main.RegisterWorkWindow(this); InitializeComponent(); StatusTone.Watch(Feedback); StatusTone.Watch(CreateFeedback); UpdateTabs();
         DeadlineDate.SelectedDate = DateTime.Today.AddDays(7);
         SendAll.Visibility = main.Api!.Session!.User is { IsAdmin: true } or { CanBroadcast: true } ? Visibility.Visible : Visibility.Collapsed;
         AddQuestion(); if (targets is not null) { targetIds = targets; TargetLabel.Text = string.Join(", ", people.Where(p => targets.Contains(p.Id)).Select(p => p.Label)); ShowCreate(true); }

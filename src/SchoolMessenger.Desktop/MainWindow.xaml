@@ -27,11 +27,8 @@
      <Button Style="{StaticResource RailButton}" Click="OpenWorkClick"><StackPanel><Path Data="{StaticResource FileIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="할 일·제출" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
      <Button Style="{StaticResource RailButton}" Click="OpenSurveyClick"><StackPanel><Path Data="{StaticResource SurveyIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="설문" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
      <Border x:Name="SchoolSection" Background="{DynamicResource SchoolSectionTint}" CornerRadius="5" Padding="3,3" Margin="6,4,6,3"><TextBlock Text="학교 업무" Style="{StaticResource RailSection}"/></Border>
-     <Button Style="{StaticResource RailButton}" Click="OpenAnnouncementClick"><StackPanel><Path Data="{StaticResource NoticeIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="가정통신문" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
      <Button Style="{StaticResource RailButton}" Click="OpenTimetableClick"><StackPanel><Path Data="{StaticResource TimetableIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="시간표" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
-     <Button x:Name="ElectivesButton" Style="{StaticResource RailButton}" Click="OpenElectivesClick" Visibility="Collapsed"><StackPanel><Path Data="{StaticResource ElectiveIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="수강신청" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
      <Button Style="{StaticResource RailButton}" Click="OpenOfficeClick"><StackPanel><Path Data="{StaticResource CalendarIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="일정·예약" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
-     <Button Style="{StaticResource RailButton}" Click="OpenCounselingClick"><StackPanel><Path Data="{StaticResource CounselIcon}" Style="{StaticResource Glyph}"/><TextBlock Text="상담 예약" FontSize="9" HorizontalAlignment="Center" Margin="0,3,0,0"/></StackPanel></Button>
     </StackPanel>
    </DockPanel></Border>
    <DockPanel>

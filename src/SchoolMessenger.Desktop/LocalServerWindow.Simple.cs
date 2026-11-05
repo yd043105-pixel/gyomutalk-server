@@ -26,7 +26,7 @@ public sealed partial class LocalServerWindow
         // Same-named schools are told apart by address; a school missing from the list runs without one.
         var named=SchoolList.Named(school);var chosen=c.SchoolPick?.Selected??(named.Length==1?named[0]:null);
         if(chosen is null&&named.Length>1)throw new InvalidOperationException("이름이 같은 학교가 "+named.Length+"곳 있습니다. 학교 이름 칸의 목록에서 주소를 보고 고르세요.");
-        var setup=new SimpleSetup(c.Service,school,admin,c.SimpleData.Text,c.Backup.Text,c.Approval.Text,c.ApprovalSha256,reviewed,c.SchoolId,chosen?.Address??"",c.ExternalHost);
+        var setup=new SimpleSetup(c.Service,school,admin,c.SimpleData.Text,c.Backup.Text,c.Approval.Text,c.ApprovalSha256,reviewed,c.SchoolId,chosen?.Address??"");
         var (thumbprint,fingerprint)=SimpleOperation.Certificate(directory,c.Service);c.Fingerprint=fingerprint;
         // This program made the certificate, so its own administrator sign-in trusts it without a code check.
         var port=SimpleOperation.Port(c.Service);foreach(var address in SimpleOperation.Addresses(c.Service).Append("https://localhost:"+port).Append("https://127.0.0.1:"+port))CertificatePins.Trust(address,fingerprint);
@@ -43,7 +43,6 @@ public sealed partial class LocalServerWindow
     }
     void ActivateService(ServerCard c)
     {
-        if(c.Service=="announcements"&&MessageBox.Show(this,"학생·학부모 소식 서버를 이 PC에서 사용할까요?\n\n학부모 휴대폰처럼 학교 밖에서 접속하려면 외부 접속(Cloudflare Tunnel 등) 설정이 추가로 필요합니다. 가능하면 교내 업무 서버와 다른 PC에서 운영하세요.","학생·학부모 소식 서버 설치",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
         c.Activated=true;SaveSettings();SelectCard(c);Refresh();
     }
     static Task<bool>? scanProbe;
@@ -63,7 +62,6 @@ public sealed partial class LocalServerWindow
         var policy=ConfirmedPolicy(c.SimpleData.Text);
         items.Add((policy is not null,"약관·개인정보 확정",policy is null?"학교 이름·문의처·보호책임자를 넣어 약관을 확정해야 교직원 계정 신청과 활성화를 받습니다.":"시행일 "+policy.Effective+" · "+policy.School+" 약관으로 회원가입을 받습니다.",policy is null?"확정하기":"다시 확정",()=>ShowPolicy(c)));
         // Optional, and of no use until the phone apps ship.
-        if(AppFeatures.Ready&&c.Service=="office")items.Add((true,"학교 밖 조회",c.ExternalHost.Length>0?"켜짐 · "+c.ExternalHost:"꺼짐 · 선택 사항입니다. 교직원이 학교 밖에서 시간표와 업무를 조회하려면 설정하세요.","설정",()=>ShowExternal(c)));
         // Rebuilt only when something changed so a click is never lost to the 3-second refresh.
         var key=string.Join("|",items.Select(i=>i.Done+i.Title+i.Detail));if(key==c.ChecklistKey)return;c.ChecklistKey=key;
         c.Checklist.Children.Clear();var open=items.Count(i=>!i.Done);AdminUi.SetBadge(c.ChecklistBadge,open==0?"모두 확인됨":open+"건 확인 필요",open==0?"Success":"Warning");

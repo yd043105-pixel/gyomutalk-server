@@ -30,6 +30,9 @@ let logs='';server.stdout.on('data',b=>logs+=b);server.stderr.on('data',b=>logs+
 try{
  for(let i=0;;i++){try{if((await fetch(base+'/health')).ok)break;}catch{}if(i>150||server.exitCode!==null)throw Error('Server did not start\n'+logs);await new Promise(r=>setTimeout(r,100));}
  const admin=await new Client(base).login();
+ for(const route of ['external-announcements/setup','external-announcements','counseling','elective-management/access','admin/elective-managers','admin/sections/setup','admin/announcement-status','presence/mobile','portal/session'])await admin.request(route,'GET',undefined,404);
+ check('retired app and elective APIs are absent even for an authenticated administrator');
+
  const person=async username=>{await admin.request('admin/users','POST',{username,name:'가상 '+username,department:'가상부서',password,isAdmin:false,canBroadcast:false});return new Client(base).login(username);};
  const [a,b,c]=await Promise.all(['teacher-a','teacher-b','teacher-c'].map(person));
  const say=(who,room,body)=>who.request('chats/'+room+'/messages','POST',{clientId:randomUUID(),body,attachmentIds:[]});

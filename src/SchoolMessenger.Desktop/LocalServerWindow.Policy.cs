@@ -61,7 +61,7 @@ public sealed partial class LocalServerWindow
         var contact=Field("문의처",saved?.Contact??"","탈퇴·개인정보 권리 행사를 받을 창구와 전화번호 (예: 교무실 031-000-0000)");
         var officer=Field("개인정보 보호책임자","","직위와 이름 (예: 교감 홍길동)");
         var effective=Field("시행일",DateTime.Today.ToString("yyyy-MM-dd"),"");
-        var external=Field("학교 밖 접속에 쓰는 외부 연결 서비스","사용하지 않음","학생·학부모가 학교 밖에서 접속하도록 Cloudflare Tunnel 등을 쓰면 그 서비스와 운영 회사를 적으세요. 예: Cloudflare Tunnel (Cloudflare, Inc., 미국)");
+        var external=Field("학교가 설정한 외부 처리 서비스","사용하지 않음","오류 메일이나 업데이트 외에 외부 처리를 별도로 구성했다면 서비스와 운영 회사를 확인하여 적으세요.");
         var preview=new TextBox{IsReadOnly=true,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Height=260,Margin=new Thickness(0,16,0,0)};System.Windows.Automation.AutomationProperties.SetName(preview,"약관 전문 미리보기");stack.Children.Add(preview);
         var error=AdminUi.Label("","Danger",12);error.TextWrapping=TextWrapping.Wrap;
         PolicyFields Fields()=>new(school.Text,contact.Text,officer.Text,effective.Text,external.Text);

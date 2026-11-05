@@ -69,7 +69,7 @@ public sealed class ServerResources
         double? sendRate=elapsed>0?Math.Max(0,(sent-previousSent)/elapsed):null,receiveRate=elapsed>0?Math.Max(0,(received-previousReceived)/elapsed):null;
         previousTicks=now;previousProcess=cpu;previousSent=sent;previousReceived=received;measuredSystemCpu=systemCpu;measuredProcessMemory=process.WorkingSet64;
         long filesBytes=0;using(var db=open())using(var query=db.CreateCommand())
-        {query.CommandText=prefix=="Portal"?"SELECT COALESCE(SUM(Size),0) FROM Files WHERE DeletedAt IS NULL":"SELECT (SELECT COALESCE(SUM(Size),0) FROM Attachments WHERE DeletedAt IS NULL)+(SELECT COALESCE(SUM(Size),0) FROM ExternalFiles WHERE DeletedAt IS NULL)";filesBytes=Convert.ToInt64(query.ExecuteScalar());}
+        {query.CommandText="SELECT COALESCE(SUM(Size),0) FROM Attachments WHERE DeletedAt IS NULL";filesBytes=Convert.ToInt64(query.ExecuteScalar());}
         var drive=new DriveInfo(Path.GetPathRoot(root)!);
         var processor=OperatingSystem.IsWindows()?Registry.GetValue(@"HKEY_LOCAL_MACHINE\HARDWARE\DESCRIPTION\System\CentralProcessor\0","ProcessorNameString",null)?.ToString()?.Trim():null;
         var os=OperatingSystem.IsWindows()?"Windows · 빌드 "+Environment.OSVersion.Version.Build+" · "+RuntimeInformation.OSArchitecture:RuntimeInformation.OSDescription;

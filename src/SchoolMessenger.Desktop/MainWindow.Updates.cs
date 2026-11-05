@@ -62,7 +62,7 @@ public partial class MainWindow
             var appeared = false;
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                var popup = OwnedWindows.Cast<Window>().FirstOrDefault(w => w.Title.StartsWith("업데이트 내역 · ", StringComparison.Ordinal));
+                var popup = SessionWindows.FirstOrDefault(w => w.Title.StartsWith("업데이트 내역 · ", StringComparison.Ordinal));
                 if (popup is null) return;
                 appeared = true;
                 if (confirm)
@@ -92,4 +92,3 @@ public partial class MainWindow
         File.WriteAllText("artifacts/update-notice-check.json", System.Text.Json.JsonSerializer.Serialize(new { confirmed = notice.Sequence, checks = 6 }));
     }
 }
-

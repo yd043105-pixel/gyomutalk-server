@@ -40,7 +40,7 @@ public partial class MainWindow : Window
         Height = Math.Min(820, SystemParameters.WorkArea.Height - 30);
         Directory.CreateDirectory(LocalDirectory);
         savedLogin = new SavedLogin(LocalDirectory);
-        startup = new WindowsStartup(Environment.GetCommandLineArgs().Any(a=>a is "--verify-ui" or "--verify-admin" or "--verify-counseling" or "--verify-electives")
+        startup = new WindowsStartup(Environment.GetCommandLineArgs().Any(a=>a is "--verify-ui" or "--verify-admin")
             ? @"Software\YeoyangSchoolMessenger\StartupTests\" + Path.GetFileName(LocalDirectory.TrimEnd(Path.DirectorySeparatorChar)) + Guid.NewGuid().ToString("N")
             : @"Software\Microsoft\Windows\CurrentVersion\Run",Environment.GetCommandLineArgs().Contains("--server-manager")?"YeoyangMessengerServerManager":"YeoyangSchoolMessenger",Environment.GetCommandLineArgs().Contains("--server-manager")?LocalServerWindow.StartupCommand:null);
         AutoStartCheck.IsChecked = AutoStartMenu.IsChecked = startup.Enabled;
@@ -72,9 +72,7 @@ public partial class MainWindow : Window
         });
         Loaded += async (_, _) =>
         {
-            if(Environment.GetCommandLineArgs().Contains("--verify-electives")){await VerifyElectivesUi();return;}
             if(Environment.GetCommandLineArgs().Contains("--verify-admin")){await VerifyAdministratorUi();return;}
-            if(Environment.GetCommandLineArgs().Contains("--verify-counseling")){await VerifyCounselingUi();return;}
             if (Environment.GetCommandLineArgs().Contains("--verify-ui")) { await VerifyUi(); return; }
             if (startup.Enabled) { try { startup.SetEnabled(true); } catch (Exception error) { LoginMessage("자동 실행 설정을 갱신하지 못했습니다: " + error.Message); } }
             if (RememberLogin.IsChecked == true) { await TryAutomaticLogin(); if (savedLogin.Exists) timer.Start(); }
@@ -200,7 +198,7 @@ public partial class MainWindow : Window
         hub.On("PresenceChanged", async () => await Dispatcher.InvokeAsync(() => Run(RefreshPeople)).Task.Unwrap());
         hub.On<string>("ChatChanged", id => Dispatcher.InvokeAsync(() => Run(async () => { ChatChanged?.Invoke(id); await NotifyChat(id); })).Task.Unwrap());
         hub.On<string>("SurveyChanged", id => Dispatcher.InvokeAsync(() => Run(async () => { SurveyChanged?.Invoke(id); await NotifySurvey(id); })).Task.Unwrap());
-        hub.On<string,long>("TimetableChanged",(date,revision)=>Dispatcher.InvokeAsync(()=>{if(knownTimetables.Add(revision))NotifyFeature("시간표 변경 · "+date,"timetable");}).Task);
+        hub.On<string,long>("TimetableChanged",(date,revision)=>Dispatcher.InvokeAsync(()=>Run(NotifyTimetable)).Task.Unwrap());
         hub.Reconnecting += _ => { Dispatcher.Invoke(() => ConnectionLabel.Text = "재연결 중 · 수신 확인 계속"); return Task.CompletedTask; };
         hub.Reconnected += _ => Dispatcher.InvokeAsync(() => Run(async()=>{sentAway=null;await SynchronizeActivity();await Refresh();})).Task.Unwrap();
         hub.Closed += _ => { Dispatcher.Invoke(() => ConnectionLabel.Text = "알림 연결 끊김 · 재시도 중"); return Task.CompletedTask; };
@@ -213,15 +211,13 @@ public partial class MainWindow : Window
         refreshing = true;
         try
         {
-            await RefreshNavigationAccess();
             await Archive.Synchronize();
             await RefreshPeople(); await UpdateUnread();
             var incoming = await Api.Get<MessageItem[]>("api/messages?box=received");
             var arrived = incoming.Any(m => !knownIncoming.Contains(m.Id));
             foreach (var message in incoming) knownIncoming.Add(message.Id);
             if (arrived) await NotifyUnread("message", null);
-            foreach(var n in await Api.Get<SchoolMessenger.Contracts.TimetableNotice[]>("api/timetable/notices"))
-                if(knownTimetables.Add(n.Revision)&&n.ReadAt is null)NotifyFeature(n.Title+" · "+n.Date,"timetable");
+            await NotifyTimetable();
             await RefreshWindows();
             ConnectionLabel.Text = hub?.State == HubConnectionState.Connected ? "학교 서버 연결됨" : "학교 서버 연결됨 · 수신 확인 30초";
         }
@@ -229,10 +225,10 @@ public partial class MainWindow : Window
     }
     async Task RefreshWindows()
     {
-        foreach (var window in OwnedWindows.OfType<MailboxWindow>().ToArray()) await window.Reload();
-        foreach (var window in OwnedWindows.OfType<ChatWindow>().ToArray()) await window.Refresh();
-        foreach (var window in OwnedWindows.OfType<SurveyWindow>().ToArray()) await window.Reload();
-        foreach (var window in OwnedWindows.OfType<WorkWindow>().ToArray()) await window.Reload();
+        foreach (var window in SessionWindows.OfType<MailboxWindow>().ToArray()) await window.Reload();
+        foreach (var window in SessionWindows.OfType<ChatWindow>().ToArray()) await window.Refresh();
+        foreach (var window in SessionWindows.OfType<SurveyWindow>().ToArray()) await window.Reload();
+        foreach (var window in SessionWindows.OfType<WorkWindow>().ToArray()) await window.Reload();
         if (remote is not null) { try { await remote.Connect(); } catch { } }
     }
     public async Task UpdateUnread()
@@ -253,7 +249,7 @@ public partial class MainWindow : Window
     }
     void UpdateRosterHint()
     {
-        RosterHint.Text = $"온라인 {people.Count(p=>p.Online&&!p.Away)} · 휴대폰 {people.Count(p=>!p.Online&&p.Mobile)} · 자리비움 {people.Count(p=>p.Online&&p.Away)} · 오프라인 {people.Count(p=>!p.Online&&!p.Mobile)}";
+        RosterHint.Text = $"온라인 {people.Count(p=>p.Online&&!p.Away)} · 자리비움 {people.Count(p=>p.Online&&p.Away)} · 오프라인 {people.Count(p=>!p.Online&&!p.Mobile)}";
         AllFilter.Content = $"전체 {people.Length}"; OnlineFilter.Content = $"접속 중 {people.Count(p => p.Available)}"; AwayFilter.Content=$"자리비움 {people.Count(p=>p.Online&&p.Away)}";
         OnlineFilter.ToolTip="PC 온라인 또는 교사용 휴대폰 앱 접속 중";AwayFilter.ToolTip="PC에서 입력이 없거나 화면이 잠긴 교직원";
     }
@@ -349,7 +345,7 @@ public partial class MainWindow : Window
             if (filesOnly) { dialog.BodyBox.Text = "첨부파일을 전달합니다."; dialog.Loaded += (_, _) => dialog.ChooseFiles(); }
             if ((forwardBody ?? body) is { } text) dialog.BodyBox.Text = text;
             dialog.Closed += async (_, _) => { if (closingWindows || Api is null) return; SavePreferences(); await Run(Refresh); };
-            var open = OwnedWindows.OfType<ComposeWindow>().Count(w => w != dialog); dialog.Show();
+            var open = SessionWindows.OfType<ComposeWindow>().Count(w => w != dialog); dialog.Show();
             // Otherwise a new window lands exactly on the last one and looks like nothing happened.
             if (open > 0) { dialog.Left += open % 6 * 28; dialog.Top += open % 6 * 28; }
         });
@@ -406,16 +402,15 @@ public partial class MainWindow : Window
     {
         schoolName="학교";Title="교무톡";
         savedLogin.Clear();
-        ElectivesButton.Visibility=Visibility.Collapsed;
         if (remote is not null) { await remote.DisposeAsync(); remote = null; }
-        timer.Stop(); activityTimer.Stop();sentAway=null; toast?.Close(); chatSeen.Clear(); knownSurveys.Clear(); closingWindows=true; foreach (var window in OwnedWindows.Cast<Window>().ToArray()) window.Close(); closingWindows=false;
+        timer.Stop(); activityTimer.Stop();sentAway=null; toast?.Close(); chatSeen.Clear(); knownSurveys.Clear(); CloseSessionWindows();
         if (hub is not null) { await hub.DisposeAsync(); hub = null; } Api?.Dispose(); Api = null;
         OrganizationTree.Items.Clear(); people = []; selectedPeople.Clear(); Workspace.Visibility = Visibility.Collapsed; LoginPanel.Visibility = Visibility.Visible;
     }
     void ShowWindow() { Show(); WindowState = WindowState.Normal; Activate(); }
     void WindowClosing(object? sender, CancelEventArgs e)
-    { if (!exiting) { e.Cancel = true; Hide(); } else { timer.Stop(); toast?.Close(); tray.Dispose(); SavePreferences(); } }
-    async void CloseApp() { if (remote is not null) { await remote.DisposeAsync(); remote = null; } exiting = true; Close(); }
+    { if (!exiting) { e.Cancel = true; Hide(); } else { timer.Stop(); activityTimer.Stop(); CloseSessionWindows(); toast?.Close(); tray.Dispose(); SavePreferences(); } }
+    async void CloseApp() { if (remote is not null) { await remote.DisposeAsync(); remote = null; } exiting = true; Close(); System.Windows.Application.Current.Shutdown(); }
     void ExitApp(object sender, RoutedEventArgs e) => CloseApp();
     // Screenshots for the download site set SCHOOL_UI_SCALE=2 so text stays sharp when shown large.
     internal static readonly double CaptureScale = double.TryParse(Environment.GetEnvironmentVariable("SCHOOL_UI_SCALE"), out var scale) && scale is > 0 and <= 4 ? scale : 1;
@@ -456,6 +451,10 @@ public partial class MainWindow : Window
             UsernameBox.Text = Environment.GetEnvironmentVariable("SCHOOL_UI_USER") ?? "admin";
             RememberLogin.IsChecked = true;
             PasswordBox.Password = Environment.GetEnvironmentVariable("SCHOOL_UI_PASSWORD") ?? ""; await SignIn();
+            if(Environment.GetEnvironmentVariable("YY_WINDOW_ORDER_UI_ONLY")=="1")
+            {
+                await VerifyWindowOrder();return;
+            }
             if(Environment.GetEnvironmentVariable("YY_SUBMISSION_UI_ONLY")=="1")
             {
                 if(Api?.Session?.User is null)throw new InvalidOperationException("제출 화면 시운행 로그인 실패");
@@ -501,7 +500,6 @@ public partial class MainWindow : Window
             var navigationButtons=Descendants(Workspace).OfType<System.Windows.Controls.Button>().Where(b=>b.Style==(Style)FindResource("RailButton")).ToArray();
             if(Descendants(NavigationRail).OfType<ScrollViewer>().Any()||NavigationItems.Children.OfType<TextBlock>().Any())throw new InvalidOperationException("툴바 스크롤 또는 연락처 분류가 남아 있습니다.");
             if(((SolidColorBrush)MessageSection.Background).Color==((SolidColorBrush)SchoolSection.Background).Color)throw new InvalidOperationException("메시지·학교 업무 분류 색상 구분 실패");
-            if(!ElectivesButton.IsVisible)throw new InvalidOperationException("관리자 수강신청 진입 표시 실패");
             foreach(var size in new[]{(Width:450d,Height:820d),(Width:450d,Height:760d),(Width:380d,Height:580d),(Width:450d,Height:820d)})
             {
                 Width=size.Width;Height=size.Height;UpdateLayout();UpdateNavigationLayout();UpdateLayout();
@@ -522,21 +520,7 @@ public partial class MainWindow : Window
                 }
                 SavePreview(this,Path.Combine(directory,$"navigation-{size.Width:0}x{size.Height:0}-preview.png"));
             }
-            using(var ordinary=new Api(ServerAddress.Text))
-            {
-                await ordinary.Login("bob",Environment.GetEnvironmentVariable("SCHOOL_UI_PASSWORD")!);
-                var originalApi=Api;timer.Stop();
-                try
-                {
-                    Api=ordinary;await RefreshNavigationAccess();if(ElectivesButton.IsVisible)throw new InvalidOperationException("일반 교사에게 수강신청 표시");
-                    await originalApi!.Send<JsonElement>(HttpMethod.Post,"api/admin/elective-managers",new SchoolMessenger.Contracts.ElectiveManagerChange(ordinary.Session!.User!.Id,true));
-                    await RefreshNavigationAccess();if(!ElectivesButton.IsVisible)throw new InvalidOperationException("담당자 지정 후 수강신청 표시 실패");
-                    await originalApi.Send<JsonElement>(HttpMethod.Post,"api/admin/elective-managers",new SchoolMessenger.Contracts.ElectiveManagerChange(ordinary.Session.User.Id,false));
-                    await RefreshNavigationAccess();if(ElectivesButton.IsVisible)throw new InvalidOperationException("담당자 해제 후 수강신청 숨김 실패");
-                }
-                finally{Api=originalApi;await RefreshNavigationAccess();timer.Start();}
-            }
-            File.WriteAllText(Path.Combine(directory,"navigation-ui-checks.json"),JsonSerializer.Serialize(new{noScroll=true,compactText=true,categoryColors=true,electiveRoleChecks=4,windowSizes=new[]{"450x820","450x760","380x580"},realSchoolData=false}));
+            File.WriteAllText(Path.Combine(directory,"navigation-ui-checks.json"),JsonSerializer.Serialize(new{noScroll=true,compactText=true,categoryColors=true,retiredAppMenusAbsent=true,windowSizes=new[]{"450x820","450x760","380x580"},realSchoolData=false}));
             SavePreview(this, output);
             var originalTheme = Appearance.Selected; var originalGlass = Appearance.Glass;
             var themedInbox = OpenMailbox("received"); await themedInbox.Reload();
@@ -582,7 +566,7 @@ public partial class MainWindow : Window
             ((System.Windows.Controls.Button)inbox.Template.FindName("CloseAction", inbox)).RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             for (var i = 0; i < 20 && inbox.IsVisible; i++) await Task.Delay(25);
             if (inbox.IsVisible) throw new InvalidOperationException("제목줄 닫기 버튼 실패");
-            await WriteMessage(); await WriteMessage(); var composing = OwnedWindows.OfType<ComposeWindow>().ToArray();
+            await WriteMessage(); await WriteMessage(); var composing = SessionWindows.OfType<ComposeWindow>().ToArray();
             if (composing.Length != 2 || !IsEnabled || composing[0].IsEnabled != true || composing[0].Left == composing[1].Left) throw new InvalidOperationException("메시지 창 여러 개 열기 실패");
             foreach (var window in composing) window.CloseUnsaved();
             var compose = new ComposeWindow(this, people, null, "학년 협의회 일정 안내",people.Select(p=>p.Id).Take(2).ToArray()); compose.Show();

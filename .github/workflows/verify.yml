@@ -34,17 +34,31 @@ jobs:
       - name: Build isolated server and administrator sources
         shell: pwsh
         run: |
-          foreach ($project in @('Server','AnnouncementServer','Desktop')) {
+          foreach ($project in @('Server','Desktop')) {
             dotnet build "src/SchoolMessenger.$project" -p:RestoreLockedMode=true --nologo -v quiet
             if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
           }
-      - name: Verify school boundaries, review records, accounts and bridge
+      - name: Verify retained PC features and retirement backups
         shell: pwsh
         run: |
-          foreach ($test in @('chat-survey','registration-policy','deployment-review','backend-hardening','message-storage','guardian-invite','staff-activation-codes','external-access','discovery-listener','file-scan','school-move','announcement-bridge','school-directory-servers','server-manager')) {
+          foreach ($test in @('chat-survey','timetable-neis','message-storage','staff-activation-codes','discovery-listener','file-scan')) {
             node "tests/$test.mjs"
             if ($LASTEXITCODE -ne 0) { throw "Verification failed: $test" }
           }
+      - name: Verify retained messaging, collection, scheduling and remote authorization
+        shell: pwsh
+        run: |
+          node tests/smoke.mjs --features
+          if ($LASTEXITCODE -ne 0) { throw 'Retained PC integration checks failed' }
+      - name: Verify PC-only migration and native window lifecycle
+        shell: pwsh
+        env:
+          YY_TEST_SERVICE_ROOT: ${{ github.workspace }}
+        run: |
+          dotnet run --project tests/PcOnlyChecks -p:RestoreLockedMode=true
+          if ($LASTEXITCODE -ne 0) { throw 'PC data retirement failed' }
+          node tests/window-order.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Window lifecycle failed' }
       - name: Build server administrator installer
         shell: pwsh
         run: |

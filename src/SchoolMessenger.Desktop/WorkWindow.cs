@@ -32,7 +32,7 @@ public sealed class WorkWindow : Window
     string? requestedId;
     public WorkWindow(MainWindow main, string? requestId = null)
     { StatusTone.Watch(feedback);
-        this.main = main; api = main.Api!; Owner = main; Resources = main.Resources;
+        this.main = main; api = main.Api!; main.RegisterWorkWindow(this); Resources = main.Resources;
         Title = "교무톡 · 할 일과 파일 제출"; Width = 860; Height = 650; MinWidth = 650; MinHeight = 500; FontSize = 13;
         Style = (Style)FindResource("SchoolWindow"); WindowStartupLocation = WindowStartupLocation.CenterOwner;
         requestedId = requestId; if (requestId is not null) view = "submission-requests";
@@ -62,7 +62,7 @@ public sealed class WorkWindow : Window
         Loaded += async (_, _) => await Run(async () => { await Reload(); if (requestedId is not null) await Submission(requestedId); });
         Loaded+=(_,_)=>deadlineClock.Start();Closed+=(_,_)=>deadlineClock.Stop();
         deadlineClock.Tick+=async(_,_)=>{var today=KoreanToday;if(today!=displayedDay&&!busy){if(view=="todos")await Run(Reload);else displayedDay=today;}};
-        Closing += (_, e) => { if (busy) e.Cancel = true; };
+        Closing += (_, e) => { if (busy && !main.ClosingWorkWindows) e.Cancel = true; };
     }
     static TextBlock Text(string text, double size = 13)
     {var block=new TextBlock{Text=text,FontSize=size,FontWeight=size>=16?FontWeights.SemiBold:FontWeights.Normal,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,0,0,10)};block.SetResourceReference(TextBlock.ForegroundProperty,size<=12?"Muted":"Ink");return block;}

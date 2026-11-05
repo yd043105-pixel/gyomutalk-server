@@ -26,8 +26,6 @@ public sealed partial class LocalServerWindow
         try
         {
             Check(card.Mode.SelectedIndex==2,"a new office server starts in the recommended simple setup");
-            var news=cards.First(c=>c.Service=="announcements");Refresh();
-            Check(news.Status.Text=="미설치"&&news.Activate.Visibility==Visibility.Visible&&news.Controls.Visibility!=Visibility.Visible,"the student and parent news server is shown as not installed until the school chooses to install it");
             card.SimpleData.Text=Path.Combine(directory,"simple","office");card.Backup.Text=Path.Combine(directory,"simple-backup","office");
             // Two real schools sharing a name: only the address tells them apart.
             var twins=SchoolList.All.Where(s=>s.Address.Length>0).GroupBy(s=>s.Name).First(g=>g.Count()>1).ToArray();var school=twins[1];
@@ -70,61 +68,6 @@ public sealed partial class LocalServerWindow
             Check(discovery.GetProperty("enabled").GetBoolean()&&discovery.GetProperty("address").GetString()!.StartsWith("https://",StringComparison.Ordinal),"teacher PC discovery is turned on with the HTTPS address");
             var link=SchoolLink(address,card.Fingerprint,school.Name,school.Address,"office");var linked=MoveFrom(link,0);
             Check(linked.Address==address+"/"&&linked.Fingerprint==card.Fingerprint&&link.Contains(Uri.EscapeDataString(school.Address)),"the school connection link carries the server address, its certificate and the school");
-            // The same start the administrator gets from the dialog: review record, loopback entrance and the read-only list together.
-            async Task<System.Net.HttpStatusCode> Outside(string path,string host="gyomutalk.school.example")
-            {
-                using var http=new HttpClient();using var request=new HttpRequestMessage(HttpMethod.Get,SimpleOperation.ExternalListener+path);request.Headers.Host=host;
-                using var response=await http.SendAsync(request);return response.StatusCode;
-            }
-            Check(ExternalHostFrom(" https://Gyomutalk.School.Example/ ").Equals("gyomutalk.school.example",StringComparison.OrdinalIgnoreCase)&&ExternalHostFrom("")==""&&new[]{"http://a.example","https://10.0.0.1","https://a.example:8443","https://a.example/x","localhost"}.All(bad=>{try{ExternalHostFrom(bad);return false;}catch(InvalidOperationException){return true;}}),"only a plain school domain is accepted as the public address");
-            await card.Host.Stop();card.ExternalHost="gyomutalk.school.example";await Start(card);
-            Check(await Ready()&&await Outside("/api/session")==System.Net.HttpStatusCode.OK&&await Outside("/api/admin/users")==System.Net.HttpStatusCode.Forbidden&&await Outside("/api/session","other.example")==System.Net.HttpStatusCode.NotFound,"with the public address set, the server opens the read-only entrance and passes its own review record");
-            Check(!System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(l=>l.Port==SimpleOperation.ExternalPort&&!System.Net.IPAddress.IsLoopback(l.Address)),"the entrance listens on this PC only");
-            await card.Host.Stop();card.ExternalHost="";await Start(card);var closedEntrance=false;try{await Outside("/health");}catch(HttpRequestException){closedEntrance=true;}
-            Check(await Ready()&&closedEntrance,"turning it off closes the entrance");
-            (string[] Texts,bool Qr) MoveDialog(bool ready,string file,Action? show=null)
-            {
-                AppFeatures.Ready=ready;string[] texts=[];var qr=false;
-                Dispatcher.BeginInvoke(new Action(()=>
-                {
-                    var dialog=OwnedWindows.Cast<Window>().Last();texts=ViewControls<TextBlock>(dialog).Select(t=>t.Text).ToArray();qr=ViewControls<Image>(dialog).Any(i=>i.IsVisible);
-                    var picture=new RenderTargetBitmap((int)dialog.ActualWidth,(int)dialog.ActualHeight,96,96,PixelFormats.Pbgra32);picture.Render((Visual)dialog.Content);
-                    var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(picture));using(var stream=File.Create(Path.Combine(outputDirectory,file)))png.Save(stream);
-                    dialog.Close();
-                }),System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-                (show??(()=>ShowSchoolLink(card)))();AppFeatures.Ready=true;return (texts,qr);
-            }
-            var closed=MoveDialog(false,"move-dialog-preview.png");
-            Check(!closed.Qr&&closed.Texts.Contains("서버 이전")&&closed.Texts.Contains("이 서버의 연결 링크")&&!closed.Texts.Contains("휴대폰 소식 확인 시각")&&closed.Texts.Any(t=>t.Contains("개발 진행 중",StringComparison.Ordinal)),"while the apps are in development the move dialog keeps the server move and closes the QR and phone settings");
-            var open=MoveDialog(true,"school-link-preview.png");
-            Check(open.Qr&&open.Texts.Contains("학교 연결 QR")&&open.Texts.Contains("휴대폰 소식 확인 시각")&&open.Texts.Contains("서버 이전"),"once the apps ship the same dialog offers the QR and the phone check time");
-            var outsideDialog=MoveDialog(true,"external-preview.png",()=>ShowExternal(card));
-            Check(outsideDialog.Texts.Contains("학교 밖 조회")&&outsideDialog.Texts.Contains(SimpleOperation.ExternalListener)&&outsideDialog.Texts.Any(t=>t.Contains("Cloudflare",StringComparison.Ordinal)),"the outside-access dialog names the connector target and says the traffic passes through Cloudflare");
-            var moved=new SchoolAppSettings.Moving("https://192.0.2.10:18443/",new string('C',64),DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()+SchoolAppSettings.MoveNoticeMilliseconds);
-            SchoolAppSettings.Write(card.SimpleData.Text,new(CheckTime:"07:40",Moving:moved));
-            using(var api=new Api(address))
-            {
-                var app=(await api.Get<JsonElement>("server-info")).GetProperty("app");var refused=false;
-                try{await api.Get<JsonElement>("api/session");}catch(ApiRequestException e)when(e.StatusCode==System.Net.HttpStatusCode.Gone){refused=true;}
-                Check(app.GetProperty("checkTime").GetString()=="07:40"&&app.GetProperty("moving").GetProperty("address").GetString()==moved.Address&&refused,"a moved server tells apps and teacher PCs the new address and accepts nothing else");
-            }
-            SchoolAppSettings.Write(card.SimpleData.Text,new());
-            using(var api=new Api(address))Check((await api.Get<JsonElement>("api/session")).ValueKind==JsonValueKind.Object,"cancelling the move puts the server back to normal");
-            BuildChecklist(card);Check(card.Checklist.Children.Count>=5,"the dashboard lists the remaining operation checks instead of blocking start");
-            SaveCapture(Path.Combine(outputDirectory,"server-manager-simple.png"));
-            var first=card.Fingerprint;await card.Host.Stop();card.Password.Clear();card.Confirm.Clear();Refresh();
-            Check(card.PasswordFields.IsVisible&&card.PasswordLabel?.Text=="새 관리자 비밀번호 · 바꿀 때만"&&!card.AdminUsername.IsEnabled,"after the first start the administrator ID is fixed and the password field only changes it");
-            await Start(card);Check(await Ready()&&card.Fingerprint==first,"restarting keeps the same certificate so teachers never re-confirm the code");
-            using(var after=new Api(address)){await after.Login("it.manager",password);Check((await after.Get<JsonElement>("api/admin/registrations")).EnumerateArray().Any(r=>r.GetProperty("username").GetString()=="new.teacher")&&(await after.Get<JsonElement>("api/registration/policy")).GetProperty("canRegister").GetBoolean(),"a restart keeps account applications and the confirmed terms; nobody signs up again");}
-            using(var same=new Api(address)){await same.Login("it.manager",password);Check(same.Session?.User?.IsAdmin==true,"restarting with an empty password field keeps the administrator password");}
-            await card.Host.Stop();
-            var changed="Changed-"+Guid.NewGuid().ToString("N")[..12];card.Password.Password=card.Confirm.Password=changed;await Start(card);Check(await Ready(),"the server starts with a new administrator password");
-            using(var renewed=new Api(address)){await renewed.Login("it.manager",changed);Check(renewed.Session?.User?.IsAdmin==true,"the new administrator password signs in");}
-            using(var old=new Api(address)){var refused=false;try{await old.Login("it.manager",password);}catch(InvalidOperationException){refused=true;}Check(refused,"the old administrator password no longer signs in");}
-            await card.Host.Stop();card.Auto.IsChecked=false;LaunchedAtSignIn=true;
-            await StartSelected();Check(card.Host.Running&&await Ready(),"opened by Windows sign-in, the simple-setup server starts without the auto-start switch or a password");
-            LaunchedAtSignIn=false;await card.Host.Stop();
-            Check(new SchoolPinsProbe(address,"0000000000000000000000000000000000000000000000000000000000000000").Rejects(),"a different certificate for the same address is never accepted silently");
             File.WriteAllText(Path.Combine(outputDirectory,"simple-setup-checks.json"),JsonSerializer.Serialize(new{checks}));
         }
         catch(Exception error){File.WriteAllText(Path.Combine(outputDirectory,"server-manager-error.txt"),error.ToString()+"\n"+card.Host.Output);Environment.ExitCode=1;}

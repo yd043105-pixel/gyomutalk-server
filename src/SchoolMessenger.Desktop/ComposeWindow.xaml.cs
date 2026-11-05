@@ -23,7 +23,7 @@ public partial class ComposeWindow : Window
     public ComposeWindow(MainWindow main, Person[] people, string? recipient, string? title, string[]? selectedIds = null)
     {
         this.main = main; this.people = people;
-        Owner = main; Resources = main.Resources;
+        main.RegisterWorkWindow(this); Resources = main.Resources;
         InitializeComponent(); StatusTone.Watch(Feedback);
         InitializeEditor();
         SubmissionDate.SelectedDate = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(9)).Date.AddDays(7);
@@ -161,7 +161,7 @@ public partial class ComposeWindow : Window
     }
     void WindowClosing(object? sender, CancelEventArgs e)
     {
-        if (sending && !sent) { e.Cancel = true; return; }
+        if (sending && !sent && !main.ClosingWorkWindows) { e.Cancel = true; return; }
         main.Favorites = people.Where(p => p.Favorite).Select(p => p.Id).ToHashSet();
         if (!sent)try{SaveDraft();}catch(Exception error){e.Cancel=true;Feedback.Text="임시저장하지 못했습니다: "+error.Message;}
     }

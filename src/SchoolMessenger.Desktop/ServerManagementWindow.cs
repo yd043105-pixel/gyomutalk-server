@@ -27,7 +27,7 @@ public sealed partial class ServerManagementWindow:Window
     internal Window InteractionOwner=>Window.GetWindow(hostView)??this;
     public ServerManagementWindow(Window owner,Api api,bool officeService=true)
     {
-        this.api=api;Owner=owner;Resources=owner.Resources;Title="관리자 시스템 · 서버 운영";Width=940;Height=760;MinWidth=760;MinHeight=560;Style=(Style)FindResource("SchoolWindow");
+        this.api=api;if(owner is MainWindow workOwner)workOwner.RegisterWorkWindow(this);else Owner=owner;Resources=owner.Resources;Title="관리자 시스템 · 서버 운영";Width=940;Height=760;MinWidth=760;MinHeight=560;Style=(Style)FindResource("SchoolWindow");
         MaxHeight=SystemParameters.WorkArea.Height-30;WindowStartupLocation=WindowStartupLocation.CenterOwner;
         var dock=hostView;dock.Margin=new Thickness(24,18,24,12);Content=dock;
         var footer=new DockPanel{Margin=new Thickness(0,12,0,0)};var refresh=new Button{Content="상태 새로고침",MinHeight=38,Margin=new Thickness(0,0,16,0)};refresh.Click+=async(_,_)=>await Refresh(true);DockPanel.SetDock(refresh,Dock.Left);footer.Children.Add(refresh);footer.Children.Add(feedback);DockPanel.SetDock(footer,Dock.Bottom);dock.Children.Add(footer);
@@ -56,7 +56,7 @@ public sealed partial class ServerManagementWindow:Window
         if(owner is MainWindow main)
         {
             var actions=new WrapPanel();var accounts=new Button{Content="교직원 계정 · 승인",Margin=new Thickness(0,4,8,8)};accounts.Click+=(_,_)=>new OfficeWindow(main,true).Show();actions.Children.Add(accounts);
-            var portal=new Button{Content="학생·학부모 관리",Margin=new Thickness(0,4,0,8)};portal.Click+=(_,_)=>new PortalAdministrationWindow(this).Show();actions.Children.Add(portal);school.Children.Insert(0,Section("계정 관리",actions));
+            school.Children.Insert(0,Section("계정 관리",actions));
         }
         apply.Click+=async(_,_)=>
         {

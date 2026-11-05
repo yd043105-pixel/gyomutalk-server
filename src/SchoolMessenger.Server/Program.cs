@@ -16,13 +16,24 @@ using SchoolMessenger.Shared;
 using SchoolMessenger.Contracts;
 
 var checkDeploymentReview=args.Contains("--deployment-review-check");
-var builder = WebApplication.CreateBuilder(args.Where(a=>a!="--deployment-review-check").ToArray());
+var retireAppData=args.Contains("--retire-app-data");
+var builder = WebApplication.CreateBuilder(args.Where(a=>a is not ("--deployment-review-check" or "--retire-app-data")).ToArray());
+if(retireAppData)
+{
+    var data=Path.GetFullPath(builder.Configuration["School:DataDirectory"]??"data");
+    if(!File.Exists(Path.Combine(data,"school.db")))throw new InvalidOperationException("정리할 교내 서버 데이터베이스가 없습니다.");
+    using var lease=BackendDatabase.Acquire(data);
+    using var db=new Microsoft.Data.Sqlite.SqliteConnection(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder{DataSource=Path.Combine(data,"school.db"),ForeignKeys=true}.ToString());db.Open();
+    using(var wipe=db.CreateCommand()){wipe.CommandText="PRAGMA secure_delete=ON";wipe.ExecuteNonQuery();}
+    PcOnlyRetirement.Apply(db,data);BackendDatabase.Check(db);
+    Console.WriteLine("PC-only data cleanup completed; verified backups were retained beside the data.");return;
+}
 if(checkDeploymentReview){Console.WriteLine(JsonSerializer.Serialize(DeploymentReview.Load(builder.Configuration,builder.Environment.IsDevelopment(),"office").Summary()));return;}
 if(OperationsCommand.TryRun(builder.Configuration,"School","school.db"))return;
 if(BackendRecovery.TryRun(builder.Configuration,"School","school.db"))return;
+if(builder.Configuration.GetValue<int>("School:ExternalPort")!=0)throw new InvalidOperationException("PC 전용 버전에서는 앱용 외부 접속 포트를 사용할 수 없습니다. 서버 관리자에서 기존 외부 접속 설정을 해제하세요.");
 var deploymentReview=DeploymentReview.Load(builder.Configuration,builder.Environment.IsDevelopment(),"office");
 builder.Services.AddSingleton(deploymentReview);
-ExternalAccess.Validate(builder.Configuration);
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 210L * 1024 * 1024);
 if (builder.Configuration["School:CertificateThumbprint"] is { Length: > 0 } thumbprint)
 {
@@ -41,10 +52,7 @@ builder.Services.AddSingleton<ServerDiscovery>();
 builder.Services.AddHostedService(s=>s.GetRequiredService<ServerDiscovery>());
 builder.Services.AddSingleton(s=>new FeedbackMail(s.GetRequiredService<Store>().Open,"office",s.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>(),builder.Configuration,(host,recipient)=>deploymentReview.Demand("error-mail",host,587,recipient)));
 builder.Services.AddHostedService(s=>s.GetRequiredService<FeedbackMail>());
-builder.Services.AddSingleton<ExternalAnnouncements>();
-builder.Services.AddHostedService(s => s.GetRequiredService<ExternalAnnouncements>());
 builder.Services.AddSingleton<Timetables>();
-builder.Services.AddHostedService(s => s.GetRequiredService<Timetables>());
 builder.Services.AddSingleton<Presence>();
 builder.Services.AddSingleton<RemoteSessions>();
 builder.Services.AddHostedService(s => s.GetRequiredService<RemoteSessions>());
@@ -88,7 +96,7 @@ builder.Services.AddRateLimiter(o =>
         RateLimitPartition.GetFixedWindowLimiter(c.User.Identity?.IsAuthenticated==true?"user:"+c.User.FindFirstValue(ClaimTypes.NameIdentifier):"ip:"+(c.Connection.RemoteIpAddress?.ToString() ?? "local"), _ =>
             new FixedWindowRateLimiterOptions { PermitLimit = 600, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     o.AddPolicy("login", c => RateLimitPartition.GetFixedWindowLimiter(c.Connection.RemoteIpAddress?.ToString() ?? "local", _ =>
-        new FixedWindowRateLimiterOptions { PermitLimit = ExternalAccess.Is(c) ? 20 : Math.Clamp(builder.Configuration.GetValue("School:LoginLimitPerMinute",120),20,300), Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+        new FixedWindowRateLimiterOptions { PermitLimit = Math.Clamp(builder.Configuration.GetValue("School:LoginLimitPerMinute",120),20,300), Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
     o.AddPolicy("credentials", c => RateLimitPartition.GetFixedWindowLimiter(c.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? c.Connection.RemoteIpAddress?.ToString() ?? "local", _ =>
         new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(15), QueueLimit = 0 }));
     o.AddPolicy("upload", _ => RateLimitPartition.GetConcurrencyLimiter("uploads", _ => new ConcurrencyLimiterOptions { PermitLimit = 4, QueueLimit = 0 }));
@@ -137,11 +145,10 @@ if (builder.Configuration["School:ResetAdminPassword"] is { Length: > 0 } newPas
 File.WriteAllText(Path.Combine(store.Root, ".initialized"), "initialized");
 var networks = (builder.Configuration["School:AllowedNetworks"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
     .Select(System.Net.IPNetwork.Parse).ToArray();
-ExternalAccess.Use(app);
 // Never accept credentials over plain HTTP from another computer, including Development.
 app.Use(async (context, next) =>
 {
-    if (context.Request.Path.StartsWithSegments("/api") && !(context.Request.Method == "POST" && (context.Request.Path == "/api/attachments" || context.Request.Path == "/api/external-announcements/attachments" || context.Request.Path == "/api/timetable/import")))
+    if (context.Request.Path.StartsWithSegments("/api") && !(context.Request.Method == "POST" && (context.Request.Path == "/api/attachments" || context.Request.Path == "/api/timetable/import")))
     {
         var limit = context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
         if (limit is { IsReadOnly: false }) limit.MaxRequestBodySize = context.Request.Path.StartsWithSegments("/api/surveys") ? 524_288 : 131_072;
@@ -153,7 +160,7 @@ app.Use(async (context, next) =>
     }
     if (!context.Request.IsHttps && context.Connection.RemoteIpAddress is { } ip && !System.Net.IPAddress.IsLoopback(ip))
     { context.Response.StatusCode = 400; await context.Response.WriteAsync("교내 접속에는 HTTPS가 필요합니다."); return; }
-    if (!ExternalAccess.Is(context) && context.Connection.RemoteIpAddress is { } remote && !System.Net.IPAddress.IsLoopback(remote))
+    if (context.Connection.RemoteIpAddress is { } remote && !System.Net.IPAddress.IsLoopback(remote))
     {
         if (remote.IsIPv4MappedToIPv6) remote = remote.MapToIPv4();
         if (!networks.Any(n => n.Contains(remote))) { context.Response.StatusCode = 403; return; }
@@ -229,7 +236,7 @@ app.MapGet("/api/session", (HttpContext c, IAntiforgery antiforgery) => Results.
 {
     schoolName = builder.Configuration["School:Name"],
     csrfToken = antiforgery.GetAndStoreTokens(c).RequestToken,
-    external = ExternalAccess.Is(c),
+    external = false,
     user = c.User.Identity?.IsAuthenticated == true ? PublicUser(store.GetUser(UserId(c))!) : null
 }));
 // One wording for every failure, so the answer never tells whether an account exists or is locked.
@@ -257,7 +264,6 @@ app.MapPost("/api/login", async Task<IResult> (Login request, HttpContext c) =>
     // Only someone with the right password learns the account is stopped, so wrong guesses still look the same and count.
     if (!user.Active) return Error("사용 중지된 계정입니다. 관리자에게 ‘다시 사용’을 요청하세요.", 403);
     // The shared first password must never open a session from outside, so first-time setup stays inside the school.
-    if (ExternalAccess.Is(c) && initialProfile is {NeedsActivation:true} or {SharedPassword:true}) return Error("처음 설정은 학교 안 PC에서 마친 뒤 학교 밖에서 로그인하세요.", 403);
     if (verified == PasswordVerificationResult.SuccessRehashNeeded)
         store.Execute("UPDATE Users SET PasswordHash=$hash WHERE Id=$id AND PasswordHash=$old", ("$hash", hasher.HashPassword(user, request.Password)), ("$id", user.Id), ("$old", user.PasswordHash));
     store.Execute("UPDATE Users SET FailedAttempts=0,LockedUntil=0 WHERE Id=$id", ("$id", user.Id));
@@ -315,8 +321,7 @@ app.MapPost("/api/password", async Task<IResult> (PasswordChange request, HttpCo
 }).RequireAuthorization().RequireRateLimiting("credentials");
 var api = app.MapGroup("/api").RequireAuthorization();
 api.MapGet("/users", (Presence presence) => store.Users().Where(u => u.Active).Select(u => new
-{ u.Id, u.Name, u.Department,u.Position, online = presence.Online(u.Id), away = presence.Away(u.Id),mobile=presence.Mobile(u.Id,store) }));
-Presence.MapMobile(api,store);
+{ u.Id, u.Name, u.Department,u.Position, online = presence.Online(u.Id), away = presence.Away(u.Id),mobile=false }));
 
 api.MapPost("/attachments", async Task<IResult> (HttpContext c) =>
 {
@@ -621,7 +626,6 @@ app.MapHub<MessageHub>("/hub", options => options.CloseOnAuthenticationExpiratio
 app.MapHub<RemoteHub>("/remote", options => { options.CloseOnAuthenticationExpiration = true; options.ApplicationMaxBufferSize = 4096; options.TransportMaxBufferSize = 4096; });
 // Cleanup before accepting connections also handles expiry while the server was offline.
 app.Services.GetRequiredService<Maintenance>().Cleanup();
-ExternalAnnouncements.Map(app, app.Services.GetRequiredService<ExternalAnnouncements>());
 Timetables.Map(app, app.Services.GetRequiredService<Timetables>());
 BackendOperations.Map(app,store.Open);
 DeploymentReview.Map(app,deploymentReview);

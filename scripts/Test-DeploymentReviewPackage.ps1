@@ -2,7 +2,7 @@
 $ErrorActionPreference='Stop'
 $PackageDirectory=[IO.Path]::GetFullPath($PackageDirectory)
 $config=Join-Path $PackageDirectory 'config'
-$allowed=@('registration-policy.draft.json','deployment-review.draft.json','server-operations.example.json','cloudflared.example.yml')
+$allowed=@('registration-policy.draft.json','deployment-review.draft.json','server-operations.example.json')
 foreach($file in Get-ChildItem -LiteralPath $config -Recurse -File){
     if($file.DirectoryName -ne $config -or $file.Name -notin $allowed){throw 'Only public configuration templates may be packaged. Keep school review records outside the package.'}
 }

@@ -7,7 +7,7 @@ using SchoolMessenger.Contracts;
 
 namespace SchoolMessenger.Shared;
 
-/// <summary>Reads the school's two XLSX layouts without executing Excel, formulas or external connections.</summary>
+/// <summary>Reads the NEIS timetable workbooks (base, classroom and changed lessons) without executing Excel, formulas or external connections.</summary>
 public static class TimetableWorkbook
 {
     static readonly Regex ClassLabel=new(@"^(?:\d+\s*\()?\s*(\d+)\s*학년\s*(\d+)\s*반\s*\)?$",RegexOptions.CultureInvariant);
@@ -16,7 +16,7 @@ public static class TimetableWorkbook
     const int MaxCells=40_000;
     public static TimetableWorkbookData Read(string path,string kind)
     {
-        if(kind is not("base"or"daily"))throw new FilePolicyException("기초 또는 일자별 시간표를 선택하세요.");
+        if(kind is not("auto"or"base"or"daily"or"changes"))throw new FilePolicyException("시간표 종류를 확인하세요.");
         try{return ReadCore(path,kind);}catch(FilePolicyException){throw;}catch(Exception e)when(e is InvalidDataException or XmlException or ArgumentException or FormatException or OverflowException or InvalidOperationException)
         {throw new FilePolicyException("손상되었거나 지원하지 않는 시간표 엑셀입니다.");}
     }
@@ -61,6 +61,8 @@ public static class TimetableWorkbook
             if(heading is null)continue;
             var y=int.Parse(heading.Groups[1].Value);var s=int.Parse(heading.Groups[2].Value);
             if(y is <2000 or >2100||s is <1 or >2||year!=0&&(year!=y||semester!=s))throw new FilePolicyException("학년도·학기가 서로 다릅니다.");year=y;semester=s;
+            // The title names the file; a workbook without one is told apart by its headers.
+            if(kind=="auto")kind=values.Values.Any(v=>v.Contains("(변경수업)"))?"changes":values.Values.Any(v=>v=="일자")?"daily":"base";
             if(kind=="base")
             {
                 var dayHeaders=values.Where(v=>v.Key.Row<=15&&Days.Contains(v.Value)).OrderBy(v=>v.Key.Col).ToArray();
@@ -80,32 +82,42 @@ public static class TimetableWorkbook
             }
             else
             {
-                var periodHeader=values.SingleOrDefault(v=>v.Value=="교시");var dateHeader=values.SingleOrDefault(v=>v.Value=="일자");
-                if(periodHeader.Equals(default(KeyValuePair<(int Row,int Col),string>))||dateHeader.Equals(default(KeyValuePair<(int Row,int Col),string>)))throw new FilePolicyException("일자·교시 머리글을 확인하세요.");
-                var classHeaders=values.Where(v=>v.Key.Row>periodHeader.Key.Row&&v.Key.Row<=periodHeader.Key.Row+3&&ClassLabel.IsMatch(v.Value)).ToArray();
-                if(classHeaders.Length==0||classHeaders.Select(c=>c.Key.Row).Distinct().Count()!=1)throw new FilePolicyException("일자별 시간표의 학급 머리글을 확인하세요.");
-                foreach(var p in values.Where(v=>v.Key.Col==periodHeader.Key.Col&&v.Key.Row>classHeaders[0].Key.Row&&Period(v.Value)>0).OrderBy(v=>v.Key.Row))
+                // NEIS prints one table per page: each page repeats its headers and may continue a day from the page before.
+                var pages=values.Where(v=>v.Value=="교시").OrderBy(v=>v.Key.Row).ToArray();if(pages.Length==0)throw new FilePolicyException("일자·교시 머리글을 확인하세요.");
+                var captionText="";
+                for(var page=0;page<pages.Length;page++)
                 {
-                    var match=DateLabel.Match(Get(p.Key.Row,dateHeader.Key.Col));if(!match.Success)throw new FilePolicyException("수업일을 읽을 수 없습니다: "+Address(p.Key.Row,dateHeader.Key.Col));
-                    var day=new DateOnly(int.Parse(match.Groups["y"].Value),int.Parse(match.Groups["m"].Value),int.Parse(match.Groups["d"].Value));
-                    if(day.Year!=year||date is not null&&date!=day.ToString("yyyy-MM-dd"))throw new FilePolicyException("한 파일에는 같은 학년도의 수업일 하나만 넣어주세요.");date=day.ToString("yyyy-MM-dd");
-                    var caption=Get(p.Key.Row,dateHeader.Key.Col);if(Regex.IsMatch(caption,@"[월화수목금토일]요일")&&!caption.Contains(Days[((int)day.DayOfWeek+6)%7]+"요일"))throw new FilePolicyException("수업일의 날짜와 요일이 다릅니다.");
-                    foreach(var c in classHeaders)Add(ClassLabel.Match(c.Value),((int)day.DayOfWeek+6)%7+1,Period(p.Value),Get(p.Key.Row,c.Key.Col),Address(p.Key.Row,c.Key.Col));
+                    var periodHeader=pages[page];var dateHeader=values.Where(v=>v.Value=="일자"&&v.Key.Row==periodHeader.Key.Row).Select(v=>v.Key).FirstOrDefault();if(dateHeader==default)throw new FilePolicyException("일자·교시 머리글을 확인하세요.");
+                    var next=page+1<pages.Length?pages[page+1].Key.Row:int.MaxValue;
+                    var classHeaders=values.Where(v=>v.Key.Row>periodHeader.Key.Row&&v.Key.Row<=periodHeader.Key.Row+3&&ClassLabel.IsMatch(v.Value)).ToArray();
+                    if(classHeaders.Length==0||classHeaders.Select(c=>c.Key.Row).Distinct().Count()!=1)throw new FilePolicyException("일자별 시간표의 학급 머리글을 확인하세요.");
+                    foreach(var p in values.Where(v=>v.Key.Col==periodHeader.Key.Col&&v.Key.Row>classHeaders[0].Key.Row&&v.Key.Row<next&&Period(v.Value)>0).OrderBy(v=>v.Key.Row))
+                    {
+                        var caption=Get(p.Key.Row,dateHeader.Col);if(caption.Length>0)captionText=caption;
+                        var match=DateLabel.Match(captionText);if(!match.Success)throw new FilePolicyException("수업일을 읽을 수 없습니다: "+Address(p.Key.Row,dateHeader.Col));
+                        var day=new DateOnly(int.Parse(match.Groups["y"].Value),int.Parse(match.Groups["m"].Value),int.Parse(match.Groups["d"].Value));
+                        if(day.Year!=year&&day.Year!=year+1)throw new FilePolicyException("수업일이 학년도와 다릅니다: "+Address(p.Key.Row,dateHeader.Col));
+                        if(Regex.IsMatch(captionText,@"[월화수목금토일]요일")&&!captionText.Contains(Days[((int)day.DayOfWeek+6)%7]+"요일"))throw new FilePolicyException("수업일의 날짜와 요일이 다릅니다.");
+                        var when=day.ToString("yyyy-MM-dd");
+                        foreach(var c in classHeaders){var text=Get(p.Key.Row,c.Key.Col);if(kind=="changes"&&text.Length==0)continue;Add(ClassLabel.Match(c.Value),((int)day.DayOfWeek+6)%7+1,Period(p.Value),text,Address(p.Key.Row,c.Key.Col),when);}
+                    }
                 }
             }
-            void Add(Match label,int day,int period,string value,string address)
+            void Add(Match label,int day,int period,string value,string address,string? when=null)
             {
                 var grade=int.Parse(label.Groups[1].Value);var number=int.Parse(label.Groups[2].Value);if(grade is <1 or >3||number is <1 or >99)throw new FilePolicyException("학년·반 번호를 확인하세요: "+address);
                 var lesson=Regex.Match(value,@"^(.*)\(([^()]*)\)$",RegexOptions.Singleline);var subject=lesson.Success?lesson.Groups[1].Value.Trim():value;var teacher=lesson.Success?lesson.Groups[2].Value.Trim():"";
                 if(value.Length>0&&(!lesson.Success||subject.Length==0||teacher.Length==0))throw new FilePolicyException("과목(교사) 양식을 확인하세요: "+address);
                 if(subject.Length>200||teacher.Length>100)throw new FilePolicyException("과목·교사 이름이 너무 깁니다: "+address);
-                cells.Add(new($"{grade}학년 {number}반",grade,number,day,period,subject,teacher,(string?)sheet.Attribute("name")+"!"+address));
+                cells.Add(new($"{grade}학년 {number}반",grade,number,day,period,subject,teacher,(string?)sheet.Attribute("name")+"!"+address,when));
             }
         }
-        if(cells.Count==0||cells.Count>10_000||kind=="base"&&cells.All(c=>c.Subject.Length==0)||cells.GroupBy(c=>(c.ClassKey,c.Day,c.Period)).Any(g=>g.Count()>1)||kind=="daily"&&date is null)throw new FilePolicyException("시간표가 비어 있거나 학급·교시가 중복되었습니다.");
+        if(kind=="auto")throw new FilePolicyException("시간표 머리글을 찾을 수 없습니다.");
+        var dates=cells.Select(c=>c.Date).Where(d=>d is not null).Distinct().ToArray();if(dates.Length==1)date=dates[0];
+        if(kind!="changes"&&cells.Count==0||cells.Count>10_000||kind=="base"&&cells.All(c=>c.Subject.Length==0)||cells.GroupBy(c=>(c.ClassKey,c.Date,c.Day,c.Period)).Any(g=>g.Count()>1)||kind=="daily"&&dates.Length==0)throw new FilePolicyException("시간표가 비어 있거나 학급·교시가 중복되었습니다.");
         return new(kind,year,semester,date,cells.ToArray());
     }
-    static int Period(string value)=>decimal.TryParse(value,NumberStyles.Float,CultureInfo.InvariantCulture,out var p)&&p==decimal.Truncate(p)&&p is >=1 and <=12?(int)p:0;
+    static int Period(string value)=>decimal.TryParse(value.Replace("교시",""),NumberStyles.Float,CultureInfo.InvariantCulture,out var p)&&p==decimal.Truncate(p)&&p is >=1 and <=12?(int)p:0;
     static (int Row,int Col) Coordinate(string value){var match=Regex.Match(value,@"^([A-Z]{1,3})([1-9]\d{0,3})$");if(!match.Success)throw new FilePolicyException("셀 주소 오류입니다.");var col=0;foreach(var c in match.Groups[1].Value)col=checked(col*26+c-'A'+1);return(int.Parse(match.Groups[2].Value),col);}
     static ((int Row,int Col) Start,(int Row,int Col) End) Range(string value){var parts=value.Split(':');if(parts.Length!=2)throw new FilePolicyException("병합 범위 오류입니다.");var a=Coordinate(parts[0]);var b=Coordinate(parts[1]);if(a.Row>b.Row||a.Col>b.Col||b.Row>1000||b.Col>300)throw new FilePolicyException("병합 범위 제한을 넘었습니다.");return(a,b);}
     static string Address(int r,int c){var s="";while(c>0){c--;s=(char)('A'+c%26)+s;c/=26;}return s+r;}

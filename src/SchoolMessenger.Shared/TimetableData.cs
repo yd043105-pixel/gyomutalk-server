@@ -65,7 +65,7 @@ public sealed class TimetableData(Func<SqliteConnection> open)
                 var before=baseline?.Cells.SingleOrDefault(c=>c.ClassId==room&&c.Day==weekday&&c.Period==period);
                 var cell=selected.Cells.SingleOrDefault(c=>c.ClassId==room&&c.Day==weekday&&c.Period==period);
                 var sample=selected.Cells.First(c=>c.ClassId==room);
-                var changed=daily is not null&&((cell?.Subject??"")!=(before?.Subject??"")||(cell?.TeacherId??"")!=(before?.TeacherId??""));
+                var changed=daily is not null&&baseline is not null&&((cell?.Subject??"")!=(before?.Subject??"")||(cell?.TeacherName??"")!=(before?.TeacherName??""));
                 slots.Add(new(room,sample.ClassName,period,cell?.Subject??"",cell?.TeacherId??"",cell?.TeacherName??"",changed,before?.Subject??"",before?.TeacherName??"",daily is null?"base":"daily"));
             }
         }
@@ -74,9 +74,9 @@ public sealed class TimetableData(Func<SqliteConnection> open)
     public static void Validate(TimetableBatch b)
     {
         if(!Guid.TryParseExact(b.Id,"N",out _)||!Guid.TryParseExact(b.ClientId,"N",out _)||!Guid.TryParseExact(b.Owner,"N",out _)||b.Kind is not("base"or"daily")||b.Year is <2000 or >2100||b.Semester is <1 or >2||b.Cells is null||b.Cells.Length is <1 or >10000||b.FileName is null||b.FileName.Length>200)throw new FilePolicyException("시간표 게시 형식을 확인하세요.");
-        var start=Date(b.Start);var end=Date(b.End);if(start>end||start.Year!=b.Year||end>start.AddYears(1))throw new FilePolicyException("학년도와 적용 기간을 확인하세요.");
+        var start=Date(b.Start);var end=Date(b.End);if(start>end||start.Year!=b.Year&&start.Year!=b.Year+1||end>start.AddYears(1))throw new FilePolicyException("학년도와 적용 기간을 확인하세요.");
         if(b.Kind=="daily"&&(b.Date!=b.Start||b.Date!=b.End))throw new FilePolicyException("일자별 수업일을 확인하세요.");
-        if(b.Cells.Any(c=>c is null||!Guid.TryParseExact(c.ClassId,"N",out _)||c.ClassName is null||c.Subject is null||c.TeacherName is null||c.TeacherId is null||c.ClassName.Length is <1 or >100||c.Day is <1 or >7||c.Period is <1 or >12||c.Subject.Length>200||c.TeacherName.Length>100||c.Subject.Length>0&&!Guid.TryParseExact(c.TeacherId,"N",out _)||c.Subject.Length==0&&(c.TeacherId.Length>0||c.TeacherName.Length>0))||b.Cells.GroupBy(c=>(c.ClassId,c.Day,c.Period)).Any(g=>g.Count()>1))throw new FilePolicyException("학급·교사·교시 정보가 올바르지 않습니다.");
+        if(b.Cells.Any(c=>c is null||!Guid.TryParseExact(c.ClassId,"N",out _)||c.ClassName is null||c.Subject is null||c.TeacherName is null||c.TeacherId is null||c.ClassName.Length is <1 or >100||c.Day is <1 or >7||c.Period is <1 or >12||c.Subject.Length>200||c.TeacherName.Length>100||c.Subject.Length>0&&c.TeacherName.Length==0||c.TeacherId.Length>0&&!Guid.TryParseExact(c.TeacherId,"N",out _)||c.Subject.Length==0&&(c.TeacherId.Length>0||c.TeacherName.Length>0))||b.Cells.GroupBy(c=>(c.ClassId,c.Day,c.Period)).Any(g=>g.Count()>1))throw new FilePolicyException("학급·교사·교시 정보가 올바르지 않습니다.");
         if(b.Kind=="daily"&&b.Cells.Any(c=>c.Day!=((int)start.DayOfWeek+6)%7+1))throw new FilePolicyException("일자별 시간표 날짜와 요일이 다릅니다.");
     }
 }

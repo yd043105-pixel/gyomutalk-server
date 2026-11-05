@@ -24,7 +24,7 @@ public sealed partial class LocalServerWindow
     string activeService="office",activePage="server";
     int viewRevision;
     bool closingPage,checkingSessions,signingIn;
-    static string RoleName(string role)=>role=="office"?"교내 업무":"학생·학부모 소식";
+    static string RoleName(string role)=>"교내 업무";
 
     void CloseAdministrationPage()
     {
@@ -113,11 +113,9 @@ public sealed partial class LocalServerWindow
             Window controller=page switch
             {
                 "members"=>new OfficeWindow(this,source,true,"staff"),
-                "sections"=>new OfficeWindow(this,source,true,"sections"),
                 "rooms"=>new OfficeWindow(this,source,true,"rooms"),
                 "calendar"=>new OfficeWindow(this,source,true,"calendar"),
                 "audit"=>new OfficeWindow(this,source,true,"audit"),
-                "portal"=>new PortalAdministrationWindow(this,source,()=>SignOutAdministrator(role)),
                 "policy"=>new SchoolPolicyWindow(this,source),
                 "feedback"=>new FeedbackWindow(this,source,true),
                 _=>new ServerManagementWindow(this,source,role=="office")
@@ -126,7 +124,7 @@ public sealed partial class LocalServerWindow
             administrationController=controller;
             controller.Closed+=(_,_)=>{if(!closingPage&&ReferenceEquals(administrationController,controller))_ = SignOutAdministrator(role);};
             // Office and student-parent pages draw their own cards; overview pages sit directly on the canvas.
-            administrationView.Children.Add(controller is ServerManagementWindow or OfficeWindow or PortalAdministrationWindow?view:Surface(view,new Thickness(0)));
+            administrationView.Children.Add(controller is ServerManagementWindow or OfficeWindow?view:Surface(view,new Thickness(0)));
         }
         catch(ApiRequestException e)when(e.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden){await SignOutAdministrator(role);}
         catch(Exception e){if(revision==viewRevision){var panel=new StackPanel();panel.Children.Add(Note(e.Message));var retry=new Button{Content="다시 연결",HorizontalAlignment=HorizontalAlignment.Left};retry.Click+=async(_,_)=>await OpenAdministration(page,role);panel.Children.Add(retry);administrationView.Children.Add(Surface(panel));}}

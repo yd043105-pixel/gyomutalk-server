@@ -27,18 +27,4 @@ public partial class MainWindow
             foreach(var label in content.Children.OfType<TextBlock>())label.Margin=compact?new Thickness(0):new Thickness(0,3,0,0);
         }
     }
-    async Task<bool> RefreshNavigationAccess()
-    {
-        var source=Api;var allowed=false;
-        try
-        {
-            if(source?.Session?.User is not null)
-                allowed=(await source.Get<JsonElement>("api/elective-management/access")).GetProperty("canManage").GetBoolean();
-        }
-        catch(Exception error)when(error is HttpRequestException or InvalidOperationException or JsonException or OperationCanceledException)
-        { /* An unavailable permission check must never leave the management entry visible. */ }
-        if(source!=Api)return false;
-        ElectivesButton.Visibility=allowed?Visibility.Visible:Visibility.Collapsed;
-        UpdateNavigationLayout();return allowed;
-    }
 }

@@ -27,10 +27,10 @@ public partial class MainWindow
         if (Api is null) return;
         if (target == "chat")
         {
-            if (OwnedWindows.OfType<ChatWindow>().FirstOrDefault() is not { } open) { new ChatWindow(this, people, null, room).Show(); return; }
+            if (SessionWindows.OfType<ChatWindow>().FirstOrDefault() is not { } open) { new ChatWindow(this, people, null, room).Show(); return; }
             open.Activate(); if (room is not null) _ = Run(() => open.ShowRoom(room));
         }
-        else if (target == "survey") OpenSurvey(); else if (target == "timetable") new TimetableWindow(this).Show(); else OpenMailbox("unread");
+        else if (target == "survey") OpenSurvey(); else if (target == "timetable") new TimetableWindow(this, room).Show(); else OpenMailbox("unread");
     }
     // Everything unread in one number: mail and chat together, without rooms set to silent or the room being read right now.
     async Task NotifyUnread(string target, string? room, ChatRoom[]? rooms = null)
@@ -44,7 +44,7 @@ public partial class MainWindow
         var goal = target == "message" && unreadCount > 0 || chats == 0 ? "message" : "chat";
         ShowToast($"안 읽은 메시지 {unreadCount + chats}{(unreadCount == 100 ? "+" : "")}개", $"업무 메시지 {unreadCount}{(unreadCount == 100 ? "+" : "")} · 채팅 {chats}", goal, goal == "chat" ? room ?? rooms.FirstOrDefault(r => r.Unread > 0 && !MutedRooms.Contains(r.Id))?.Id : null);
     }
-    bool Reading(string room) => OwnedWindows.OfType<ChatWindow>().Any(w => w.IsActive && w.RoomId == room);
+    bool Reading(string room) => SessionWindows.OfType<ChatWindow>().Any(w => w.IsActive && w.RoomId == room);
     async Task NotifyChat(string id)
     {
         if (Api is null) return;
@@ -53,6 +53,14 @@ public partial class MainWindow
         if (rooms.FirstOrDefault(r => r.Id == id) is not { Unread: > 0 } room || room.LastAt <= chatSeen.GetValueOrDefault(id)) { foreach (var known in rooms) chatSeen[known.Id] = known.LastAt; return; }
         if (MutedRooms.Contains(id) || Reading(id)) { chatSeen[id] = room.LastAt; return; }
         await NotifyUnread("chat", id, rooms);
+    }
+    // Several changed days arrive together when a weekly file goes up, so they share one notice.
+    async Task NotifyTimetable()
+    {
+        if (Api is null) return;
+        var fresh = (await Api.Get<SchoolMessenger.Contracts.TimetableNotice[]>("api/timetable/notices")).Where(n => knownTimetables.Add(n.Revision) && n.ReadAt is null).OrderBy(n => n.Date, StringComparer.Ordinal).ToArray();
+        foreach (var window in SessionWindows.OfType<TimetableWindow>().ToArray()) await window.Refresh();
+        if (fresh.Length > 0) ShowToast(fresh.Length == 1 ? "시간표가 변경되었습니다" : $"시간표 변경 {fresh.Length}건", fresh[0].Title, "timetable", fresh[0].Date);
     }
     async Task NotifySurvey(string id)
     {
@@ -64,9 +72,7 @@ public partial class MainWindow
     void OpenChatClick(object sender, RoutedEventArgs e) => OpenChat();
     void OpenSurveyClick(object sender, RoutedEventArgs e) => OpenSurvey();
     void OpenWorkClick(object sender, RoutedEventArgs e) { if (Api is not null) new WorkWindow(this).Show(); }
-    void OpenAnnouncementClick(object sender, RoutedEventArgs e) { if (Api is not null && !AppFeatures.Pending(this, "가정통신문")) new AnnouncementWindow(this).Show(); }
     void OpenTimetableClick(object sender,RoutedEventArgs e){if(Api is not null)new TimetableWindow(this).Show();}
-    void OpenCounselingClick(object sender,RoutedEventArgs e){if(Api is not null&&!AppFeatures.Pending(this,"상담 예약"))new CounselingWindow(this).Show();}
     void OpenChat(string[]? ids = null)
     {
         if (Api is null) return;

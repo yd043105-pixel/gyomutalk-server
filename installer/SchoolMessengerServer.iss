@@ -39,7 +39,8 @@ OutputBaseFilename=yymessenger-{#AppVersion}-server-setup-win-x64
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern windows11
-SetupIconFile=..\src\SchoolMessenger.Shared\Branding\brand_mark.ico
+SetupIconFile=..\src\SchoolMessenger.Shared\Branding\admin_mark.ico
+UninstallDisplayIcon={app}\admin_mark.ico
 DisableWelcomePage=no
 DisableDirPage=no
 DisableProgramGroupPage=no
@@ -54,14 +55,12 @@ Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 
 [Types]
 Name: "office"; Description: "교내 업무 서버 PC · 관리자 프로그램 포함"
-Name: "announcements"; Description: "학생·학부모용 학교 소식 서버 PC"
 Name: "administrator"; Description: "관리자 전용 PC · 서버 설치 없이 학교 서버에 연결"
 Name: "custom"; Description: "사용자 지정 · 시험 환경"; Flags: iscustom
 
 [Components]
 Name: "office"; Description: "교내 업무 서버 · 교직원 메시지·업무"; Types: office
-Name: "announcements"; Description: "학생·학부모 소식 서버 · 관리자 프로그램에서 필요할 때 설치"; Types: office announcements
-Name: "admin"; Description: "관리자 프로그램 · 서버·구성원·학교 설정"; Types: office announcements administrator custom; Flags: fixed
+Name: "admin"; Description: "관리자 프로그램 · 서버·구성원·학교 설정"; Types: office administrator custom; Flags: fixed
 
 [Tasks]
 Name: "desktopicon"; Description: "바탕화면에 관리자 프로그램 바로가기 만들기"; GroupDescription: "바로가기:"; Flags: unchecked
@@ -69,9 +68,9 @@ Name: "autostart"; Description: "Windows 로그인 시 관리자 프로그램 �
 
 [Files]
 Source: "{#PackageDirectory}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\src\SchoolMessenger.Shared\Branding\admin_mark.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PackageDirectory}\THIRD-PARTY-NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PackageDirectory}\server\*"; DestDir: "{app}\server"; Components: office; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#PackageDirectory}\announcement-server\*"; DestDir: "{app}\announcement-server"; Components: announcements; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#PackageDirectory}\client\*"; DestDir: "{app}\admin"; Components: admin; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#PackageDirectory}\scripts\*"; DestDir: "{app}\scripts"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#PackageDirectory}\config\*"; DestDir: "{app}\config"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -82,11 +81,11 @@ Source: "{#PackageDirectory}\docs\server-installer.md"; DestDir: "{app}"; DestNa
 [Icons]
 Name: "{group}\서버 설치·설정 안내"; Filename: "{app}\서버 설치 안내.txt"
 Name: "{group}\서버 프로그램 폴더"; Filename: "{app}"
-Name: "{group}\관리자 프로그램"; Filename: "{app}\admin\SchoolMessenger.exe"; Parameters: "--server-manager"; Components: admin
+Name: "{group}\관리자 프로그램"; Filename: "{app}\admin\SchoolMessenger.exe"; Parameters: "--server-manager"; IconFilename: "{app}\admin_mark.ico"; Components: admin
 #ifdef InstallerTest
-Name: "{userdesktop}\{#DesktopLinkName}"; Filename: "{app}\admin\SchoolMessenger.exe"; Parameters: "--server-manager"; Components: admin; Tasks: desktopicon
+Name: "{userdesktop}\{#DesktopLinkName}"; Filename: "{app}\admin\SchoolMessenger.exe"; Parameters: "--server-manager"; IconFilename: "{app}\admin_mark.ico"; Components: admin; Tasks: desktopicon
 #else
-Name: "{commondesktop}\{#DesktopLinkName}"; Filename: "{app}\admin\SchoolMessenger.exe"; Parameters: "--server-manager"; Components: admin; Tasks: desktopicon
+Name: "{commondesktop}\{#DesktopLinkName}"; Filename: "{app}\admin\SchoolMessenger.exe"; Parameters: "--server-manager"; IconFilename: "{app}\admin_mark.ico"; Components: admin; Tasks: desktopicon
 #endif
 Name: "{group}\서버 프로그램 제거"; Filename: "{uninstallexe}"
 
@@ -95,8 +94,6 @@ Name: "{group}\서버 프로그램 제거"; Filename: "{uninstallexe}"
 ; Teacher PCs on the same network reach the server over HTTPS and get its discovery reply (UDP 45983); other networks stay blocked.
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""GyomuTalk Office Server"""; Components: office; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""GyomuTalk Office Server"" dir=in action=allow program=""{app}\server\SchoolMessenger.Server.exe"" profile=any remoteip=localsubnet enable=yes"; Components: office; Flags: runhidden
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""GyomuTalk School News Server"""; Components: announcements; Flags: runhidden
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""GyomuTalk School News Server"" dir=in action=allow program=""{app}\announcement-server\SchoolMessenger.AnnouncementServer.exe"" profile=any remoteip=localsubnet enable=yes"; Components: announcements; Flags: runhidden
 #endif
 Filename: "{app}\admin\SchoolMessenger.exe"; Parameters: "--server-manager --configure-startup enable --startup-entry-name {#StartupEntryName}"; Components: admin; Tasks: autostart; Flags: runhidden runasoriginaluser
 Filename: "{app}\admin\SchoolMessenger.exe"; Parameters: "--server-manager --configure-startup disable --startup-entry-name {#StartupEntryName}"; Components: admin; Tasks: not autostart; Flags: runhidden runasoriginaluser
@@ -106,7 +103,6 @@ Filename: "{app}\서버 설치 안내.txt"; Description: "서버 설치·설정 
 #ifndef InstallerTest
 [UninstallRun]
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""GyomuTalk Office Server"""; Components: office; Flags: runhidden; RunOnceId: "Firewall1"
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""GyomuTalk School News Server"""; Components: announcements; Flags: runhidden; RunOnceId: "Firewall2"
 #endif
 
 [InstallDelete]

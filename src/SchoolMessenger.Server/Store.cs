@@ -97,6 +97,7 @@ public sealed class Store : IDisposable
         // Suggestions are made on PCs now. What the server drew from message text before goes away; tasks people added stay.
         Execute("DELETE FROM Todos WHERE Status IN ('suggested','dismissed')");
         Execute("UPDATE Todos SET Evidence=Id WHERE Evidence<>Id");
+        using var retirement = Open(); PcOnlyRetirement.Apply(retirement, Root);
     }
     public SqliteConnection Open()
     {

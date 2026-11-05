@@ -17,9 +17,10 @@ public sealed class TimetableWindow:Window
     readonly Api api;
     readonly StackPanel body=new(){Margin=new Thickness(24)};
     readonly TextBlock feedback=new(){TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,12,0,12)};
-    
+
     readonly ComboBox scope=new(){MinWidth=220};
     bool busy;
+    readonly ScrollViewer pageScroll=new(){VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
     JsonElement setup;
     string? draft,candidate,requestId;
     JsonElement imported;
@@ -27,8 +28,8 @@ public sealed class TimetableWindow:Window
     DatePicker? start,end;
     public TimetableWindow(MainWindow main,string? selectedDate=null)
     { StatusTone.Watch(feedback);
-        api=main.Api!;Owner=main;Resources=main.Resources;Title="교무톡 · 시간표";Width=960;Height=740;MinWidth=700;MinHeight=520;FontSize=13;
-        Style=(Style)FindResource("SchoolWindow");WindowStartupLocation=WindowStartupLocation.CenterOwner;var page=new Border{Child=new ScrollViewer{Content=body,VerticalScrollBarVisibility=ScrollBarVisibility.Auto}};page.SetResourceReference(Border.BackgroundProperty,"Surface");Content=page;
+        api=main.Api!;main.RegisterWorkWindow(this);Resources=main.Resources;Title="교무톡 · 시간표";Width=960;Height=740;MinWidth=700;MinHeight=520;FontSize=13;
+        Style=(Style)FindResource("SchoolWindow");WindowStartupLocation=WindowStartupLocation.CenterOwner;var page=new Border{Child=pageScroll};pageScroll.Content=body;page.SetResourceReference(Border.BackgroundProperty,"Surface");Content=page;
         if(DateTime.TryParse(selectedDate,out var day)){selected=day;weekly=false;}
         Loaded+=async(_,_)=>await Run(Load);
     }
@@ -55,14 +56,18 @@ public sealed class TimetableWindow:Window
     }
     async Task Load()
     {
-        setup=await api.Get<JsonElement>("api/timetable/setup");body.Children.Clear();
-        var choices=new[]{new Choice("mine","내 수업")}.Concat(setup.GetProperty("classes").EnumerateArray().Select(r=>new Choice(r.GetProperty("id").GetString()!,r.GetProperty("name").GetString()!))).ToArray();
+        setup=await api.Get<JsonElement>("api/timetable/setup");body.Children.Clear();pageScroll.ScrollToTop();
+        // A homeroom teacher's own class comes right after their own lessons.
+        var ownClasses=setup.GetProperty("myClasses").EnumerateArray().Select(c=>c.GetString()).ToArray();var rooms=setup.GetProperty("classes").EnumerateArray().Select(r=>(Id:r.GetProperty("id").GetString()!,Name:r.GetProperty("name").GetString()!)).ToArray();
+        var choices=new[]{new Choice("mine","내 수업")}.Concat(rooms.Where(r=>ownClasses.Contains(r.Id)).Select(r=>new Choice(r.Id,"우리 반 · "+r.Name))).Concat(rooms.Where(r=>!ownClasses.Contains(r.Id)).Select(r=>new Choice(r.Id,r.Name))).ToArray();
         var previous=(scope.SelectedItem as Choice)?.Id;scope.SelectionChanged-=ScopeChanged;scope.ItemsSource=choices;scope.SelectedItem=choices.FirstOrDefault(c=>c.Id==previous)??choices[0];scope.SelectionChanged+=ScopeChanged;
         body.Children.Add(Head());body.Children.Add(feedback);
         var notices=await api.Get<TimetableNotice[]>("api/timetable/notices");
-        foreach(var n in notices.Where(n=>n.ReadAt is null))
+        var unread=notices.Where(n=>n.ReadAt is null).OrderBy(n=>n.Date,StringComparer.Ordinal).ToArray();
+        if(unread.Length>1){var all=new Button{Content="알림 모두 확인",HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,0,0,8)};all.SetResourceReference(StyleProperty,"SubtleButton");all.Click+=async(_,_)=>await Run(async()=>{foreach(var n in unread)await api.Send<JsonElement>(HttpMethod.Post,$"api/timetable/notices/{n.Revision}/read");await Load();});body.Children.Add(all);}
+        foreach(var n in unread.Take(5))
         {
-            var note=new Button{Content=n.Title+" · "+n.Date,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,0,0,8),ToolTip="누르면 그 날짜의 시간표를 봅니다."};note.SetResourceReference(Control.BackgroundProperty,"WarningTint");note.SetResourceReference(Control.ForegroundProperty,"Warning");note.BorderThickness=new Thickness(0);
+            var note=new Button{Content=n.Title,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,0,0,8),ToolTip="누르면 그 날짜의 시간표를 봅니다."};note.SetResourceReference(Control.BackgroundProperty,"ChangeTint");note.SetResourceReference(Control.ForegroundProperty,"ChangeInk");note.BorderThickness=new Thickness(0);
             note.Click+=async(_,_)=>await Run(async()=>{selected=DateTime.Parse(n.Date);weekly=false;var choice=choices.FirstOrDefault(c=>n.ClassIds.Contains(c.Id));if(choice is not null)scope.SelectedItem=choice;await api.Send<JsonElement>(HttpMethod.Post,$"api/timetable/notices/{n.Revision}/read");await Load();});body.Children.Add(note);
         }
         await Show();
@@ -70,8 +75,8 @@ public sealed class TimetableWindow:Window
         {
             var tools=new WrapPanel{Margin=new Thickness(0,12,0,0)};body.Children.Add(tools);
             void Tool(string label,Func<Task> action){var b=new Button{Content=label,Margin=new Thickness(0,0,4,0)};b.SetResourceReference(StyleProperty,"SubtleButton");b.Click+=async(_,_)=>await Run(action);tools.Children.Add(b);}
-            if(setup.GetProperty("canManage").GetBoolean()){Tool("기초시간표 올리기",()=>Choose("base"));Tool("일자별 시간표 올리기",()=>Choose("daily"));Tool("게시 이력 · 취소",History);}
-            if(setup.GetProperty("isAdmin").GetBoolean())Tool("담당자 권한 · 담임 연결",Administration);
+            if(setup.GetProperty("canManage").GetBoolean()){Tool("시간표 올리기",Choose);Tool("게시 이력 · 취소",History);}
+            if(setup.GetProperty("isAdmin").GetBoolean())Tool("시간표 담당자 · 담임 연결",Administration);
         }
         var pending=setup.GetProperty("pending").GetInt32();if(pending>0)body.Children.Add(AdminUi.Label("앱 전달 대기 "+pending+"건 · 외부 연결이 복구되면 재시도합니다.","Muted",12));
         if(setup.GetProperty("error").ValueKind==JsonValueKind.String)body.Children.Add(AdminUi.Label(setup.GetProperty("error").GetString()!,"Warning",12));
@@ -90,10 +95,15 @@ public sealed class TimetableWindow:Window
             if(revision is not null&&revision!=day.Revision)throw new InvalidOperationException("조회 중 시간표가 갱신되었습니다. 다시 조회하세요.");revision=day.Revision;days.Add(day);
         }
         var lessons=days.SelectMany(d=>d.Slots).Where(s=>s.Subject.Length>0).ToArray();var published=days.Max(d=>d.PublishedAt);
-        if(published==0&&lessons.Length==0){view.Children.Add(AdminUi.Empty("아직 올라온 시간표가 없습니다","수업 담당자가 시간표를 올리면 여기에 표시됩니다."));return;}
+        if(published==0&&lessons.Length==0){view.Children.Add(AdminUi.Empty("아직 올라온 시간표가 없습니다",setup.GetProperty("canManage").GetBoolean()?"아래 ‘시간표 올리기’로 나이스에서 받은 파일을 올려 주세요.":"시간표 담당자가 올리면 여기에 표시됩니다."));return;}
         if(days.Any(d=>d.MissingClasses.Length>0))view.Children.Add(AdminUi.Label("일부 학급의 적용 가능한 기초시간표가 없습니다.","Warning",12));
         var periods=SchoolDay.Lessons(grade is >=1 and <=3?grade:1,7).ToList();foreach(var extra in lessons.Select(s=>s.Period).Distinct().Where(p=>p>7).Order())periods.Add(SchoolDay.Lessons(grade is >=1 and <=3?grade:1).FirstOrDefault(p=>p.Number==extra)??new SchoolPeriod(extra,extra+"교시","","",true));
-        string Second(TimetableSlot s)=>mine?s.ClassName:s.TeacherName;
+        TextBlock Lesson(TimetableSlot s,double size)
+        {
+            // The teacher sits right beside the subject, as in the NEIS tables; my own lessons say the class instead.
+            var line=new TextBlock{TextWrapping=TextWrapping.Wrap,FontSize=size};line.SetResourceReference(TextBlock.ForegroundProperty,s.Changed?"ChangeInk":"Blue");
+            line.Inlines.Add(new System.Windows.Documents.Run(s.Subject){FontWeight=FontWeights.SemiBold});if(!mine&&s.TeacherName.Length>0)line.Inlines.Add(new System.Windows.Documents.Run(" "+string.Join('⁠',s.TeacherName.ToCharArray())){FontSize=size-1,FontWeight=FontWeights.Normal});return line;
+        }
         string? Before(TimetableSlot s)=>s.Changed?"변경 전: "+(s.BeforeSubject.Length==0?"수업 없음":s.BeforeSubject+" · "+s.BeforeTeacher):null;
         if(weekly)
         {
@@ -116,8 +126,8 @@ public sealed class TimetableWindow:Window
                     var slots=shown[c].Day.Slots.Where(s=>s.Period==periods[r].Number&&s.Subject.Length>0).ToArray();var cell=new StackPanel{Margin=new Thickness(4)};
                     foreach(var s in slots)
                     {
-                        var content=new StackPanel();content.Children.Add(AdminUi.Label(s.Subject,s.Changed?"Warning":"Blue",13,true));content.Children.Add(AdminUi.Label(Second(s)+(s.Changed?" · 변경":""),"Muted",11));
-                        var card=new Border{Child=content,Padding=new Thickness(8),CornerRadius=new CornerRadius(6),Margin=new Thickness(0,0,0,2),ToolTip=Before(s)};card.SetResourceReference(Border.BackgroundProperty,s.Changed?"WarningTint":"Pale");cell.Children.Add(card);
+                        var content=new StackPanel();content.Children.Add(Lesson(s,13));if(mine||s.Changed)content.Children.Add(AdminUi.Label((mine?s.ClassName:"")+(s.Changed?(mine?" · ":"")+"변경":""),s.Changed?"ChangeInk":"Muted",11));
+                        var card=new Border{Child=content,Padding=new Thickness(8),CornerRadius=new CornerRadius(6),Margin=new Thickness(0,0,0,2),ToolTip=Before(s)};card.SetResourceReference(Border.BackgroundProperty,s.Changed?"ChangeTint":"Pale");cell.Children.Add(card);
                     }
                     var host=new Border{Child=cell,BorderThickness=new Thickness(0,1,0,0),MinHeight=60};host.SetResourceReference(Border.BorderBrushProperty,"Line");if(shown[c].Date==today)host.SetResourceReference(Border.BackgroundProperty,"Subtle");Place(host,r+1,c+1);
                 }
@@ -131,45 +141,77 @@ public sealed class TimetableWindow:Window
             foreach(var s in today)
             {
                 var period=periods.FirstOrDefault(p=>p.Number==s.Period);var row=new DockPanel();var left=new StackPanel{Width=112};left.Children.Add(AdminUi.Label(period?.Label.Split(' ')[0]??s.Period+"교시","Ink",13,true));if(period is{Start.Length:>0})left.Children.Add(AdminUi.Label(period.Start+" ~ "+period.End,"Faint",11));DockPanel.SetDock(left,Dock.Left);row.Children.Add(left);
-                if(s.Changed){var changed=AdminUi.Badge("변경","Warning",false);DockPanel.SetDock(changed,Dock.Right);row.Children.Add(changed);}
-                var middle=new StackPanel();middle.Children.Add(AdminUi.Label(s.Subject+" · "+Second(s),"Ink",13,true));if(Before(s) is{} before)middle.Children.Add(AdminUi.Label(before,"Warning",11));row.Children.Add(middle);
-                var card=AdminUi.Card(row,16);card.Margin=new Thickness(0,0,0,8);view.Children.Add(card);
+                if(s.Changed){var changed=AdminUi.Label("변경","ChangeInk",12,true);changed.VerticalAlignment=VerticalAlignment.Center;DockPanel.SetDock(changed,Dock.Right);row.Children.Add(changed);}
+                var middle=new StackPanel();middle.Children.Add(Lesson(s,13));if(mine)middle.Children.Add(AdminUi.Label(s.ClassName,"Muted",12));if(Before(s) is{} before)middle.Children.Add(AdminUi.Label(before,"ChangeInk",11));row.Children.Add(middle);
+                var card=AdminUi.Card(row,16);card.Margin=new Thickness(0,0,0,8);if(s.Changed)card.SetResourceReference(Border.BackgroundProperty,"ChangeTint");view.Children.Add(card);
             }
             if(!mine&&grade is >=1 and <=3)view.Children.Add(AdminUi.Label(string.Join(" · ",SchoolDay.Schedule(grade).Where(p=>!p.Lesson).Select(p=>p.Label)),"Faint",11));
         }
         if(published>0){var note=AdminUi.Label("마지막 게시 "+DateTimeOffset.FromUnixTimeMilliseconds(published).ToOffset(TimeSpan.FromHours(9)).ToString("M.d HH:mm")+(mine&&weekly?" · 표시 시간은 학년별 일과에 따릅니다":""),"Faint",11);note.Margin=new Thickness(0,8,0,0);view.Children.Add(note);}
     }
-    async Task Choose(string kind)
+    readonly List<(string Name,JsonElement Value)> imports=[];
+    public async Task Refresh(){if(view.Parent==body)await Run(Load);}
+    async Task Choose()
     {
-        var dialog=new Microsoft.Win32.OpenFileDialog{Filter="시간표 엑셀 (*.xlsx)|*.xlsx",Multiselect=false};if(dialog.ShowDialog(this)!=true)return;
-        using var form=new MultipartFormDataContent();form.Add(new StringContent(kind),"kind");form.Add(new StreamContent(File.OpenRead(dialog.FileName)),"file",Path.GetFileName(dialog.FileName));
-        imported=await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/import",content:form);draft=imported.GetProperty("draftId").GetString();candidate=null;requestId=null;
-        body.Children.Clear();body.Children.Add(Text("시간표 연결 확인",24));body.Children.Add(feedback);Action("조회 화면으로",Load);
-        var book=imported.GetProperty("workbook");body.Children.Add(Text($"{book.GetProperty("year")}학년도 {book.GetProperty("semester")}학기 · {(kind=="base"?"기초시간표":book.GetProperty("date").GetString())}"));
-        start=new DatePicker();end=new DatePicker();if(kind=="base"){body.Children.Add(Text("적용 시작일"));body.Children.Add(start);body.Children.Add(Text("적용 종료일"));body.Children.Add(end);}
-        classLinks.Clear();teacherLinks.Clear();
-        AddLinks("학급 연결",imported.GetProperty("classes"),setup.GetProperty("classes"),classLinks);
-        AddLinks("교직원 계정 연결 · 동명이인은 직접 선택",imported.GetProperty("teachers"),setup.GetProperty("teachers"),teacherLinks);
-        Action("변경 전후 미리보기",Preview);
-    }
-    void AddLinks(string heading,JsonElement sources,JsonElement options,Dictionary<string,ComboBox> links)
-    {
-        body.Children.Add(Text(heading,19));var choices=options.EnumerateArray().Select(r=>new Choice(r.GetProperty("id").GetString()!,r.TryGetProperty("department",out _)?TeacherLabel(r):r.GetProperty("name").GetString()!)).ToArray();
-        foreach(var source in sources.EnumerateArray())
+        var dialog=new Microsoft.Win32.OpenFileDialog{Title="나이스에서 받은 시간표 파일 선택",Filter="시간표 엑셀 (*.xlsx)|*.xlsx",Multiselect=true};if(dialog.ShowDialog(this)!=true)return;
+        imports.Clear();
+        foreach(var path in dialog.FileNames)
         {
-            var label=source.GetProperty("source").GetString()!;body.Children.Add(Text(label));var box=new ComboBox{ItemsSource=choices,Margin=new Thickness(0,0,0,12)};
-            var suggested=source.GetProperty("candidates").EnumerateArray().ToArray();if(suggested.Length==1)box.SelectedItem=choices.FirstOrDefault(c=>c.Id==suggested[0].GetString());links.Add(label,box);body.Children.Add(box);
+            var name=Path.GetFileName(path);feedback.Text=name+" 읽는 중…";
+            using var form=new MultipartFormDataContent();await using var file=File.OpenRead(path);form.Add(new StreamContent(file),"file",name);
+            try{imports.Add((name,await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/import",content:form)));}catch(Exception e){throw new InvalidOperationException(name+": "+e.Message);}
         }
+        feedback.Text="";candidate=null;requestId=null;teacherLinks.Clear();pageScroll.ScrollToTop();
+        body.Children.Clear();body.Children.Add(AdminUi.Heading("시간표 올리기",22));var intro=AdminUi.Label("올린 파일을 확인하세요. 기초시간표에서 달라지는 수업은 노란색으로 표시됩니다.");intro.Margin=new Thickness(0,8,0,16);body.Children.Add(intro);body.Children.Add(feedback);
+        var files=new StackPanel();var hasBase=false;
+        foreach(var (name,value) in imports)
+        {
+            var book=value.GetProperty("workbook");var kind=book.GetProperty("kind").GetString();var cells=book.GetProperty("cells").EnumerateArray().ToArray();hasBase|=kind=="base";
+            var grades=string.Join("·",cells.Select(c=>c.GetProperty("grade").GetInt32()).Distinct().Order());var dates=cells.Select(c=>c.TryGetProperty("date",out var d)&&d.ValueKind==JsonValueKind.String?d.GetString()!:"").Where(d=>d.Length>0).Distinct().Order().ToArray();
+            var range=dates.Length==0?"":dates.Length==1?dates[0]:dates[0]+" ~ "+dates[^1];
+            var what=kind=="base"?"기초시간표":kind=="changes"?(cells.Length==0?"변경 수업 · 이번 파일에는 변경이 없습니다":"변경 수업 "+cells.Length+"건 · "+range):"강의실별 수업 · "+range;
+            var row=new StackPanel{Margin=new Thickness(0,0,0,12)};row.Children.Add(AdminUi.Label(name,"Ink",13,true));row.Children.Add(AdminUi.Label((grades.Length>0?grades+"학년 · ":"")+what,"Muted",12));files.Children.Add(row);
+        }
+        body.Children.Add(AdminUi.Card(files,16));
+        start=new DatePicker();end=new DatePicker();
+        if(hasBase)
+        {
+            var first=imports.First(i=>i.Value.GetProperty("workbook").GetProperty("kind").GetString()=="base").Value.GetProperty("workbook");var year=first.GetProperty("year").GetInt32();var one=first.GetProperty("semester").GetInt32()==1;
+            start.SelectedDate=new DateTime(year,one?3:8,1);end.SelectedDate=one?new DateTime(year,7,31):new DateTime(year+1,2,28);
+            var dates=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,16,0,0)};var a=new StackPanel{Width=180,Margin=new Thickness(0,0,12,0)};a.Children.Add(AdminUi.Label("기초시간표 적용 시작일","Muted",12));a.Children.Add(start);var b=new StackPanel{Width=180};b.Children.Add(AdminUi.Label("적용 종료일","Muted",12));b.Children.Add(end);dates.Children.Add(a);dates.Children.Add(b);body.Children.Add(dates);
+        }
+        var choices=setup.GetProperty("teachers").EnumerateArray().Select(r=>new Choice(r.GetProperty("id").GetString()!,TeacherLabel(r))).ToArray();
+        var people=imports.SelectMany(i=>i.Value.GetProperty("teachers").EnumerateArray()).DistinctBy(t=>t.GetProperty("source").GetString()).ToArray();
+        var alike=people.Where(t=>t.GetProperty("candidates").GetArrayLength()>1).ToArray();
+        if(alike.Length>0)
+        {
+            var pick=AdminUi.Group("이름이 같은 계정이 있어 직접 골라 주세요");pick.Margin=new Thickness(0,16,0,8);body.Children.Add(pick);
+            foreach(var t in alike){var label=t.GetProperty("source").GetString()!;var ids=t.GetProperty("candidates").EnumerateArray().Select(x=>x.GetString()).ToArray();var box=new ComboBox{ItemsSource=choices.Where(c=>ids.Contains(c.Id)).ToArray(),Margin=new Thickness(0,4,0,8),Width=320,HorizontalAlignment=HorizontalAlignment.Left};teacherLinks.Add(label,box);body.Children.Add(AdminUi.Label(label,"Ink",13));body.Children.Add(box);}
+        }
+        var none=people.Where(t=>t.GetProperty("candidates").GetArrayLength()==0).Select(t=>t.GetProperty("source").GetString()).ToArray();
+        if(none.Length>0){var note=AdminUi.Label($"아직 계정이 없는 선생님 {none.Length}명은 이름만 표시되고, 계정이 만들어지면 이름으로 연결됩니다: "+string.Join(", ",none),"Muted",12);note.Margin=new Thickness(0,16,0,0);body.Children.Add(note);}
+        var actions=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,16,0,0)};body.Children.Add(actions);
+        var cancel=new Button{Content="취소",Margin=new Thickness(0,0,8,0)};cancel.SetResourceReference(StyleProperty,"SubtleButton");cancel.Click+=async(_,_)=>await Run(Load);actions.Children.Add(cancel);
+        var next=new Button{Content="변경 내용 확인"};next.SetResourceReference(StyleProperty,"PrimaryButton");next.Click+=async(_,_)=>await Run(Preview);actions.Children.Add(next);
     }
     async Task Preview()
     {
-        TimetableLink[] Links(Dictionary<string,ComboBox> controls)=>controls.Select(c=>new TimetableLink(c.Key,(c.Value.SelectedItem as Choice)?.Id??"")).ToArray();
-        var value=await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/preview",new TimetablePreviewRequest(draft!,start?.SelectedDate?.ToString("yyyy-MM-dd")??"",end?.SelectedDate?.ToString("yyyy-MM-dd")??"",Links(classLinks),Links(teacherLinks)));
-        candidate=value.GetProperty("candidateId").GetString();requestId=Guid.NewGuid().ToString("N");
-        body.Children.Clear();body.Children.Add(Text("게시 전 변경 확인",24));body.Children.Add(feedback);var batch=value.GetProperty("batch");body.Children.Add(Text(batch.GetProperty("start").GetString()+" ~ "+batch.GetProperty("end").GetString()+" · 변경 "+value.GetProperty("changedCount")+"개"));
-        foreach(var c in value.GetProperty("changes").EnumerateArray())body.Children.Add(Text($"{c.GetProperty("date").GetString()} · {c.GetProperty("className").GetString()} {c.GetProperty("period")}교시\n{c.GetProperty("beforeSubject").GetString()} ({c.GetProperty("beforeTeacher").GetString()}) → {c.GetProperty("subject").GetString()} ({c.GetProperty("teacher").GetString()})"));
-        body.Children.Add(Text("일자별 표의 빈 교시는 수업 없음으로 반영됩니다. 게시 후 변경된 학급과 교사에게 알림이 등록됩니다."));
-        Action("확인하고 게시",async()=>{if(MessageBox.Show(this,"이 시간표를 게시할까요?","시간표 게시",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/publish",new TimetableCommit(candidate!,requestId!));await Load();feedback.Text="게시했습니다. 앱 전달 상태를 확인하세요.";});Action("게시하지 않고 돌아가기",Load);
+        var ids=imports.Select(i=>i.Value.GetProperty("draftId").GetString()!).ToArray();
+        var links=teacherLinks.Where(c=>c.Value.SelectedItem is Choice).Select(c=>new TimetableLink(c.Key,((Choice)c.Value.SelectedItem).Id)).ToArray();
+        var value=await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/preview",new TimetablePreviewRequest(ids[0],start?.SelectedDate?.ToString("yyyy-MM-dd")??"",end?.SelectedDate?.ToString("yyyy-MM-dd")??"",[],links,ids));
+        candidate=value.GetProperty("candidateId").GetString();requestId=Guid.NewGuid().ToString("N");pageScroll.ScrollToTop();
+        body.Children.Clear();body.Children.Add(AdminUi.Heading("게시 전 확인",22));var count=value.GetProperty("changedCount").GetInt32();
+        var intro=AdminUi.Label(count==0?"지금 시간표와 달라지는 수업이 없습니다. 게시해도 알림은 가지 않습니다.":$"달라지는 수업 {count}개 · 게시하면 관련 선생님과 담임 선생님께 알림이 갑니다.");intro.Margin=new Thickness(0,8,0,16);body.Children.Add(intro);body.Children.Add(feedback);
+        var list=new StackPanel();var shown=0;
+        foreach(var c in value.GetProperty("changes").EnumerateArray())
+        {
+            if(++shown>40)break;var line=new StackPanel{Margin=new Thickness(0,0,0,10)};string Lesson(string subject,string teacher)=>c.GetProperty(subject).GetString() is{Length:>0} s?s+"("+c.GetProperty(teacher).GetString()+")":"수업 없음";
+            line.Children.Add(AdminUi.Label($"{c.GetProperty("date").GetString()} · {c.GetProperty("className").GetString()} {c.GetProperty("period")}교시","Ink",13,true));line.Children.Add(AdminUi.Label(Lesson("beforeSubject","beforeTeacher")+" → "+Lesson("subject","teacher"),"Muted",12));list.Children.Add(line);
+        }
+        if(count>40)list.Children.Add(AdminUi.Label($"외 {count-40}개","Muted",12));if(count>0)body.Children.Add(AdminUi.Card(list,16));
+        var actions=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,16,0,0)};body.Children.Add(actions);
+        var cancel=new Button{Content="취소",Margin=new Thickness(0,0,8,0)};cancel.SetResourceReference(StyleProperty,"SubtleButton");cancel.Click+=async(_,_)=>await Run(Load);actions.Children.Add(cancel);
+        var publish=new Button{Content="게시"};publish.SetResourceReference(StyleProperty,"PrimaryButton");publish.Click+=async(_,_)=>await Run(async()=>{await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/publish",new TimetableCommit(candidate!,requestId!));await Load();feedback.Text="게시했습니다.";});actions.Children.Add(publish);
     }
     async Task History()
     {
@@ -178,7 +220,7 @@ public sealed class TimetableWindow:Window
     }
     async Task Administration()
     {
-        var users=await api.Get<JsonElement[]>("api/admin/timetable-managers");body.Children.Clear();body.Children.Add(Text("수업 담당자 권한 · 담임 연결",24));body.Children.Add(feedback);Action("조회 화면으로",Load);
+        var users=await api.Get<JsonElement[]>("api/admin/timetable-managers");body.Children.Clear();body.Children.Add(Text("시간표 담당자 · 담임 연결",24));body.Children.Add(Text("담임은 시간표의 자율활동 담당 선생님으로 자동 연결됩니다. 다르면 여기에서 바꾸세요.",13));body.Children.Add(feedback);Action("조회 화면으로",Load);
         foreach(var user in users){var check=new CheckBox{Content=TeacherLabel(user)+" · 시간표 관리",IsChecked=user.GetProperty("enabled").GetBoolean(),IsEnabled=!user.GetProperty("isAdmin").GetBoolean(),Margin=new Thickness(0,0,0,8)};body.Children.Add(check);Action("이 담당자 권한 저장",()=>api.Send<JsonElement>(HttpMethod.Post,"api/admin/timetable-managers",new{userId=user.GetProperty("id").GetString(),enabled=check.IsChecked==true}));}
         var teachers=setup.GetProperty("teachers").EnumerateArray().Select(t=>new Choice(t.GetProperty("id").GetString()!,TeacherLabel(t))).ToArray();
         foreach(var room in setup.GetProperty("classes").EnumerateArray()){body.Children.Add(Text(room.GetProperty("name").GetString()+" 담임"));var box=new ComboBox{ItemsSource=teachers};var id=room.GetProperty("id").GetString();var home=setup.GetProperty("homerooms").EnumerateArray().FirstOrDefault(h=>h.GetProperty("classId").GetString()==id);if(home.ValueKind==JsonValueKind.Object)box.SelectedItem=teachers.FirstOrDefault(t=>t.Id==home.GetProperty("teacherId").GetString());body.Children.Add(box);Action("이 학급 담임 저장",async()=>{if(box.SelectedItem is not Choice teacher)throw new InvalidOperationException("담임을 선택하세요.");await api.Send<JsonElement>(HttpMethod.Post,"api/admin/timetable-homerooms",new{classId=id,teacherId=teacher.Id});feedback.Text="담임 연결을 저장했습니다.";});}

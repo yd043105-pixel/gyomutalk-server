@@ -17,8 +17,8 @@ internal sealed class LocalServerProcess(string root,string service)
     EventWaitHandle? signal;
     bool production;
     readonly Queue<string> output=new();
-    public string Executable=>Path.Combine(root,service=="office"?"server":"announcement-server",service=="office"?"SchoolMessenger.Server.exe":"SchoolMessenger.AnnouncementServer.exe");
-    public bool Installed=>File.Exists(Executable);
+    public string Executable=>Path.Combine(root,"server","SchoolMessenger.Server.exe");
+    public bool Installed=>service=="office"&&File.Exists(Executable);
     public bool Running=>child is not null&&!child.HasExited;
     public string Output{get{lock(output)return string.Join("\n",output);}}
     public void WriteOutput(string? text){if(string.IsNullOrWhiteSpace(text))return;lock(output){output.Enqueue(text.Length>600?text[..600]:text);while(output.Count>25)output.Dequeue();}}
@@ -61,17 +61,17 @@ internal sealed class LocalServerProcess(string root,string service)
             if(password.Length is <12 or >128||string.IsNullOrWhiteSpace(password))throw new InvalidOperationException("새 관리자 비밀번호는 12~128자로 입력하세요.");
             start.Environment["School__ResetAdminPassword"]=password;
         }
-        start.ArgumentList.Add("--urls");start.ArgumentList.Add(SimpleOperation.Listener(service)+(setup.ExternalHost.Length>0?";"+SimpleOperation.ExternalListener:""));
-        start.Environment["School__ExternalHost"]=setup.ExternalHost;start.Environment["School__ExternalPort"]=setup.ExternalHost.Length>0?SimpleOperation.ExternalPort.ToString():"0";
+        start.ArgumentList.Add("--urls");start.ArgumentList.Add(SimpleOperation.Listener(service));
+        start.Environment["School__ExternalHost"]="";start.Environment["School__ExternalPort"]="0";
         Launch(start,true);
     }
-    public void Start(bool trial,string data,string config,string password,string bridgeKey)
+    public void Start(bool trial,string data,string config,string password)
     {
         var start=Prepare(trial?Executable:PowerShell);
         if(trial)
         {
             data=CheckData(data,password);
-            var prefix=service=="office"?"School":"Portal";
+            const string prefix="School";
             start.Environment["ASPNETCORE_ENVIRONMENT"]="Development";
             start.Environment["FeedbackMail__Enabled"]="false";start.Environment["Feedback__AutomaticReportsEnabled"]="false";
             start.Environment["Operations__AlertMailEnabled"]="false";start.Environment["Portal__TunnelOnly"]="false";
@@ -79,9 +79,7 @@ internal sealed class LocalServerProcess(string root,string service)
             start.Environment["ASPNETCORE_FORWARDEDHEADERS_ENABLED"]="false";start.Environment["DOTNET_FORWARDEDHEADERS_ENABLED"]="false";start.Environment["backend-restore"]="";
             start.Environment[prefix+"__DataDirectory"]=data;
             if(!File.Exists(Path.Combine(data,".initialized")))start.Environment[prefix+"__AdminPassword"]=password;
-            if(service=="office"&&bridgeKey.Length>0&&File.Exists(Path.Combine(root,"announcement-server","SchoolMessenger.AnnouncementServer.exe"))){start.Environment["Announcements__Address"]="http://127.0.0.1:5081";start.Environment["Announcements__BridgeKey"]=bridgeKey;}
-            if(service=="announcements"){start.Environment["Portal__BridgeKey"]=bridgeKey;start.Environment["Portal__AllowedHosts"]="localhost,127.0.0.1";}
-            start.ArgumentList.Add("--urls");start.ArgumentList.Add(service=="office"?"http://127.0.0.1:5080":"http://127.0.0.1:5081");
+            start.ArgumentList.Add("--urls");start.ArgumentList.Add("http://127.0.0.1:5080");
         }
         else
         {
@@ -119,11 +117,5 @@ internal sealed class LocalServerProcess(string root,string service)
         using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(35));
         try{await child!.WaitForExitAsync(timeout.Token);child.WaitForExit();}
         catch(OperationCanceledException){throw new InvalidOperationException("파일 작업을 마무리하는 중입니다. 강제 종료하지 않고 잠시 더 기다려 주세요.");}
-    }
-    public static string TrialBridgeKey(string directory)
-    {
-        Directory.CreateDirectory(directory);var path=Path.Combine(directory,"trial-bridge.dpapi");
-        if(!File.Exists(path))File.WriteAllBytes(path,ProtectedData.Protect(RandomNumberGenerator.GetBytes(32),null,DataProtectionScope.CurrentUser));
-        return Convert.ToHexString(ProtectedData.Unprotect(File.ReadAllBytes(path),null,DataProtectionScope.CurrentUser));
     }
 }

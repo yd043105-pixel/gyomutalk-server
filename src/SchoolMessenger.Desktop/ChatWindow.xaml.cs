@@ -21,7 +21,7 @@ public partial class ChatWindow : Window
     string DraftPath(string room) => Path.Combine(main.LocalDirectory, $"chat-{main.Api!.Session!.User!.Id}-{room}.json");
     public ChatWindow(MainWindow main, Person[] people, string[]? selected = null, string? room = null)
     {
-        this.main = main; this.people = people; Owner = main; InitializeComponent(); FilesList.ItemsSource = files; StatusTone.Watch(Feedback); ChatEntry.Me = main.Api?.Session?.User?.Id;
+        this.main = main; this.people = people; main.RegisterWorkWindow(this); InitializeComponent(); FilesList.ItemsSource = files; StatusTone.Watch(Feedback); ChatEntry.Me = main.Api?.Session?.User?.Id;
         main.ChatChanged += Changed;
         Closed += (_, _) => { main.ChatChanged -= Changed; DiscardFiles(); };
         // Someone reading another window has not read the new message yet; coming back here does.

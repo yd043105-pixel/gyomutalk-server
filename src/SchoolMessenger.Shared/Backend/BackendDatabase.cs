@@ -29,14 +29,11 @@ public static class BackendDatabase
         change.CommandText = """
             CREATE TABLE IF NOT EXISTS BackendMigrations(Version INTEGER PRIMARY KEY,AppliedAt INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS BackendRecoveryState(Id INTEGER PRIMARY KEY CHECK(Id=1),ReviewRequired INTEGER NOT NULL,RestoredAt INTEGER NOT NULL);
-            CREATE TABLE IF NOT EXISTS GuardianRequests(ParentId TEXT NOT NULL,StudentId TEXT NOT NULL,CodeHash TEXT NOT NULL,RequestedAt INTEGER NOT NULL,State TEXT NOT NULL,ReviewedBy TEXT,ReviewedAt INTEGER,PRIMARY KEY(ParentId,StudentId));
             CREATE TABLE IF NOT EXISTS BackendRoot(UserId TEXT PRIMARY KEY);
             CREATE TABLE IF NOT EXISTS FileVerification(Kind TEXT NOT NULL,FileId TEXT NOT NULL,State TEXT NOT NULL,Sha256 TEXT,UpdatedAt INTEGER NOT NULL,PRIMARY KEY(Kind,FileId));
             CREATE TABLE IF NOT EXISTS DeviceSessions(Id TEXT PRIMARY KEY,TokenHash TEXT NOT NULL UNIQUE,UserId TEXT NOT NULL,
               UserVersion TEXT NOT NULL,CreatedAt INTEGER NOT NULL,ExpiresAt INTEGER NOT NULL,RevokedAt INTEGER);
             CREATE INDEX IF NOT EXISTS IX_DeviceSessions_User ON DeviceSessions(UserId,ExpiresAt);
-            CREATE TABLE IF NOT EXISTS BridgeNonces(Service TEXT NOT NULL,Nonce TEXT NOT NULL,ExpiresAt INTEGER NOT NULL,PRIMARY KEY(Service,Nonce));
-            CREATE INDEX IF NOT EXISTS IX_BridgeNonces_Expiry ON BridgeNonces(ExpiresAt);
             CREATE TABLE IF NOT EXISTS MessageEvents(Sequence INTEGER PRIMARY KEY AUTOINCREMENT,EventKey TEXT NOT NULL UNIQUE,
               RecipientId TEXT NOT NULL,Kind TEXT NOT NULL,ResourceId TEXT NOT NULL,CreatedAt INTEGER NOT NULL,
               DeliveredAt INTEGER,Attempts INTEGER NOT NULL DEFAULT 0,NextAttempt INTEGER NOT NULL DEFAULT 0);

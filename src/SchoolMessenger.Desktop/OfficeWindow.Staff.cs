@@ -14,7 +14,7 @@ namespace SchoolMessenger.Desktop;
 public sealed partial class OfficeWindow
 {
     string? selectedStaff;string staffFilter="all";
-    record StaffRow(JsonElement User,string Id,string Name,string Department,string Position,string Username,string Seat,bool Active,bool Pending,bool Admin,bool Broadcast,bool Calendar,bool Rooms,bool Electives);
+    record StaffRow(JsonElement User,string Id,string Name,string Department,string Position,string Username,string Seat,bool Active,bool Pending,bool Admin,bool Broadcast,bool Calendar,bool Rooms,bool Timetable);
     static string Value(JsonElement row,string key)=>row.TryGetProperty(key,out var value)&&value.ValueKind==JsonValueKind.String?value.GetString()??"":"";
     static bool Flag(JsonElement row,string key)=>row.TryGetProperty(key,out var value)&&value.ValueKind==JsonValueKind.True;
     // Member directory: searchable table on the left, the selected teacher's settings on the right (Figma "구성원 · 교직원·권한").
@@ -32,10 +32,10 @@ public sealed partial class OfficeWindow
     }
     async Task StaffList()
     {
-        var usersTask=api.Get<JsonElement>("api/admin/users");var permissionsTask=api.Get<JsonElement>("api/admin/office/permissions");var pendingTask=api.Get<JsonElement>("api/admin/registrations");var electivesTask=api.Get<JsonElement>("api/admin/elective-managers");
+        var usersTask=api.Get<JsonElement>("api/admin/users");var permissionsTask=api.Get<JsonElement>("api/admin/office/permissions");var pendingTask=api.Get<JsonElement>("api/admin/registrations");var timetableTask=api.Get<JsonElement>("api/admin/timetable-managers");
         var permissions=(await permissionsTask).EnumerateArray().ToDictionary(p=>Value(p,"userId"),p=>(Calendar:Flag(p,"calendarManager"),Rooms:Flag(p,"roomManager")));
-        var electives=(await electivesTask).EnumerateArray().Where(e=>Flag(e,"enabled")).Select(e=>Value(e,"id")).ToHashSet();
-        var staff=(await usersTask).EnumerateArray().Select(u=>{var id=Value(u,"id");permissions.TryGetValue(id,out var p);return new StaffRow(u,id,Value(u,"name"),Value(u,"department"),Value(u,"position"),Value(u,"username"),Value(u,"seatIp"),Flag(u,"active"),Flag(u,"activationRequired"),Flag(u,"isAdmin"),Flag(u,"canBroadcast"),p.Calendar,p.Rooms,electives.Contains(id));}).ToArray();
+        var timetableDuty=(await timetableTask).EnumerateArray().Where(e=>Flag(e,"enabled")).Select(e=>Value(e,"id")).ToHashSet();
+        var staff=(await usersTask).EnumerateArray().Select(u=>{var id=Value(u,"id");permissions.TryGetValue(id,out var p);return new StaffRow(u,id,Value(u,"name"),Value(u,"department"),Value(u,"position"),Value(u,"username"),Value(u,"seatIp"),Flag(u,"active"),Flag(u,"activationRequired"),Flag(u,"isAdmin"),Flag(u,"canBroadcast"),p.Calendar,p.Rooms,timetableDuty.Contains(id));}).ToArray();
         var pending=(await pendingTask).GetArrayLength();
         Page(false);
         var heading=new DockPanel{Margin=new Thickness(0,0,0,16)};
@@ -81,7 +81,7 @@ public sealed partial class OfficeWindow
                 var names=new StackPanel{Margin=new Thickness(10,0,8,0),VerticalAlignment=VerticalAlignment.Center};var name=AdminUi.Label(s.Name,"Ink",14,true);name.TextTrimming=TextTrimming.CharacterEllipsis;name.TextWrapping=TextWrapping.NoWrap;names.Children.Add(name);names.Children.Add(AdminUi.Label(s.Seat.Length>0?"좌석 "+s.Seat:"좌석 미지정","Faint",12));person.Children.Add(names);row.Children.Add(person);
                 var department=new StackPanel{VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(0,0,8,0)};department.Children.Add(AdminUi.Label(s.Department,"Ink"));if(s.Position.Length>0)department.Children.Add(AdminUi.Label(s.Position,"Muted",12));Grid.SetColumn(department,1);row.Children.Add(department);
                 var roles=new WrapPanel{VerticalAlignment=VerticalAlignment.Center};
-                foreach(var (on,label,tone) in new[]{(s.Admin,"관리자","Accent"),(s.Broadcast,"전체 공지","Neutral"),(s.Calendar,"학사일정","Neutral"),(s.Rooms,"특별실","Neutral"),(s.Electives&&!s.Admin,"수강신청","Neutral")}){if(!on)continue;var badge=AdminUi.Badge(label,tone,false);badge.Margin=new Thickness(0,2,6,2);if(selected)badge.SetResourceReference(Border.BackgroundProperty,"Surface");roles.Children.Add(badge);}
+                foreach(var (on,label,tone) in new[]{(s.Admin,"관리자","Accent"),(s.Broadcast,"전체 공지","Neutral"),(s.Calendar,"학사일정","Neutral"),(s.Rooms,"특별실","Neutral"),(s.Timetable&&!s.Admin,"시간표","Neutral")}){if(!on)continue;var badge=AdminUi.Badge(label,tone,false);badge.Margin=new Thickness(0,2,6,2);if(selected)badge.SetResourceReference(Border.BackgroundProperty,"Surface");roles.Children.Add(badge);}
                 Grid.SetColumn(roles,2);row.Children.Add(roles);var state=Status(s);Grid.SetColumn(state,3);row.Children.Add(state);
                 var line=new Button{Content=row,Tag=selected?"selected":null};line.SetResourceReference(StyleProperty,"TableRow");AutomationProperties.SetName(line,s.Name+" 계정 설정");AutomationProperties.SetItemStatus(line,selected?"선택됨":"");
                 line.Click+=(_,_)=>{selectedStaff=s.Id;Rows();Detail();};rows.Children.Add(line);
@@ -103,7 +103,7 @@ public sealed partial class OfficeWindow
                 var cell=new StackPanel{Margin=new Thickness(0,0,0,12)};var caption=AdminUi.Label(label,"Muted",13);caption.Margin=new Thickness(0,0,0,6);cell.Children.Add(caption);
                 var box=new TextBox{Text=value,MaxLength=maxLength};AutomationProperties.SetName(box,label);cell.Children.Add(box);Grid.SetRow(cell,index/2);Grid.SetColumn(cell,index%2==0?0:2);fields.Children.Add(cell);return box;
             }
-            var name=Input("이름",s.Name,0,40);var position=Input("직책",s.Position,1,50);var department=Input("부서",s.Department,2,60);var seat=Input("좌석 IP",s.Seat,3,15);seat.ToolTip="교사 PC 자동 로그인용 IPv4 · 휴대폰 로그인에는 쓰지 않습니다. 비우면 연결 해제";
+            var name=Input("이름",s.Name,0,40);var position=Input("직책",s.Position,1,50);var department=Input("부서",s.Department,2,60);var seat=Input("좌석 IP",s.Seat,3,15);seat.ToolTip="교사 PC 자동 로그인용 IPv4 · 계정 인증을 대신하지 않습니다. 비우면 연결 해제";
             var roles=AdminUi.Group("업무 권한");roles.Margin=new Thickness(0,8,0,0);stack.Children.Add(roles);
             CheckBox Switch(string title,string detail,bool value)
             {
@@ -114,8 +114,7 @@ public sealed partial class OfficeWindow
             var broadcast=Switch("학교 전체 공지","전 교직원에게 공지 메시지를 보낼 수 있습니다.",s.Broadcast);
             var calendar=Switch("학사일정 담당","학사일정을 등록하고 변경합니다.",s.Calendar);
             var rooms=Switch("특별실 운영 담당","특별실을 추가하고 예약을 조정합니다.",s.Rooms);
-            // Administrators manage electives by default; the server only stores the duty for other staff.
-            var electives=Switch("수강신청 담당",s.Admin?"관리자는 기본으로 수강신청 업무를 담당합니다.":"수강신청 회차를 만들고 학생 신청 현황을 관리합니다.",s.Electives||s.Admin);electives.BorderThickness=new Thickness(0);electives.IsEnabled=!s.Admin;
+            var timetable=Switch("시간표 담당",s.Admin?"관리자는 기본으로 시간표를 올릴 수 있습니다.":"나이스에서 받은 시간표를 올려 선생님들의 시간표에 반영합니다.",s.Timetable||s.Admin);timetable.IsEnabled=!s.Admin;
             var actions=new DockPanel{Margin=new Thickness(0,18,0,0)};
             var reset=new Button{Content="계정 초기화",ToolTip="초기 비밀번호 12345678로 되돌리고 새 활성화 번호를 발급합니다."};reset.SetResourceReference(StyleProperty,"DangerButton");actions.Children.Add(reset);
             var save=new Button{Content="변경 저장",Margin=new Thickness(8,0,0,0)};save.SetResourceReference(StyleProperty,"PrimaryButton");DockPanel.SetDock(save,Dock.Right);
@@ -125,7 +124,7 @@ public sealed partial class OfficeWindow
             {
                 await api.Send<JsonElement>(HttpMethod.Patch,"api/admin/users/"+s.Id,new{name=name.Text,department=department.Text,position=position.Text,password="",isAdmin=admin.IsChecked==true,canBroadcast=broadcast.IsChecked==true,active=s.Active});
                 if(calendar.IsChecked!=s.Calendar||rooms.IsChecked!=s.Rooms)await api.Send<JsonElement>(HttpMethod.Post,"api/admin/office/permissions",new OfficePermissionRequest(s.Id,calendar.IsChecked==true,rooms.IsChecked==true));
-                if(admin.IsChecked!=true&&electives.IsChecked!=s.Electives)await api.Send<JsonElement>(HttpMethod.Post,"api/admin/elective-managers",new ElectiveManagerChange(s.Id,electives.IsChecked==true));
+                if(admin.IsChecked!=true&&timetable.IsChecked!=s.Timetable)await api.Send<JsonElement>(HttpMethod.Post,"api/admin/timetable-managers",new{userId=s.Id,enabled=timetable.IsChecked==true});
                 if(seat.Text.Trim()!=s.Seat)await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff/"+s.Id+"/seat",new StaffSeatRequest(seat.Text.Trim()));
                 await api.RefreshSession();await StaffList();error.Text=s.Name+" 님의 설정을 저장했습니다.";
             });
@@ -178,7 +177,7 @@ public sealed partial class OfficeWindow
         {
             // The teacher messenger has no rail, so its administrators get the other pages as a single row of links.
             var links=new WrapPanel{Margin=new Thickness(0,-6,0,16)};
-            foreach(var (label,open) in new (string,Func<Task>)[]{("학사일정 · 특별실 예약",()=>Load(false)),("특별실 목록",async()=>{setup=await api.Get<JsonElement>("api/office/setup");await Rooms();}),("선택과목 분반",Sections),("학생·학부모",()=>{new PortalAdministrationWindow(InteractionOwner).Show();return Task.CompletedTask;}),("운영 변경 기록",Audit)})
+            foreach(var (label,open) in new (string,Func<Task>)[]{("학사일정 · 특별실 예약",()=>Load(false)),("특별실 목록",async()=>{setup=await api.Get<JsonElement>("api/office/setup");await Rooms();}),("운영 변경 기록",Audit)})
             {var link=new Button{Content=label,Margin=new Thickness(0,0,6,6)};link.SetResourceReference(StyleProperty,"Chip");link.Click+=async(_,_)=>await Run(open);links.Children.Add(link);}
             body.Children.Add(links);
         }

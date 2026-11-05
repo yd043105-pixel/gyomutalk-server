@@ -8,7 +8,7 @@ $PackageDirectory=[IO.Path]::GetFullPath($PackageDirectory)
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $version=[string]([xml](Get-Content -LiteralPath (Join-Path $projectRoot 'Directory.Build.props') -Raw)).Project.PropertyGroup.Version
 if((Get-Content -LiteralPath (Join-Path $PackageDirectory 'VERSION.txt') -Raw).Trim() -ne $version){throw 'Server package version mismatch. Build the current package first.'}
-foreach($exe in @('server\SchoolMessenger.Server.exe','announcement-server\SchoolMessenger.AnnouncementServer.exe','client\SchoolMessenger.exe')){
+foreach($exe in @('server\SchoolMessenger.Server.exe','client\SchoolMessenger.exe')){
     $file=Get-Item -LiteralPath (Join-Path $PackageDirectory $exe)
     if($file.VersionInfo.ProductVersion.Split('+')[0] -ne $version){throw "Package executable version mismatch: $exe"}
 }

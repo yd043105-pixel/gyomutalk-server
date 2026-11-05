@@ -17,7 +17,7 @@ public partial class MailboxWindow : Window
     public MailboxWindow(MainWindow main, string box = "received", Person? person = null)
     {
         this.main = main; this.box = person is null ? box : "conversation"; personId = person?.Id;
-        Owner = main; Resources = main.Resources; InitializeComponent(); StatusTone.Watch(StatusLabel);
+        main.RegisterWorkWindow(this); Resources = main.Resources; InitializeComponent(); StatusTone.Watch(StatusLabel);
         MessageList.ItemsSource = messages;
         Title = person is null ? "교무톡 · 메시지함" : person.Name + " · 주고받은 메시지";
         BoxTitle.Text = person is null ? "메시지함" : person.Name + " 관련 메시지"; UpdateTabs();

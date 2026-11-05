@@ -76,3 +76,4 @@ operations/
 school-evidence/
 .test-services/
 **/__pycache__/
+**/retired-app-backups/

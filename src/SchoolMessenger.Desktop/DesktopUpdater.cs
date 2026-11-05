@@ -77,7 +77,7 @@ internal static class DesktopUpdater
     {
         if(owner is LocalServerWindow manager)return prepared=await manager.PrepareForUpdate();
         if(owner is null)return false;
-        if(owner.OwnedWindows.Cast<Window>().Any(w=>w.IsVisible))
+        if(owner is MainWindow messenger ? messenger.HasOpenWork : owner.OwnedWindows.Cast<Window>().Any(w=>w.IsVisible))
         {MessageBox.Show(owner,"작성 중인 메시지와 다른 업무 창을 저장하고 닫은 뒤 업데이트를 다시 실행하세요.","업데이트 대기");preparation=null;return false;}
         return prepared=true;
     }

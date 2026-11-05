@@ -32,7 +32,7 @@ public partial class MainWindow
             for(var i=0;i<100&&administratorWindow?.Ready!=true;i++)await Task.Delay(50);
             if(administratorWindow is not{IsVisible:true,Ready:true})throw new InvalidOperationException("관리자 로그인 후 관리 시스템이 열리지 않았습니다.");
             checks.Add("관리자 로그인 후 네이티브 서버 관리 화면 자동 표시 및 상태 로딩");
-            var first=administratorWindow;OpenAdministrator();if(!ReferenceEquals(first,administratorWindow)||OwnedWindows.OfType<ServerManagementWindow>().Count()!=1)throw new InvalidOperationException("관리 창이 중복되었습니다.");
+            var first=administratorWindow;OpenAdministrator();if(!ReferenceEquals(first,administratorWindow)||SessionWindows.OfType<ServerManagementWindow>().Count()!=1)throw new InvalidOperationException("관리 창이 중복되었습니다.");
             checks.Add("관리 메뉴 재실행 시 기존 창 활성화");
             AdminControls<ComboBox>(first).Single().SelectedIndex=0;
             AdminControls<Button>(first).Single(b=>b.Content?.ToString()=="부하 설정 적용").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -43,7 +43,7 @@ public partial class MainWindow
             var saved=File.ReadAllBytes(savedLogin.FilePath);await Disconnect();if(first.IsVisible)throw new InvalidOperationException("연결 종료 후 관리 창이 남았습니다.");
             File.WriteAllBytes(savedLogin.FilePath,saved);await TryAutomaticLogin();if(administratorWindow is not{IsVisible:true})throw new InvalidOperationException("자동 로그인 후 관리 창이 열리지 않았습니다.");
             checks.Add("암호화된 자동 로그인 복원 후 관리 시스템 자동 표시");
-            var restored=administratorWindow;await Api!.Send<JsonElement>(HttpMethod.Post,"api/logout");await Disconnect();if(restored.IsVisible||OwnedWindows.OfType<ServerManagementWindow>().Any())throw new InvalidOperationException("로그아웃 후 관리 창이 남았습니다.");checks.Add("로그아웃 시 관리 창과 저장된 로그인 제거");
+            var restored=administratorWindow;await Api!.Send<JsonElement>(HttpMethod.Post,"api/logout");await Disconnect();if(restored.IsVisible||SessionWindows.OfType<ServerManagementWindow>().Any())throw new InvalidOperationException("로그아웃 후 관리 창이 남았습니다.");checks.Add("로그아웃 시 관리 창과 저장된 로그인 제거");
             UsernameBox.Text=Environment.GetEnvironmentVariable("SCHOOL_UI_TEACHER")??"ordinary";PasswordBox.Password=Environment.GetEnvironmentVariable("SCHOOL_UI_PASSWORD")??"";RememberLogin.IsChecked=false;await SignIn();OpenAdministrator();
             if(administratorWindow is not null||AdminButton.Visibility==Visibility.Visible)throw new InvalidOperationException("일반 교직원에게 관리 창이 표시되었습니다.");
             try{await Api!.Get<JsonElement>("api/admin/server-resources");throw new InvalidOperationException("일반 계정의 관리 API 접근 허용");}catch(ApiRequestException e)when(e.StatusCode==HttpStatusCode.Forbidden){}
