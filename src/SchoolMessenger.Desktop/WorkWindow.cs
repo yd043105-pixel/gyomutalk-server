@@ -194,7 +194,7 @@ public sealed class WorkWindow : Window
                 if (attachment.Expired){filename.Margin=new Thickness(0,6,0,0);targetDetails.Children.Add(filename);}
                 else
                 {
-                    var download=Action(attachment.Name, async () => { var dialog = new Microsoft.Win32.SaveFileDialog { FileName = attachment.Name }; if (dialog.ShowDialog(this) == true) await api.Download(attachment.Id, dialog.FileName); });
+                    var download=Action(attachment.Name, async () => { var dialog = new Microsoft.Win32.SaveFileDialog { FileName = attachment.Name }; if (dialog.ShowDialog(this) == true) await AttachmentTransferWindow.Save(this,api,attachment.Id,dialog.FileName); });
                     download.Content=filename;download.HorizontalContentAlignment=HorizontalAlignment.Stretch;download.MinWidth=0;download.Padding=new Thickness(4,3,4,3);download.Margin=new Thickness(0,6,0,0);download.ToolTip=attachment.Description;download.Tag="submission-file";
                     System.Windows.Automation.AutomationProperties.SetName(download,attachment.Description);targetDetails.Children.Add(download);
                 }
@@ -259,6 +259,17 @@ public sealed class WorkWindow : Window
         result=await api.Get<JsonElement>($"api/submission-requests/{requestedId}");Check(!result.GetProperty("targets").EnumerateArray().First(t=>String(t,"id")==targetId).GetProperty("exempt").GetBoolean(),"exemption can be undone without changing the other recipients");
         var attachment=result.GetProperty("targets").EnumerateArray().SelectMany(t=>t.GetProperty("files").EnumerateArray()).First().Deserialize<Attachment>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
         var downloaded=Path.Combine(directory,"submission-download-check.txt");await api.Download(attachment.Id,downloaded);Check(File.ReadAllText(downloaded).Contains("synthetic-submission"),"collector can still download the submitted file with its existing authorization");
+        if(attachment.Size>128*1024)
+        {
+            var resumedPath=Path.Combine(directory,"resumed-download-check.txt");
+            using var pause=new System.Threading.CancellationTokenSource();
+            try{await api.Download(attachment.Id,resumedPath,p=>{if(p.Received>0)pause.Cancel();},pause.Token);}
+            catch(OperationCanceledException)when(pause.IsCancellationRequested){}
+            Check(pause.IsCancellationRequested&&!File.Exists(resumedPath),"pausing leaves the existing destination untouched");
+            long? resumedAt=null;
+            await api.Download(attachment.Id,resumedPath,p=>resumedAt??=p.Received);
+            Check(resumedAt>0&&resumedAt<attachment.Size&&File.ReadAllBytes(resumedPath).SequenceEqual(File.ReadAllBytes(downloaded)),"native client resumes at the saved offset and verifies the complete file");
+        }
         Layout();capture(this,Path.Combine(directory,"submissions-compact.png"));File.WriteAllText(Path.Combine(directory,"submission-layout-checks.json"),JsonSerializer.Serialize(new{checks,realSchoolData=false}));
     }
     internal async Task Verify()

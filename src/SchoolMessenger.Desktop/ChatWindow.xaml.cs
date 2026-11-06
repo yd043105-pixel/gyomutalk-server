@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using SchoolMessenger.Contracts;
 
 namespace SchoolMessenger.Desktop;
 
@@ -130,7 +131,7 @@ public partial class ChatWindow : Window
         var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Filter = "업무 자료|*.hwp;*.hwpx;*.pdf;*.doc;*.docx;*.xls;*.xlsx;*.ppt;*.pptx;*.txt;*.csv;*.png;*.jpg;*.jpeg;*.zip" };
         if (dialog.ShowDialog(this) != true) return;
         var added = dialog.FileNames.Where(p => files.All(f => f.Path != p)).Select(p => new SourceFile(p)).ToArray(); var all = files.Concat(added).Select(f => new FileInfo(f.Path).Length).ToArray();
-        if (all.Length > 10 || all.Any(size => size > 104_857_600) || all.Sum() > 209_715_200) { Feedback.Text = "파일당 100MB, 합계 200MB, 최대 10개입니다."; return; }
+        if (all.Length > 10 || all.Any(size => size > AttachmentLimits.Message) || all.Sum() > AttachmentLimits.Message) { Feedback.Text = "파일당 2GiB, 합계 2GiB, 최대 10개입니다."; return; }
         foreach (var file in added) files.Add(file);
     }
     async void RemoveFile(object sender, RoutedEventArgs e)
@@ -180,6 +181,6 @@ public partial class ChatWindow : Window
     {
         if (((Button)sender).Tag is not Attachment file) return;
         var dialog = new Microsoft.Win32.SaveFileDialog { FileName = file.Name };
-        if (dialog.ShowDialog(this) == true) await Run(() => main.Api!.Download(file.Id, dialog.FileName));
+        if (dialog.ShowDialog(this) == true) await Run(async () => { await AttachmentTransferWindow.Save(this,main.Api!,file.Id,dialog.FileName); });
     }
 }

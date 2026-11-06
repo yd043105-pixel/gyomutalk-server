@@ -145,6 +145,7 @@ if (builder.Configuration["School:ResetAdminPassword"] is { Length: > 0 } newPas
 File.WriteAllText(Path.Combine(store.Root, ".initialized"), "initialized");
 var networks = (builder.Configuration["School:AllowedNetworks"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
     .Select(System.Net.IPNetwork.Parse).ToArray();
+using var largeUpload = new SemaphoreSlim(1);
 // Never accept credentials over plain HTTP from another computer, including Development.
 app.Use(async (context, next) =>
 {
@@ -157,6 +158,11 @@ app.Use(async (context, next) =>
     {
         var limit=context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
         if(limit is{IsReadOnly:false})limit.MaxRequestBodySize=12_582_912;
+    }
+    if(context.Request.Method=="POST"&&context.Request.Path=="/api/attachments"&&context.Request.ContentType=="application/octet-stream")
+    {
+        var limit=context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
+        if(limit is{IsReadOnly:false})limit.MaxRequestBodySize=AttachmentLimits.Message;
     }
     if (!context.Request.IsHttps && context.Connection.RemoteIpAddress is { } ip && !System.Net.IPAddress.IsLoopback(ip))
     { context.Response.StatusCode = 400; await context.Response.WriteAsync("교내 접속에는 HTTPS가 필요합니다."); return; }
@@ -325,43 +331,67 @@ api.MapGet("/users", (Presence presence) => store.Users().Where(u => u.Active).S
 
 api.MapPost("/attachments", async Task<IResult> (HttpContext c) =>
 {
-    if (!c.Request.HasFormContentType) return Error("파일을 선택하세요.");
-    var form = await c.Request.ReadFormAsync(c.RequestAborted);
-    if (form.Files.Count != 1) return Error("파일은 한 번에 하나씩 업로드하세요.");
-    var file = form.Files[0];
-    var name = Path.GetFileName(file.FileName.Replace('\\', '/'));
-    var extension = Path.GetExtension(name).ToLowerInvariant();
-    var allowed = new[] { ".hwp", ".hwpx", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".csv", ".png", ".jpg", ".jpeg", ".zip" };
-    if (name.Length is < 1 or > 200 || name.Any(char.IsControl) || !allowed.Contains(extension)) return Error("지원하지 않는 파일 형식입니다.");
-    if (file.Length is <= 0 or > 104_857_600) return Error("파일당 100MB까지 첨부할 수 있습니다.");
-    var owner = UserId(c);
-    var staged = store.Query("SELECT COALESCE(SUM(Size),0) FROM Attachments a WHERE OwnerId=$id AND MessageId IS NULL AND DeletedAt IS NULL AND NOT EXISTS(SELECT 1 FROM SubmissionFiles sf WHERE sf.AttachmentId=a.Id)",
-        r => r.GetInt64(0), ("$id", owner))[0];
-    if (staged + file.Length > 524_288_000) return Error("미전송 첨부 용량이 500MB를 넘습니다. 첨부를 정리하거나 메시지를 보내세요.", 413);
-    if (new DriveInfo(Path.GetPathRoot(store.Root)!).AvailableFreeSpace < file.Length + 524_288_000)
-        return Error("서버 저장 공간이 부족합니다. 관리자에게 문의하세요.", 507);
-    var id = Guid.NewGuid().ToString("N");
-    var path = Path.Combine(store.Files, id);
-    var kept=false;
-    using(var state=store.Open())StoredFiles.State(state,"office",id,"uploading");
+    IFormFile? file = null;
+    var streamed = c.Request.ContentType == "application/octet-stream";
+    string rawName;
+    long size;
+    if (streamed)
+    {
+        if (c.Request.ContentLength is not long length || !c.Request.Headers.TryGetValue(AttachmentLimits.NameHeader,out var header) || header.Count!=1 || header.ToString().Length>2400)
+            return Error("첨부파일의 이름과 크기를 확인하세요.");
+        size=length;rawName=Uri.UnescapeDataString(header.ToString());
+    }
+    else
+    {
+        if (!c.Request.HasFormContentType) return Error("파일을 선택하세요.");
+        var form=await c.Request.ReadFormAsync(c.RequestAborted);
+        if(form.Files.Count!=1)return Error("파일은 한 번에 하나씩 업로드하세요.");
+        file=form.Files[0];size=file.Length;rawName=file.FileName;
+    }
+    string name;
+    try { name=FilePolicy.Name(rawName); } catch(FilePolicyException e) { return Error(e.Message,e.Status); }
+    if(size<=0)return Error("빈 파일은 첨부할 수 없습니다.");
+    if(size>(streamed?AttachmentLimits.Message:AttachmentLimits.LegacyFile))return Error(streamed?"파일당 2GiB까지 첨부할 수 있습니다.":"파일당 100MB까지 첨부할 수 있습니다.",413);
+    var large=size>AttachmentLimits.LegacyFile;
+    if(large&&!largeUpload.Wait(0)){c.Response.Headers.RetryAfter="2";return Error("대용량 파일을 전송 중입니다. 잠시 후 다시 시도하세요.",429);}
     try
     {
-        await using (var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
-            await file.CopyToAsync(output, c.RequestAborted);
-        using(var state=store.Open())StoredFiles.State(state,"office",id,"scanning");
-        try { await FilePolicy.Scan(path, name, app.Environment.IsDevelopment(), builder.Configuration["School:ScannerPath"], c.RequestAborted); }
-        catch (FilePolicyException e) { return Error(e.Message, e.Status); }
-        using var uploadDb=store.Open();using var uploadTx=uploadDb.BeginTransaction();
-        using var uploadInsert=Store.Command(uploadDb,"""
-            INSERT INTO Attachments(Id,OwnerId,Name,Size,UploadedAt,ExpiresAt)
-            SELECT $id,$owner,$name,$size,$now,$expires WHERE
-            (SELECT COALESCE(SUM(Size),0) FROM Attachments a WHERE OwnerId=$owner AND MessageId IS NULL AND DeletedAt IS NULL AND NOT EXISTS(SELECT 1 FROM SubmissionFiles sf WHERE sf.AttachmentId=a.Id))+$size <= 524288000
-            """, uploadTx,("$id", id), ("$owner", owner), ("$name", name), ("$size", file.Length), ("$now", Maintenance.Now),("$expires",Maintenance.Now+(app.Environment.IsDevelopment()?Math.Max(1,builder.Configuration.GetValue("School:RetentionSeconds",2_592_000)):2_592_000)*1000L));
-        if (uploadInsert.ExecuteNonQuery() == 0) { File.Delete(path); return Error("미전송 첨부 용량이 500MB를 넘습니다.", 413); }
-        StoredFiles.State(uploadDb,"office",id,"ready",StoredFiles.Hash(path),uploadTx);uploadTx.Commit();kept=true;
-        return Results.Ok(new { id, name, size = file.Length });
+        var owner = UserId(c);
+        var staged = store.Query("SELECT COALESCE(SUM(Size),0) FROM Attachments a WHERE OwnerId=$id AND MessageId IS NULL AND DeletedAt IS NULL AND NOT EXISTS(SELECT 1 FROM SubmissionFiles sf WHERE sf.AttachmentId=a.Id)",
+            r => r.GetInt64(0), ("$id", owner))[0];
+        if (staged + size > AttachmentLimits.Staged) return Error("미전송 첨부가 너무 많습니다. 첨부를 정리하거나 메시지를 보내세요.", 413);
+        if (new DriveInfo(Path.GetPathRoot(store.Root)!).AvailableFreeSpace < size + 524_288_000)
+            return Error("서버 저장 공간이 부족합니다. 관리자에게 문의하세요.", 507);
+        var id = Guid.NewGuid().ToString("N");
+        var path = Path.Combine(store.Files, id);
+        var kept=false;
+        using(var state=store.Open())StoredFiles.State(state,"office",id,"uploading");
+        try
+        {
+            await using (var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
+            {
+                if(file is null)await c.Request.Body.CopyToAsync(output,c.RequestAborted);
+                else await file.CopyToAsync(output,c.RequestAborted);
+                if(output.Length!=size)return Error("전송된 파일 크기가 일치하지 않습니다.");
+            }
+            using(var state=store.Open())StoredFiles.State(state,"office",id,"scanning");
+            try { await FilePolicy.Scan(path, name, app.Environment.IsDevelopment(), builder.Configuration["School:ScannerPath"], c.RequestAborted); }
+            catch (FilePolicyException e) { return Error(e.Message, e.Status); }
+            string hash;
+            await using(var input=File.OpenRead(path)) hash=Convert.ToHexString(await SHA256.HashDataAsync(input,c.RequestAborted));
+            using var uploadDb=store.Open();using var uploadTx=uploadDb.BeginTransaction();
+            using var uploadInsert=Store.Command(uploadDb,"""
+                INSERT INTO Attachments(Id,OwnerId,Name,Size,UploadedAt,ExpiresAt)
+                SELECT $id,$owner,$name,$size,$now,$expires WHERE
+                (SELECT COALESCE(SUM(Size),0) FROM Attachments a WHERE OwnerId=$owner AND MessageId IS NULL AND DeletedAt IS NULL AND NOT EXISTS(SELECT 1 FROM SubmissionFiles sf WHERE sf.AttachmentId=a.Id))+$size <= $limit
+                """, uploadTx,("$id", id), ("$owner", owner), ("$name", name), ("$size", size), ("$limit",AttachmentLimits.Staged),("$now", Maintenance.Now),("$expires",Maintenance.Now+(app.Environment.IsDevelopment()?Math.Max(1,builder.Configuration.GetValue("School:RetentionSeconds",2_592_000)):2_592_000)*1000L));
+            if (uploadInsert.ExecuteNonQuery() == 0) return Error("미전송 첨부가 너무 많습니다.", 413);
+            StoredFiles.State(uploadDb,"office",id,"ready",hash,uploadTx);uploadTx.Commit();kept=true;
+            return Results.Ok(new { id, name, size });
+        }
+        finally { if(!kept){File.Delete(path);using var state=store.Open();StoredFiles.State(state,"office",id,"rejected");} }
     }
-    finally { if(!kept){File.Delete(path);using var state=store.Open();StoredFiles.State(state,"office",id,"rejected");} }
+    finally { if(large)largeUpload.Release(); }
 }).RequireRateLimiting("upload");
 api.MapDelete("/attachments/{id}", (string id, HttpContext c) =>
 {
@@ -439,7 +469,7 @@ IResult SendStoredMessage(SendMessage request, HttpContext c, IHubContext<Messag
             if (size is null || !Guid.TryParseExact(fileId, "N", out _) || !File.Exists(Path.Combine(store.Files, fileId))) return Error("사용할 수 없는 첨부파일입니다.");
             total += Convert.ToInt64(size);
         }
-        if (total > 209_715_200) return Error("메시지당 첨부 합계는 200MB입니다.", 413);
+        if (total > AttachmentLimits.Message) return Error("메시지당 첨부 합계는 2GiB입니다.", 413);
         id = Guid.NewGuid().ToString("N");
         var now = Maintenance.Now;
         using (var insert = Store.Command(connection, "INSERT INTO Messages(Id,SenderId,ClientId,Fingerprint,Title,Body,CreatedAt) VALUES($id,$sender,$client,$fingerprint,$title,$body,$now)", transaction,
@@ -549,10 +579,11 @@ api.MapGet("/attachments/{id}/download", (string id, HttpContext c) =>
     if (!Guid.TryParseExact(id, "N", out _)) return Results.NotFound();
     var path = Path.Combine(store.Files, id);
     using var verification=store.Open();
-    if (!StoredFiles.Ready(verification,"office",id,path)) return Error("첨부파일이 없거나 무결성 검사를 통과하지 못했습니다.", 410);
+    if (!StoredFiles.Ready(verification,"office",id,path,out var hash)) return Error("첨부파일이 없거나 무결성 검사를 통과하지 못했습니다.", 410);
     var source=store.Query("SELECT MessageId FROM Attachments WHERE Id=$id AND MessageId IS NOT NULL UNION SELECT s.RequestId FROM SubmissionFiles sf JOIN Submissions s ON s.Id=sf.SubmissionId WHERE sf.AttachmentId=$id",r=>r.GetString(0),("$id",id)).FirstOrDefault();
     if(source is not null)using(var opened=store.Open())using(var tx=opened.BeginTransaction()){if(!MessageRecall.Read(opened,tx,source,UserId(c)))return Results.NotFound();tx.Commit();}
-    return Results.File(path, "application/octet-stream", rows[0].name, enableRangeProcessing: false);
+    var tag=hash is null?null:new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{hash}\"");
+    return Results.File(path,"application/octet-stream",rows[0].name,entityTag:tag,enableRangeProcessing:tag is not null);
 });
 
 var adminApi = app.MapGroup("/api/admin").RequireAuthorization("Admin");

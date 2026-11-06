@@ -4,6 +4,8 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading;
+using SchoolMessenger.Contracts;
+using SchoolMessenger.Shared;
 
 namespace SchoolMessenger.Desktop;
 
@@ -12,6 +14,7 @@ public sealed class Api : IDisposable
     public CookieContainer Cookies { get; } = new();
     public Uri Address { get; }
     public HttpClient Http { get; }
+    readonly HttpClient transfers;
     public Session? Session { get; private set; }
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public Api(string address)
@@ -20,9 +23,14 @@ public sealed class Api : IDisposable
         Address = uri;
         if (Address.Scheme != "https" && !(Address.Scheme == "http" && Address.IsLoopback))
             throw new InvalidOperationException("교내 서버 주소는 HTTPS여야 합니다. HTTP는 이 PC의 개발 서버에만 허용됩니다.");
-        Http = new HttpClient(CertificatePins.Handler(Address, new HttpClientHandler { CookieContainer = Cookies, AllowAutoRedirect=false })) { BaseAddress = Address, Timeout = TimeSpan.FromSeconds(90) };
-        Http.DefaultRequestHeaders.Add("X-YY-Product","windows");
-        Http.DefaultRequestHeaders.Add("X-YY-Version",typeof(Api).Assembly.GetName().Version?.ToString(3)??"1.0.0");
+        var handler=CertificatePins.Handler(Address,new HttpClientHandler { CookieContainer=Cookies,AllowAutoRedirect=false });
+        Http=new HttpClient(handler){BaseAddress=Address,Timeout=TimeSpan.FromSeconds(90)};
+        transfers=new HttpClient(handler,false){BaseAddress=Address,Timeout=TimeSpan.FromMinutes(20)};
+        foreach(var client in new[]{Http,transfers})
+        {
+            client.DefaultRequestHeaders.Add("X-YY-Product","windows");
+            client.DefaultRequestHeaders.Add("X-YY-Version",typeof(Api).Assembly.GetName().Version?.ToString(3)??"1.0.0");
+        }
     }
     public async Task RefreshSession(CancellationToken cancellationToken = default) => Session = await Get<Session>("api/session", cancellationToken);
     public async Task<T> Get<T>(string path, CancellationToken cancellationToken = default)
@@ -37,7 +45,7 @@ public sealed class Api : IDisposable
         using var request = new HttpRequestMessage(method, path);
         request.Headers.Add("X-CSRF-TOKEN", Session!.CsrfToken);
         request.Content = content ?? JsonContent.Create(value ?? new { });
-        using var response = await Http.SendAsync(request);
+        using var response = await (content?.Headers.ContentType?.MediaType=="application/octet-stream" ? transfers : Http).SendAsync(request);
         await Check(response);
         if (response.Content.Headers.ContentLength == 0) return default!;
         var text = await response.Content.ReadAsStringAsync();
@@ -50,12 +58,22 @@ public sealed class Api : IDisposable
     }
     public async Task<Attachment> Upload(string path)
     {
+        var file=new FileInfo(path);
+        if(file.Length>AttachmentLimits.Message)throw new InvalidOperationException("파일당 2GiB까지 첨부할 수 있습니다.");
+        if(file.Length>AttachmentLimits.LegacyFile)
+        {
+            using var stream=new StreamContent(file.OpenRead());
+            stream.Headers.ContentType=new("application/octet-stream");
+            stream.Headers.ContentLength=file.Length;
+            stream.Headers.Add(AttachmentLimits.NameHeader,Uri.EscapeDataString(file.Name));
+            return await Send<Attachment>(HttpMethod.Post,"api/attachments",content:stream);
+        }
         using var content = new MultipartFormDataContent();
-        content.Add(new StreamContent(File.OpenRead(path)), "file", Path.GetFileName(path));
+        content.Add(new StreamContent(file.OpenRead()), "file", file.Name);
         return await Send<Attachment>(HttpMethod.Post, "api/attachments", content: content);
     }
-    public async Task Download(string id, string destination)
-        => await DownloadPath($"api/attachments/{id}/download", destination);
+    public Task Download(string id,string destination,Action<AttachmentProgress>? progress=null,CancellationToken cancellation=default) =>
+        AttachmentDownload.Save(transfers,$"api/attachments/{id}/download",Session!.User!.Id,destination,Check,progress,cancellation);
     public async Task DownloadPath(string path, string destination)
     {
         using var response = await Http.GetAsync(path, HttpCompletionOption.ResponseHeadersRead);
@@ -86,7 +104,7 @@ public sealed class Api : IDisposable
         catch (JsonException) { }
         throw new ApiRequestException(response.StatusCode,message);
     }
-    public void Dispose() => Http.Dispose();
+    public void Dispose() { transfers.Dispose();Http.Dispose(); }
 }
 internal sealed class ApiRequestException(HttpStatusCode status,string message):InvalidOperationException(message)
 {public HttpStatusCode StatusCode{get;}=status;}

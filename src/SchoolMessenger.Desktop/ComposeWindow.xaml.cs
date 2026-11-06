@@ -62,8 +62,8 @@ public partial class ComposeWindow : Window
         {
             if (!File.Exists(path) || files.Any(f => f.Path == path)) continue;
             var info = new FileInfo(path);
-            if (info.Length is <= 0 or > 104_857_600 || files.Count >= 10 || files.Sum(f => new FileInfo(f.Path).Length) + info.Length > 209_715_200)
-            { Feedback.Text = "파일당 100MB, 합계 200MB, 최대 10개입니다."; break; }
+            if (info.Length is <= 0 or > AttachmentLimits.Message || files.Count >= 10 || files.Sum(f => new FileInfo(f.Path).Length) + info.Length > AttachmentLimits.Message)
+            { Feedback.Text = "파일당 2GiB, 합계 2GiB, 최대 10개입니다."; break; }
             files.Add(new SourceFile(path));
         }
     }

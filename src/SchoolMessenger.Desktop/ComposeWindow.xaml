@@ -60,7 +60,7 @@
       <Button Content="×" Tag="{Binding}" Click="RemoveFile" ToolTip="첨부에서 빼기" AutomationProperties.Name="첨부에서 빼기" BorderThickness="0" Background="Transparent" Padding="0" MinHeight="24" Width="24" Height="24" Margin="4,0,0,0" Foreground="{DynamicResource Muted}" HorizontalContentAlignment="Center"/>
      </StackPanel></Border>
     </DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-    <TextBlock Text="파일당 100MB · 합계 200MB · 최대 10개 · 끌어다 놓아도 됩니다" Foreground="{DynamicResource Faint}" FontSize="11" VerticalAlignment="Center" Margin="0,0,0,6"/>
+    <TextBlock Text="파일당 2GiB · 합계 2GiB · 최대 10개 · 끌어다 놓아도 됩니다" Foreground="{DynamicResource Faint}" FontSize="11" VerticalAlignment="Center" Margin="0,0,0,6"/>
    </WrapPanel>
 
    <WrapPanel x:Name="DeliveryOptions" Grid.Row="4" Grid.ColumnSpan="2" Margin="0,4,0,0">

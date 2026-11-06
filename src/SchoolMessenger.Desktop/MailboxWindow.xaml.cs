@@ -177,7 +177,7 @@ public partial class MailboxWindow : Window
     {
         if (Api is null || ((System.Windows.Controls.Button)sender).Tag is not Attachment file) return;
         var dialog = new Microsoft.Win32.SaveFileDialog { FileName = file.Name };
-        if (dialog.ShowDialog(this) == true) await Run(async () => { await Api.Download(file.Id, dialog.FileName); StatusLabel.Text = "파일을 저장했습니다."; });
+        if (dialog.ShowDialog(this) == true) await Run(async () => { if(await AttachmentTransferWindow.Save(this,Api,file.Id,dialog.FileName))StatusLabel.Text = "파일을 저장했습니다."; });
     }
 
 }

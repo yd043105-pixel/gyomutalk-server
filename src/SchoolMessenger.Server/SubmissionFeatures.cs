@@ -85,7 +85,9 @@ public static class SubmissionFeatures
                 {
                     if (!Guid.TryParseExact(attachment, "N", out _) || !File.Exists(Path.Combine(store.Files, attachment))) return Error("제출 파일이 없습니다.");
                     using var check = Store.Command(connection, "SELECT Size FROM Attachments a WHERE Id=$file AND OwnerId=$user AND MessageId IS NULL AND DeletedAt IS NULL AND UploadedAt>$cutoff AND NOT EXISTS(SELECT 1 FROM SubmissionFiles sf WHERE sf.AttachmentId=a.Id) AND NOT EXISTS(SELECT 1 FROM ScheduledAttachments WHERE AttachmentId=a.Id)", transaction, ("$file", attachment), ("$user", user), ("$cutoff", Maintenance.Now - 86_400_000));
-                    var size = check.ExecuteScalar(); if (size is null) return Error("자신이 새로 업로드한 파일만 제출할 수 있습니다."); total += Convert.ToInt64(size);
+                    var size = check.ExecuteScalar(); if (size is null) return Error("자신이 새로 업로드한 파일만 제출할 수 있습니다.");
+                    var bytes=Convert.ToInt64(size);if(bytes>104_857_600)return Error("제출 파일은 한 개당 100MB까지입니다.",413);
+                    total += bytes;
                 }
                 if (total > 209_715_200) return Error("제출 파일 합계는 200MB 이내입니다.", 413);
                 submissionId = Guid.NewGuid().ToString("N"); var now = Maintenance.Now;

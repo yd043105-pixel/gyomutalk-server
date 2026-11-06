@@ -81,8 +81,9 @@ public static class FilePolicy
         if (!File.Exists(scanner)) return ScanOutcome.Unavailable;
         var info = new ProcessStartInfo(scanner) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var argument in new[] { "-Scan", "-ScanType", "3", "-File", path, "-DisableRemediation" }) info.ArgumentList.Add(argument);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        timeout.CancelAfter(TimeSpan.FromMinutes(new FileInfo(path).Length > MaxFile ? 5 : 1));
         using var scan = Process.Start(info) ?? throw new FilePolicyException("파일 검사기를 실행하지 못했습니다.", 503);
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation); timeout.CancelAfter(TimeSpan.FromSeconds(60));
         try
         {
             var output = scan.StandardOutput.ReadToEndAsync(timeout.Token); var errors = scan.StandardError.ReadToEndAsync(timeout.Token);
@@ -101,7 +102,7 @@ public static class FilePolicy
         var outcome = await RunScanner(path, scannerPath, cancellation);
         if (outcome == ScanOutcome.Unavailable)
             // Reading the saved file gives a real-time antivirus its chance to block or remove it; this does not prove it looked.
-            try { await File.ReadAllBytesAsync(path, cancellation); }
+            try { await using var input = File.OpenRead(path); await input.CopyToAsync(Stream.Null, cancellation); }
             catch (Exception error) when (error is IOException or UnauthorizedAccessException) { outcome = ScanOutcome.Refused; }
         if (outcome == ScanOutcome.Refused) throw new FilePolicyException("파일 검사에서 문제가 발견되어 올릴 수 없습니다.", 422);
     }

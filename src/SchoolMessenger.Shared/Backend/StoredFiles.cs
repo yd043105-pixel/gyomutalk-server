@@ -16,15 +16,17 @@ public static class StoredFiles
         command.Parameters.AddWithValue("$hash",(object?)hash ?? DBNull.Value); command.Parameters.AddWithValue("$now",DeviceSessions.Now); command.ExecuteNonQuery();
     }
     public static string Hash(string path) { using var file=File.OpenRead(path);return Convert.ToHexString(SHA256.HashData(file)); }
-    public static bool Ready(SqliteConnection db, string kind, string id, string path)
+    public static bool Ready(SqliteConnection db, string kind, string id, string path) => Ready(db,kind,id,path,out _);
+    public static bool Ready(SqliteConnection db, string kind, string id, string path, out string? verifiedHash)
     {
+        verifiedHash=null;
         using var command=db.CreateCommand();command.CommandText="SELECT State,Sha256 FROM FileVerification WHERE Kind=$kind AND FileId=$id";
         command.Parameters.AddWithValue("$kind",kind);command.Parameters.AddWithValue("$id",id);
         string? state=null,hash=null;using(var reader=command.ExecuteReader())if(reader.Read()){state=reader.GetString(0);hash=reader.IsDBNull(1)?null:reader.GetString(1);}
         // Legacy files retain their existing authorization/expiry policy; no invented AV assertion.
         if(state is null)return File.Exists(path);
         if(state!="ready"||hash is null||!File.Exists(path))return false;
-        try{if(Hash(path)==hash)return true;}catch(IOException){return false;}
+        try{if(Hash(path)==hash){verifiedHash=hash;return true;}}catch(IOException){return false;}
         State(db,kind,id,"rejected");return false;
     }
 }

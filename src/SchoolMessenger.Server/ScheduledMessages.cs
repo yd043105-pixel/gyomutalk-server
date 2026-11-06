@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using SchoolMessenger.Shared;
+using SchoolMessenger.Contracts;
 using Microsoft.Data.Sqlite;
 
 namespace SchoolMessenger.Server;
@@ -49,7 +50,7 @@ public sealed class ScheduledMessages(Store store,IHostEnvironment environment,I
                 using var c=Store.Command(db,"SELECT Size FROM Attachments WHERE Id=$id AND OwnerId=$owner AND MessageId IS NULL AND DeletedAt IS NULL AND UploadedAt>$cutoff AND ExpiresAt>$at AND NOT EXISTS(SELECT 1 FROM SubmissionFiles WHERE AttachmentId=$id) AND NOT EXISTS(SELECT 1 FROM ScheduledAttachments WHERE AttachmentId=$id)",tx,("$id",file),("$owner",sender.Id),("$cutoff",now-86_400_000),("$at",at));
                 var size=c.ExecuteScalar();if(size is null||!Guid.TryParseExact(file,"N",out _)||!File.Exists(Path.Combine(store.Files,file)))return Error("첨부파일의 상태·소유자·예약 시각 이전 만료 여부를 확인하세요.");total+=Convert.ToInt64(size);
             }
-            if(total>209_715_200)return Error("첨부 합계는 200MB 이하여야 합니다.",413);
+            if(total>AttachmentLimits.Message)return Error("첨부 합계는 2GiB 이하여야 합니다.",413);
             var id=Guid.NewGuid().ToString("N");var payload=request with{All=false,Department=null,RecipientIds=ids.ToArray(),ScheduledAt=null};
             using(var c=Store.Command(db,"INSERT INTO ScheduledMessages(Id,SenderId,ClientId,Payload,Fingerprint,DeliverAt,RequiresBroadcast) VALUES($id,$sender,$client,$payload,$hash,$at,$broadcast)",tx,("$id",id),("$sender",sender.Id),("$client",request.ClientId),("$payload",JsonSerializer.Serialize(payload,Json)),("$hash",fingerprint),("$at",at),("$broadcast",broadcast)))c.ExecuteNonQuery();
             foreach(var file in request.AttachmentIds!.Distinct()){using var c=Store.Command(db,"INSERT INTO ScheduledAttachments VALUES($id,$file)",tx,("$id",id),("$file",file));c.ExecuteNonQuery();}
