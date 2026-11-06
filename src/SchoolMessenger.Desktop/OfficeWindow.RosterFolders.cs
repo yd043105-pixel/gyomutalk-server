@@ -37,8 +37,13 @@ public sealed partial class OfficeWindow
         columns.Children.Add(AdminUi.Card(left, 16));
         var memberCard = AdminUi.Card(right, 16); Grid.SetColumn(memberCard, 2); columns.Children.Add(memberCard);
         left.Children.Add(AdminUi.Heading("폴더", 16));
-        var tree = new TreeView { Height = 290, Margin = new Thickness(0, 8, 0, 10) };
-        AutomationProperties.SetName(tree, "조직도 폴더"); left.Children.Add(tree);
+        var tree = new TreeView { Height = 230, Background = System.Windows.Media.Brushes.Transparent, BorderThickness = new Thickness(0) };
+        AutomationProperties.SetName(tree, "조직도 폴더");
+        ScrollViewer.SetHorizontalScrollBarVisibility(tree, ScrollBarVisibility.Disabled);
+        var treeSurface = AdminUi.Card(tree, 6);
+        treeSurface.Margin = new Thickness(0, 8, 0, 10);
+        treeSurface.SetResourceReference(Border.BackgroundProperty, "Subtle");
+        left.Children.Add(treeSurface);
         var name = new TextBox { MaxLength = 40, Margin = new Thickness(0, 4, 0, 8) };
         AutomationProperties.SetName(name, "폴더 이름");
         left.Children.Add(AdminUi.Label("폴더 이름", "Muted")); left.Children.Add(name);
@@ -55,11 +60,14 @@ public sealed partial class OfficeWindow
         var delete = FolderAction("폴더 삭제");
         var caption = AdminUi.Heading("폴더의 교직원", 16);
         right.Children.Add(caption);
-        var search = new TextBox { ToolTip = "이름 또는 부서로 교직원 검색", Margin = new Thickness(0, 8, 0, 6) };
+        var searchLabel = AdminUi.Label("이름 또는 부서로 검색", "Muted", 12);
+        searchLabel.Margin = new Thickness(0, 8, 0, 4);
+        right.Children.Add(searchLabel);
+        var search = new TextBox { Margin = new Thickness(0, 0, 0, 6) };
         AutomationProperties.SetName(search, "배치할 교직원 검색");
         right.Children.Add(search);
         var members = new StackPanel();
-        right.Children.Add(new ScrollViewer { Content = members, Height = 305, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        right.Children.Add(new ScrollViewer { Content = members, Height = 230, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         var tip = AdminUi.Label("여러 폴더에 같은 교직원을 넣을 수 있습니다. 어느 폴더에도 속하지 않으면 미분류에 표시됩니다.", "Muted", 12);
         tip.TextWrapping = TextWrapping.Wrap; right.Children.Add(tip);
 

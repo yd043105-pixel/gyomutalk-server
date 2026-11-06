@@ -69,13 +69,13 @@ public sealed partial class TimetableWindow:Window
             var note=new Button{Content=n.Title,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,0,0,8),ToolTip="누르면 그 날짜의 시간표를 봅니다."};note.SetResourceReference(Control.BackgroundProperty,"ChangeTint");note.SetResourceReference(Control.ForegroundProperty,"ChangeInk");note.BorderThickness=new Thickness(0);
             note.Click+=async(_,_)=>await Run(async()=>{selected=DateTime.Parse(n.Date);weekly=false;var choice=choices.FirstOrDefault(c=>n.ClassIds.Contains(c.Id));if(choice is not null)scope.SelectedItem=choice;await api.Send<JsonElement>(HttpMethod.Post,$"api/timetable/notices/{n.Revision}/read");await Load();});body.Children.Add(note);
         }
-        await Show();
+        var hasTimetable = await ShowTimetable();
         AddScheduleActions();
         if(setup.GetProperty("canManage").GetBoolean()||setup.GetProperty("isAdmin").GetBoolean())
         {
-            var tools=new WrapPanel{Margin=new Thickness(0,12,0,0)};body.Children.Add(tools);
+            var tools=new WrapPanel{Margin=new Thickness(0,4,0,12)};body.Children.Insert(body.Children.IndexOf(view),tools);
             void Tool(string label,Func<Task> action){var b=new Button{Content=label,Margin=new Thickness(0,0,4,0)};b.SetResourceReference(StyleProperty,"SubtleButton");b.Click+=async(_,_)=>await Run(action);tools.Children.Add(b);}
-            if(setup.GetProperty("canManage").GetBoolean()){Tool("시간표 올리기",Choose);Tool("게시 이력 · 취소",History);}
+            if(CanManageSchedule){if(hasTimetable)Tool("시간표 올리기",Choose);Tool("게시 이력 · 취소",History);}
             if(setup.GetProperty("isAdmin").GetBoolean())Tool("시간표 담당자 · 담임 연결",Administration);
         }
         var pending=setup.GetProperty("pending").GetInt32();if(pending>0)body.Children.Add(AdminUi.Label("앱 전달 대기 "+pending+"건 · 외부 연결이 복구되면 재시도합니다.","Muted",12));
@@ -83,7 +83,7 @@ public sealed partial class TimetableWindow:Window
     }
     async void ScopeChanged(object sender,SelectionChangedEventArgs e){if(!busy)await Run(Load);}
     static readonly System.Globalization.CultureInfo Korean=System.Globalization.CultureInfo.GetCultureInfo("ko-KR");
-    async Task Show()
+    async Task<bool> ShowTimetable()
     {
         if(view is not null)body.Children.Remove(view);view=new StackPanel();body.Children.Add(view);
         var choice=scope.SelectedItem as Choice??new Choice("mine","내 수업");var mine=choice.Id=="mine";
@@ -97,7 +97,22 @@ public sealed partial class TimetableWindow:Window
         printDays = days.ToArray();
         printTitle = choice.Name + " 시간표";
         var lessons=days.SelectMany(d=>d.Slots).Where(s=>s.Subject.Length>0).ToArray();var published=days.Max(d=>d.PublishedAt);
-        if(published==0&&lessons.Length==0){view.Children.Add(AdminUi.Empty("아직 올라온 시간표가 없습니다",setup.GetProperty("canManage").GetBoolean()?"아래 ‘시간표 올리기’로 나이스에서 받은 파일을 올려 주세요.":"시간표 담당자가 올리면 여기에 표시됩니다."));return;}
+        if (published == 0 && lessons.Length == 0)
+        {
+            Button? upload = null;
+            if (CanManageSchedule)
+            {
+                upload = new Button { Content = "시간표 올리기" };
+                upload.SetResourceReference(StyleProperty, "PrimaryButton");
+                upload.Click += async (_, _) => await Run(Choose);
+            }
+            var empty = AdminUi.Empty("아직 올라온 시간표가 없습니다",
+                CanManageSchedule ? "나이스에서 받은 시간표 파일을 올리면 교직원이 여기서 볼 수 있습니다." : "시간표 담당자가 올리면 여기에 표시됩니다.", upload);
+            var card = AdminUi.Card(empty, 0);
+            card.SetResourceReference(Border.BackgroundProperty, "Subtle");
+            view.Children.Add(card);
+            return false;
+        }
         if(days.Any(d=>d.MissingClasses.Length>0))view.Children.Add(AdminUi.Label("일부 학급의 적용 가능한 기초시간표가 없습니다.","Warning",12));
         var periods=SchoolDay.Lessons(grade is >=1 and <=3?grade:1,7).ToList();foreach(var extra in lessons.Select(s=>s.Period).Distinct().Where(p=>p>7).Order())periods.Add(SchoolDay.Lessons(grade is >=1 and <=3?grade:1).FirstOrDefault(p=>p.Number==extra)??new SchoolPeriod(extra,extra+"교시","","",true));
         TextBlock Lesson(TimetableSlot s,double size)
@@ -150,6 +165,7 @@ public sealed partial class TimetableWindow:Window
             if(!mine&&grade is >=1 and <=3)view.Children.Add(AdminUi.Label(string.Join(" · ",SchoolDay.Schedule(grade).Where(p=>!p.Lesson).Select(p=>p.Label)),"Faint",11));
         }
         if(published>0){var note=AdminUi.Label("마지막 게시 "+DateTimeOffset.FromUnixTimeMilliseconds(published).ToOffset(TimeSpan.FromHours(9)).ToString("M.d HH:mm")+(mine&&weekly?" · 표시 시간은 학년별 일과에 따릅니다":""),"Faint",11);note.Margin=new Thickness(0,8,0,0);view.Children.Add(note);}
+        return true;
     }
     readonly List<(string Name,JsonElement Value)> imports=[];
     public async Task Refresh(){if(view.Parent==body)await Run(Load);}

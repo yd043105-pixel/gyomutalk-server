@@ -395,7 +395,7 @@ public partial class MainWindow : Window
     void ToggleFavorites(object sender, RoutedEventArgs e) { favoritesOnly = !favoritesOnly; UpdateNavigation(); }
     async void Compose(object sender, RoutedEventArgs e) => await WriteMessage();
     async void SendFilesClick(object sender, RoutedEventArgs e) => await WriteMessage(filesOnly: true);
-    public async Task WriteMessage(string? recipient = null, string? title = null, bool filesOnly = false, string? forwardBody = null, string[]? recipients = null, string? body = null)
+    public async Task WriteMessage(string? recipient = null, string? title = null, bool filesOnly = false, string? forwardBody = null, string[]? recipients = null, string? body = null, bool requestSubmission = false)
     {
         await Run(async () =>
         {
@@ -404,6 +404,7 @@ public partial class MainWindow : Window
             if (selected.Length == 0 && forwardBody is null && (OrganizationTree.SelectedItem as TreeViewItem)?.Tag is Person person) selected = [person.Id];
             var contacts = await Api.Get<Person[]>("api/users");
             var dialog = new ComposeWindow(this, contacts, recipient, title ?? (filesOnly ? "파일 전달" : null), selected);
+            if (requestSubmission) dialog.CollectFiles.IsChecked = true;
             if (filesOnly) { dialog.BodyBox.Text = "첨부파일을 전달합니다."; dialog.Loaded += (_, _) => dialog.ChooseFiles(); }
             if ((forwardBody ?? body) is { } text) dialog.BodyBox.Text = text;
             dialog.Closed += async (_, _) => { if (closingWindows || Api is null) return; SavePreferences(); await Run(Refresh); };

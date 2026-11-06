@@ -81,13 +81,24 @@ public sealed class WorkWindow : Window
     // To-dos fill the window with a side panel for editing; submissions need the wide right side for the recipient cards.
     void UpdatePanes()
     {
-        var todos=view=="todos";var open=detail.Children.Count>0;
-        panes.ColumnDefinitions[0].Width=todos?new GridLength(1,GridUnitType.Star):new GridLength(280);
-        panes.ColumnDefinitions[1].Width=!open&&todos?new GridLength(0):todos?new GridLength(320):new GridLength(1,GridUnitType.Star);
-        scroller.Visibility=open||!todos?Visibility.Visible:Visibility.Collapsed;
-        var none=list.Items.Count==0;list.Visibility=none?Visibility.Collapsed:Visibility.Visible;emptyHost.Visibility=none?Visibility.Visible:Visibility.Collapsed;
-        var add=new Button{Content="할 일 추가"};add.SetResourceReference(StyleProperty,"PrimaryButton");add.Click+=(_,_)=>directAdd.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        emptyHost.Child=todos?AdminUi.Empty("진행 중인 할 일이 없습니다","받은 메시지에서 찾은 할 일과 직접 추가한 일이 여기에 모입니다.",open?null:add):AdminUi.Empty("제출 요청이 없습니다","메시지를 보낼 때 ‘파일 제출 받기’를 켜면 여기에 모입니다.");
+        var todos = view == "todos";
+        var open = detail.Children.Count > 0;
+        var none = list.Items.Count == 0;
+        var showDetail = open || (!todos && !none);
+        directAdd.Visibility = todos ? Visibility.Visible : Visibility.Collapsed;
+        panes.ColumnDefinitions[0].Width = todos || !showDetail ? new GridLength(1, GridUnitType.Star) : new GridLength(280);
+        panes.ColumnDefinitions[1].Width = !showDetail ? new GridLength(0) : todos ? new GridLength(320) : new GridLength(1, GridUnitType.Star);
+        scroller.Visibility = showDetail ? Visibility.Visible : Visibility.Collapsed;
+        list.Visibility = none ? Visibility.Collapsed : Visibility.Visible;
+        emptyHost.Visibility = none ? Visibility.Visible : Visibility.Collapsed;
+        if (!none) return;
+        var add = new Button { Content = todos ? "할 일 추가" : "파일 제출 요청하기" };
+        add.SetResourceReference(StyleProperty, "PrimaryButton");
+        if (todos) add.Click += (_, _) => directAdd.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        else add.Click += async (_, _) => await main.WriteMessage(requestSubmission: true);
+        emptyHost.Child = todos
+            ? AdminUi.Empty("진행 중인 할 일이 없습니다", "받은 메시지에서 찾은 할 일과 직접 추가한 일이 여기에 모입니다.", open ? null : add)
+            : AdminUi.Empty("제출 요청이 없습니다", "받은 요청과 내가 보낸 요청을 여기서 확인할 수 있습니다.", open ? null : add);
     }
     async void CompleteTodo(object sender,RoutedEventArgs e)
     {
@@ -261,7 +272,7 @@ public sealed class WorkWindow : Window
         var downloaded=Path.Combine(directory,"submission-download-check.txt");await api.Download(attachment.Id,downloaded);Check(File.ReadAllText(downloaded).Contains("synthetic-submission"),"collector can still download the submitted file with its existing authorization");
         if(attachment.Size>128*1024)
         {
-            var resumedPath=Path.Combine(directory,"resumed-download-check.txt");
+            var resumedPath=Path.Combine(main.LocalDirectory,"resumed-download-check.txt");
             using var pause=new System.Threading.CancellationTokenSource();
             try{await api.Download(attachment.Id,resumedPath,p=>{if(p.Received>0)pause.Cancel();},pause.Token);}
             catch(OperationCanceledException)when(pause.IsCancellationRequested){}
