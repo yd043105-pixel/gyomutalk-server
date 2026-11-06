@@ -130,7 +130,7 @@ internal sealed class ApiRequestException(HttpStatusCode status,string message):
 {public HttpStatusCode StatusCode{get;}=status;}
 public record UserInfo(string Id, string Username, string Name, string Department, bool IsAdmin, bool CanBroadcast, bool Active, bool ActivationRequired=false, string? SeatIp=null,string Position="",bool SharedPassword=false,bool PasswordChangeRequired=false);
 public record Session(string SchoolName, string CsrfToken, UserInfo? User,long AttachmentLimitBytes=AttachmentLimits.Message);
-public record Person(string Id, string Name, string Department, bool Online,string Position="",bool Away=false,bool Mobile=false)
+public record Person(string Id, string Name, string Department, bool Online,string Position="",bool Away=false,bool Mobile=false,RosterClassification? Classification=null)
 {
     public string Label => $"{Name} · {Department}";
     public bool Selected { get; set; }

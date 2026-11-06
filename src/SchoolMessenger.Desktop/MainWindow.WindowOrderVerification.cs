@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Threading;
 
@@ -28,6 +29,7 @@ public partial class MainWindow
     {
         var checks = new List<string>();
         void Check(bool ok, string message) { if (!ok) throw new InvalidOperationException(message); checks.Add(message); }
+        await VerifyRosterSelection(Check);
         async Task Bring(Window window)
         {
             window.Activate(); SetForegroundWindow(new WindowInteropHelper(window).Handle);
@@ -93,5 +95,68 @@ public partial class MainWindow
         var output = Path.GetDirectoryName(Path.GetFullPath(Environment.GetEnvironmentVariable("SCHOOL_UI_OUTPUT")!))!;
         Directory.CreateDirectory(output); File.WriteAllText(Path.Combine(output, "window-order-checks.json"), JsonSerializer.Serialize(new { checks, realSchoolData = false }));
         System.Windows.Application.Current.Shutdown(0);
+    }
+    async Task VerifyRosterSelection(Action<bool, string> check)
+    {
+        async Task<string> AddTeacher(string username, string name)
+        {
+            var account = await Api!.Send<JsonElement>(System.Net.Http.HttpMethod.Post, "api/admin/users", new
+            {
+                username, name, department = "검증부", password = "Test-" + Guid.NewGuid(), isAdmin = false, canBroadcast = false
+            });
+            return account.GetProperty("id").GetString()!;
+        }
+        var first = await AddTeacher("roster.first", "검증 교사 가");
+        var second = await AddTeacher("roster.second", "검증 교사 나");
+        var outside = await AddTeacher("roster.outside", "검증 교사 다");
+        await Api!.Send<JsonElement>(System.Net.Http.HttpMethod.Put, $"api/admin/users/{first}/roster-classification",
+            new { grades = new[] { 1, 2 }, duties = new[] { "담임", "방송" } });
+        await RefreshPeople();
+
+        TreeViewItem[] Groups() => ((TreeViewItem)OrganizationTree.Items[0]).Items.OfType<TreeViewItem>().ToArray();
+        TreeViewItem[] Rows(string id) => Groups().SelectMany(group => group.Items.OfType<TreeViewItem>())
+            .Where(row => row.Tag is Person person && person.Id == id).ToArray();
+        static CheckBox Box(TreeViewItem row) => ((Grid)row.Header).Children.OfType<CheckBox>().Single();
+        async Task<string[]> OpenFromMenu(string id)
+        {
+            var row = Rows(id).Single();
+            row.IsSelected = true;
+            var previous = SessionWindows.OfType<ComposeWindow>().ToHashSet();
+            var command = row.ContextMenu.Items.OfType<MenuItem>().First(item => Equals(item.Header, "메시지 보내기"));
+            command.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            for (var i = 0; i < 100; i++)
+            {
+                var opened = SessionWindows.OfType<ComposeWindow>().FirstOrDefault(window => !previous.Contains(window));
+                if (opened is not null)
+                {
+                    var labels = opened.RecipientChips.Children.OfType<Border>()
+                        .Select(chip => ((StackPanel)chip.Child).Children.OfType<TextBlock>().Single().Text).ToArray();
+                    opened.Close();
+                    return labels;
+                }
+                await Task.Delay(30);
+            }
+            throw new InvalidOperationException("우클릭 메뉴에서 메시지 창이 열리지 않았습니다.");
+        }
+        string Label(string id) => people.Single(person => person.Id == id).Label;
+
+        RosterMode.SelectedIndex = 1;
+        check(Rows(first).Length == 2, "a teacher assigned to two grades appears in both grade groups");
+        Box(Rows(first)[0]).IsChecked = true;
+        check(Rows(first).All(row => Box(row).IsChecked == true) && selectedPeople.SetEquals([first]), "duplicate roster rows synchronize and select one recipient");
+        RosterMode.SelectedIndex = 2;
+        check(Rows(first).Length == 2 && Rows(first).All(row => Box(row).IsChecked == true), "duty groups preserve selection from the grade view");
+        RosterMode.SelectedIndex = 3;
+        check(Rows(first).Length == 0 && Rows(second).Length == 1 && Rows(outside).Length == 1, "unclassified view shows only teachers without a grade or duty");
+        Box(Rows(second)[0]).IsChecked = true;
+        RosterMode.SelectedIndex = 0;
+        check((await OpenFromMenu(outside)).ToHashSet().SetEquals([Label(first), Label(second)]),
+            "right-click on an unchecked teacher composes to all checked recipients only");
+        var groupCheck = Groups().Select(group => (CheckBox)group.Header).Single(box => ((string)box.Content).StartsWith("검증부"));
+        check(groupCheck.IsChecked is null, "partially selected groups display a mixed checkbox");
+        groupCheck.IsChecked = false;
+        check(selectedPeople.SetEquals([first, second, outside]) && groupCheck.IsChecked == true, "toggling a mixed group selects all its members");
+        groupCheck.IsChecked = false;
+        check((await OpenFromMenu(outside)).SequenceEqual([Label(outside)]), "right-click with no checked teachers composes to one teacher");
     }
 }

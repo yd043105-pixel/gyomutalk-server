@@ -9,6 +9,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Microsoft.AspNetCore.SignalR.Client;
+using SchoolMessenger.Contracts;
 
 namespace SchoolMessenger.Desktop;
 public partial class MainWindow : Window
@@ -18,6 +19,9 @@ public partial class MainWindow : Window
     public HashSet<string> Favorites { get; set; } = new();
     readonly HashSet<string> selectedPeople = new(), knownIncoming = new();
     readonly HashSet<string> collapsedGroups = new();
+    readonly List<(CheckBox Check, string Id)> personChecks = new();
+    readonly List<(CheckBox Check, string[] Ids)> groupChecks = new();
+    bool syncingRosterChecks;
     readonly HashSet<long> knownTimetables = new();
     Person[] people = [];
     string schoolName="학교";
@@ -255,24 +259,59 @@ public partial class MainWindow : Window
         OnlineFilter.ToolTip="PC 온라인 또는 교사용 휴대폰 앱 접속 중";AwayFilter.ToolTip="PC에서 입력이 없거나 화면이 잠긴 교직원";
     }
     void UpdateSelectionHint() => SelectionHint.Text = $"선택 {selectedPeople.Count}명";
+    void SyncRosterChecks()
+    {
+        syncingRosterChecks = true;
+        try
+        {
+            foreach (var (check, id) in personChecks) check.IsChecked = selectedPeople.Contains(id);
+            foreach (var (check, ids) in groupChecks)
+            {
+                var count = ids.Count(selectedPeople.Contains);
+                check.IsChecked = count == 0 ? false : count == ids.Length ? true : null;
+            }
+        }
+        finally { syncingRosterChecks = false; }
+        UpdateSelectionHint();
+    }
+    void ChangeRosterMode(object sender, SelectionChangedEventArgs e) => RenderTree();
     void RenderTree()
     {
-        if (OrganizationTree is null || PeopleSearch is null) return;
+        if (OrganizationTree is null || PeopleSearch is null || RosterMode is null) return;
         var selected = (OrganizationTree.SelectedItem as TreeViewItem)?.Tag as Person;
         void Remember(ItemsControl parent) { foreach (var row in parent.Items.OfType<TreeViewItem>()) { if (row.Tag is string key) { if (key == "school") schoolExpanded = row.IsExpanded; else if (row.IsExpanded) collapsedGroups.Remove(key); else collapsedGroups.Add(key); } Remember(row); } }
         Remember(OrganizationTree);
         OrganizationTree.Items.Clear();
-        var filtered = people.Where(p => p.Label.Contains(PeopleSearch.Text.Trim(), StringComparison.OrdinalIgnoreCase) && (!favoritesOnly || Favorites.Contains(p.Id)) && (!onlineOnly || p.Available)&&(!awayOnly||p.Online&&p.Away)).ToArray();
+        personChecks.Clear(); groupChecks.Clear();
+        var view = (RosterView)Math.Max(0, RosterMode.SelectedIndex);
+        var query = PeopleSearch.Text.Trim();
+        var filtered = people.Where(p =>
+            (view != RosterView.Unclassified || (p.Classification ?? RosterClassification.Empty).Groups(view, p.Department).Length > 0) &&
+            (p.Label.Contains(query, StringComparison.OrdinalIgnoreCase) || p.Classification?.Matches(query) == true) &&
+            (!favoritesOnly || Favorites.Contains(p.Id)) && (!onlineOnly || p.Available) && (!awayOnly || p.Online && p.Away)).ToArray();
         var school = GroupRow(schoolName, "school", filtered.Select(p => p.Id).ToArray(), schoolExpanded || PeopleSearch.Text.Length > 0); OrganizationTree.Items.Add(school);
         if (filtered.Length == 0) school.Items.Add(new TreeViewItem { Header = favoritesOnly ? "즐겨찾기를 추가하세요." : "검색 결과가 없습니다.", IsEnabled = false });
-        foreach (var group in filtered.GroupBy(p => p.Department).OrderBy(g => g.Key))
+        var groups = filtered.SelectMany(person => (person.Classification ?? RosterClassification.Empty)
+            .Groups(view, person.Department).Select(label => (Label: label, Person: person)))
+            .GroupBy(row => row.Label, row => row.Person, StringComparer.OrdinalIgnoreCase).OrderBy(group => group.Key);
+        foreach (var group in groups)
         {
-            var row = GroupRow(group.Key, group.Key, group.Select(p => p.Id).ToArray(), !collapsedGroups.Contains(group.Key) || PeopleSearch.Text.Length > 0);
+            var key = $"{view}:{group.Key}";
+            var row = GroupRow(group.Key, key, group.Select(p => p.Id).ToArray(), !collapsedGroups.Contains(key) || PeopleSearch.Text.Length > 0);
             school.Items.Add(row);
             foreach (var person in group.OrderBy(p => onlineFirst?(p.Online?(p.Away?2:0):p.Mobile?1:3):0).ThenBy(p => p.Name))
             {
-                var check = new System.Windows.Controls.CheckBox { IsChecked = selectedPeople.Contains(person.Id), Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center };
-                check.Checked += (_, _) => { selectedPeople.Add(person.Id); UpdateSelectionHint(); }; check.Unchecked += (_, _) => { selectedPeople.Remove(person.Id); UpdateSelectionHint(); };
+                var check = new CheckBox { Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center };
+                System.Windows.Automation.AutomationProperties.SetName(check, person.Name + " 선택");
+                void ChangePerson(object sender, RoutedEventArgs e)
+                {
+                    if (syncingRosterChecks) return;
+                    if (check.IsChecked == true) selectedPeople.Add(person.Id);
+                    else selectedPeople.Remove(person.Id);
+                    SyncRosterChecks();
+                }
+                check.Checked += ChangePerson; check.Unchecked += ChangePerson;
+                personChecks.Add((check, person.Id));
                 var panel = new Grid { MinHeight = 36,ToolTip=person.Presence };
                 ToolTipService.SetInitialShowDelay(panel,500);
                 panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -291,13 +330,20 @@ public partial class MainWindow : Window
                 row.Items.Add(contact); if (selected?.Id == person.Id) contact.IsSelected = true;
             }
         }
-        UpdateSelectionHint();
+        SyncRosterChecks();
     }
     TreeViewItem GroupRow(string label, string key, string[] ids, bool expanded)
     {
-        var check = new System.Windows.Controls.CheckBox { Content = label + (key == "school" ? "" : $"  · {ids.Length}명"), FontSize = 11, FontWeight = FontWeights.SemiBold, IsChecked = ids.Length > 0 && ids.All(selectedPeople.Contains), Margin = new Thickness(0, 2, 0, 2) };
-        check.Checked += (_, _) => { foreach (var id in ids) selectedPeople.Add(id); RenderTree(); };
-        check.Unchecked += (_, _) => { foreach (var id in ids) selectedPeople.Remove(id); RenderTree(); };
+        var check = new CheckBox { Content = label + (key == "school" ? "" : $"  · {ids.Length}명"), FontSize = 11, FontWeight = FontWeights.SemiBold, IsEnabled = ids.Length > 0, Margin = new Thickness(0, 2, 0, 2) };
+        void ChangeGroup(object sender, RoutedEventArgs e)
+        {
+            if (syncingRosterChecks) return;
+            if (ids.All(selectedPeople.Contains)) selectedPeople.ExceptWith(ids);
+            else selectedPeople.UnionWith(ids);
+            SyncRosterChecks();
+        }
+        check.Checked += ChangeGroup; check.Unchecked += ChangeGroup;
+        groupChecks.Add((check, ids));
         return new TreeViewItem { Header = check, Tag = key, IsExpanded = expanded };
     }
     internal ContextMenu PersonMenu(Person person)
@@ -306,7 +352,13 @@ public partial class MainWindow : Window
         menu.Items.Add(new MenuItem { Header = person.Presence, IsEnabled = false });
         menu.Items.Add(new Separator());
         void Add(string text, RoutedEventHandler action) { var key = text.StartsWith("메시지 보내기") ? "MailIcon" : text.StartsWith("파일") ? "FileIcon" : text.StartsWith("채팅") ? "ChatIcon" : text.StartsWith("설문") ? "SurveyIcon" : text.StartsWith("원격") ? "RemoteIcon" : text.StartsWith("주고받은") ? "HistoryIcon" : text.StartsWith("사용자") ? "UserIcon" : "StarIcon"; var icon = new System.Windows.Shapes.Path { Data = (Geometry)FindResource(key), StrokeThickness = 1.5, Stretch = Stretch.Uniform, Width = 15, Height = 15 }; icon.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, "Blue"); var item = new MenuItem { Header = text, Icon = icon }; item.Click += action; menu.Items.Add(item); }
-        Add("메시지 보내기", async (_, _) => await WriteMessage(person.Id));
+        Add("메시지 보내기", async (_, _) =>
+        {
+            if (selectedPeople.Count == 0) await WriteMessage(person.Id);
+            else await WriteMessage(recipients: selectedPeople.ToArray());
+        });
+        var send = (MenuItem)menu.Items[2];
+        menu.Opened += (_, _) => send.Header = selectedPeople.Count == 0 ? "메시지 보내기" : $"메시지 보내기 · 선택 {selectedPeople.Count}명";
         Add("파일 보내기", async (_, _) => await WriteMessage(person.Id, filesOnly: true));
         Add("채팅하기", (_, _) => OpenChat([person.Id]));
         Add("설문 보내기", (_, _) => OpenSurvey([person.Id]));

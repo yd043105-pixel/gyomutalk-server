@@ -27,6 +27,17 @@ export async function officeChecks({Client,admin,password,address,data,check,sta
  await teacher.login(request.loginName,false,personal);assert.equal(teacher.user.activationRequired,false);
  check('activation requires current terms, individual one-time proof and a different personal password; lockout persists and initial sessions are revoked');
  const peer=new Client();const other=await admin.request('/api/admin/users','POST',{username:'office.peer',name:'다른교사',department:'수업부',password,isAdmin:false,canBroadcast:false});await peer.login('office.peer');
+ const rosterPath='/api/admin/users/'+registered.id+'/roster-classification';
+ const rosterValues={grades:[2,1,2],duties:[' 담임 ','방송','담임']},normalizedRoster={grades:[1,2],duties:['담임','방송']};
+ await teacher.request(rosterPath,'PUT',rosterValues,403);
+ await admin.request(rosterPath,'PUT',{grades:[7],duties:[]},400);
+ await admin.request(rosterPath,'PUT',{grades:[1],duties:['업무 미지정']},400);
+ await admin.request(rosterPath,'PUT',{grades:[1],duties:[null]},400);
+ await admin.request(rosterPath,'PUT',rosterValues);
+ assert.deepEqual((await peer.request('/api/users')).find(user=>user.id===registered.id).classification,normalizedRoster);
+ assert.equal((await peer.request('/api/users')).find(user=>user.id===other.id).classification,null);
+ assert.deepEqual((await admin.request('/api/admin/users')).find(user=>user.id===registered.id).classification,normalizedRoster);
+ assert.ok((await admin.request('/api/admin/office/audit')).some(a=>a.action==='staff.roster-classification'&&a.resourceId===registered.id));
  await teacher.request('/api/admin/office/permissions','POST',{userId:registered.id,calendarManager:true,roomManager:true},403);
  const begin=new Date(Date.now()+2*86400000);begin.setUTCHours(1,0,0,0);const iso=n=>new Date(begin.getTime()+n*3600000).toISOString();
  const event={clientId:id(),title:'학교 행사 검증',description:'가상 일정',start:iso(0),end:iso(2),allDay:false};
@@ -68,6 +79,11 @@ export async function officeChecks({Client,admin,password,address,data,check,sta
  check('administrator reset does not bypass the account credential attempt limit');
  // Start the separate reactivation scenario with a new in-memory limiter; DB lockout tests above remain persistent.
  await stop();start();await ready();teacher.csrf=(await teacher.request('/api/session')).csrfToken;
+ admin.csrf=(await admin.request('/api/session')).csrfToken;
+ assert.deepEqual((await admin.request('/api/users')).find(user=>user.id===registered.id).classification,normalizedRoster);
+ await admin.request(rosterPath,'PUT',{grades:[],duties:[]});
+ assert.equal((await admin.request('/api/users')).find(user=>user.id===registered.id).classification,null);
+ check('only admins can set valid roster classifications; classifications are normalized, audited, persisted across restarts and removable');
  await teacher.request('/api/activate','POST',{code:registered.activationCode,newPassword:personal,agreement},400);
  await teacher.request('/api/activate','POST',{code:reset.activationCode,newPassword:personal,agreement});await teacher.login(request.loginName,false,personal);
  const ledger=new DatabaseSync(path.join(data,'school.db')); ledger.exec('PRAGMA busy_timeout=5000');assert.equal(ledger.prepare('SELECT COUNT(*) AS count FROM StaffActivationAgreements WHERE UserId=?').get(registered.id).count,2);ledger.close();
