@@ -52,11 +52,11 @@ try{
 
  const size=Number(process.env.YY_LARGE_ATTACHMENT_MIB??101)*1024*1024,block=randomBytes(256*1024),original=createHash('sha256');
  async function* payload(){for(let sent=0;sent<size;sent+=block.length){const part=block.subarray(0,Math.min(size-sent,block.length));original.update(part);yield part;}}
- const start=performance.now();
+ const uploadStarted=performance.now();
  const upload=await sender.call('attachments',{method:'POST',duplex:'half',body:payload(),headers:{'Content-Type':'application/octet-stream','Content-Length':String(size),'X-Gyomutalk-File-Name':encodeURIComponent('대용량 자료.txt')}});
  assert.equal(upload.status,200,await upload.clone().text());
  const attachment=await upload.json(),hash=original.digest('hex');assert.equal(attachment.size,size);assert.equal(attachment.name,'대용량 자료.txt');
- console.log(`PASS ${(size/2**20).toFixed(0)} MiB raw upload saved and checked in ${((performance.now()-start)/1000).toFixed(1)}s`);
+ console.log(`PASS ${(size/2**20).toFixed(0)} MiB raw upload saved and checked in ${((performance.now()-uploadStarted)/1000).toFixed(1)}s`);
  assert.deepEqual(await sender.json('attachments/staged/check',[attachment.id]),[attachment.id]);
  assert.deepEqual(await other.json('attachments/staged/check',[attachment.id]),[]);
  await sender.json('messages',{clientId:randomUUID(),title:'대용량 시험',body:'합성 파일입니다.',recipientIds:[self.id],attachmentIds:[attachment.id]});
