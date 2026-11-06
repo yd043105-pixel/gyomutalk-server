@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {existsSync,mkdirSync,readFileSync} from 'node:fs';
+import {DatabaseSync} from 'node:sqlite';
 import path from 'node:path';
 import net from 'node:net';
 assert.equal(process.platform,'win32');
@@ -16,6 +17,17 @@ server.stdout.on('data',b=>logs+=b);server.stderr.on('data',b=>logs+=b);
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 try{
   let ready=false;for(let i=0;i<200;i++){assert.equal(server.exitCode,null,logs);try{if((await fetch(address+'/health')).ok){ready=true;break;}}catch{}await pause(150);}assert.ok(ready,'Fixture did not start');
+  const db=new DatabaseSync(path.join(fixture,'server','school.db'));
+  try {
+    const {Id:owner,Name:teacherName}=db.prepare("SELECT Id,Name FROM Users WHERE Username='admin'").get();
+    const id=()=>randomUUID().replaceAll('-',''),classId=id(),className='2학년 1반',batch=id(),client=id();
+    const monday=new Date(Date.now()+9*3600000);monday.setUTCDate(monday.getUTCDate()-(monday.getUTCDay()+6)%7);
+    const date=day=>new Date(monday.getTime()+day*86400000).toISOString().slice(0,10);
+    const cells=Array.from({length:35},(_,i)=>({classId,className,day:Math.floor(i/7)+1,period:i%7+1,subject:i%2?'문학':'국어',teacherId:owner,teacherName}));
+    db.prepare('INSERT INTO TimetableClasses VALUES(?,?,?)').run(classId,className,2);
+    const payload={id:batch,revision:1,owner,clientId:client,kind:'base',year:monday.getUTCFullYear(),semester:2,start:date(0),end:date(6),date:null,fileName:'가상시간표.xlsx',publishedAt:Date.now(),withdrawn:false,cells};
+    db.prepare('INSERT INTO TimetableBatches(Revision,Id,Owner,ClientId,Payload,Delivered) VALUES(1,?,?,?,?,1)').run(batch,owner,client,JSON.stringify(payload));
+  } finally { db.close(); }
   ui=spawn(sdk,[path.join(root,'src/SchoolMessenger.Desktop/bin/Debug/net10.0-windows/SchoolMessenger.dll'),'--verify-ui'],{cwd:root,windowsHide:true,env:{...process.env,SCHOOL_UI_SERVER:address,SCHOOL_UI_USER:'admin',SCHOOL_UI_PASSWORD:password,SCHOOL_UI_OUTPUT:path.join(output,'client-preview.png'),SCHOOL_UI_LOCALDIR:path.join(fixture,'client'),YY_WINDOW_ORDER_UI_ONLY:'1'}});
   let timeout;const code=await Promise.race([new Promise((resolve,reject)=>{ui.once('error',reject);ui.once('exit',resolve);}),new Promise(resolve=>{timeout=setTimeout(()=>resolve(-1),90000);})]);clearTimeout(timeout);
   assert.equal(code,0,existsSync('artifacts/ui-error.txt')?readFileSync('artifacts/ui-error.txt','utf8'):'Window order verification failed');

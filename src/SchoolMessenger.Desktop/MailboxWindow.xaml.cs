@@ -20,7 +20,7 @@ public partial class MailboxWindow : Window
         main.RegisterWorkWindow(this); Resources = main.Resources; InitializeComponent(); StatusTone.Watch(StatusLabel);
         MessageList.ItemsSource = messages;
         Title = person is null ? "교무톡 · 메시지함" : person.Name + " · 주고받은 메시지";
-        BoxTitle.Text = person is null ? "메시지함" : person.Name + " 관련 메시지"; UpdateTabs();
+        BoxTitle.Text = person is null ? "메시지함" : person.Name + " 관련 메시지"; UpdateTabs(); UpdateMailboxLayout(false);
         Loaded += async (_, _) => await Reload();
         Closed += (_, _) => ResetTaskPrompt();
     }
@@ -48,7 +48,9 @@ public partial class MailboxWindow : Window
             foreach (var row in rows) if (!messages.Any(m => m.Id == row.Id)) messages.Add(row with { IsSent = row.SenderId == Api.Session!.User!.Id });
             MessageList.SelectedItem = messages.FirstOrDefault(m => m.Id == selected);
             rendering = false;
-            ListHint.Text = messages.Count == 0 ? "메시지가 없습니다. 검색 조건도 확인하세요." : $"{messages.Count}개 표시 · 한 번에 100개 조회";
+            ListHint.Text = $"{messages.Count}개 표시 · 한 번에 100개 조회";
+            UpdateMailboxLayout(messages.Count == 0);
+            MoreMessages.Visibility = answer.Length == 100 ? Visibility.Visible : Visibility.Collapsed;
             if (selected is not null && messages.Any(m=>m.Id==selected)) await OpenDetail(selected, markRead: false);
             else if(!more){detail=null;ResetTaskPrompt();DetailBody.Text="";DetailTitle.Text="";FileList.ItemsSource=null;ReceiptList.ItemsSource=null;DetailPanel.Visibility=Visibility.Collapsed;EmptyHint.Visibility=Visibility.Visible;}
             ConnectionLabel.Text = "이 PC에 저장된 메시지만 보입니다 · 첨부파일은 업로드 후 30일간 보관됩니다.";
@@ -135,6 +137,30 @@ public partial class MailboxWindow : Window
         {
             tab.Tag = tab.Uid == box ? "selected" : null;
         }
+    }
+    void UpdateMailboxLayout(bool empty)
+    {
+        ListRow.Height = empty ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
+        EmptyRow.Height = empty ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        Grid.SetColumnSpan(ListPane, empty ? 2 : 1);
+        ListPane.BorderThickness = empty ? new Thickness(0,0,0,1) : new Thickness(0,0,1,0);
+        SearchTools.MaxWidth = empty ? 440 : double.PositiveInfinity;
+        SearchTools.HorizontalAlignment = empty ? HorizontalAlignment.Left : HorizontalAlignment.Stretch;
+        if (empty) SearchTools.Width = 390; else SearchTools.ClearValue(WidthProperty);
+        MessageList.Visibility = ListFooter.Visibility = empty ? Visibility.Collapsed : Visibility.Visible;
+        Grid.SetRow(ReaderPane, empty ? 1 : 0);
+        Grid.SetColumn(ReaderPane, empty ? 0 : 1);
+        Grid.SetColumnSpan(ReaderPane, empty ? 2 : 1);
+        var filtered = !string.IsNullOrWhiteSpace(SearchBox.Text) || FromDate.SelectedDate is not null || ToDate.SelectedDate is not null;
+        MailboxEmptyTitle.Text = !empty ? "메시지를 선택하세요" : filtered ? "검색 결과가 없습니다" : box switch
+        {
+            "sent" => "보낸 메시지가 없습니다",
+            "unread" => "미확인 메시지가 없습니다",
+            "conversation" => "주고받은 메시지가 없습니다",
+            _ => "받은 메시지가 없습니다"
+        };
+        MailboxEmptyDescription.Text = !empty ? "본문과 첨부파일을 확인할 수 있습니다." : filtered
+            ? "검색어나 날짜 범위를 바꿔 보세요." : "메시지가 생기면 여기에서 확인할 수 있습니다.";
     }
     async void NewMessage(object sender, RoutedEventArgs e) => await main.WriteMessage();
     async void RefreshClick(object sender, RoutedEventArgs e) => await Run(() => Refresh());

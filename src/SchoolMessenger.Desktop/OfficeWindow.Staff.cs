@@ -64,6 +64,8 @@ public sealed partial class OfficeWindow
         var glass=AdminUi.Icon("AdminSearchIcon",15,"Faint");glass.HorizontalAlignment=HorizontalAlignment.Left;glass.Margin=new Thickness(10,0,0,0);glass.IsHitTestVisible=false;searchBox.Children.Add(glass);
         var hint=AdminUi.Label("이름 · 부서 · 좌석 IP 검색","Faint",13);hint.IsHitTestVisible=false;hint.Margin=new Thickness(33,0,0,0);hint.VerticalAlignment=VerticalAlignment.Center;searchBox.Children.Add(hint);tools.Children.Add(searchBox);
         var rows=new StackPanel();var panel=new Border();var chips=new List<Button>();
+        var content = new Grid();
+        var noStaff = new ContentControl { HorizontalContentAlignment = HorizontalAlignment.Stretch, Visibility = Visibility.Collapsed };
         void Chip(string filter,string label,int number,bool warn=false)
         {
             var content=new StackPanel{Orientation=Orientation.Horizontal};
@@ -75,14 +77,26 @@ public sealed partial class OfficeWindow
         }
         Chip("all","전체",staff.Length);Chip("active","사용 중",staff.Count(s=>s.Active&&!s.Pending));Chip("stopped","중지",staff.Count(s=>!s.Active));if(pending>0)Chip("pending","가입 신청",pending,true);
         // Table and detail panel; the panel drops below the table on narrow windows.
-        var content=new Grid();content.ColumnDefinitions.Add(new ColumnDefinition());content.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(16)});content.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(340)});content.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});content.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});body.Children.Add(content);
+        content.ColumnDefinitions.Add(new ColumnDefinition());content.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(16)});content.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(340)});content.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});content.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});body.Children.Add(content);
         var table=new StackPanel();
         Grid Columns(){var grid=new Grid();foreach(var width in new[]{new GridLength(1.3,GridUnitType.Star),new GridLength(1,GridUnitType.Star),new GridLength(1.4,GridUnitType.Star),new GridLength(88)})grid.ColumnDefinitions.Add(new ColumnDefinition{Width=width});grid.ColumnDefinitions[0].MinWidth=140;return grid;}
         var labels=Columns();var titles=new[]{"이름","부서 · 직책","업무 권한","상태"};for(var i=0;i<titles.Length;i++){var text=AdminUi.Label(titles[i],"Muted",12,true);Grid.SetColumn(text,i);labels.Children.Add(text);}
         var header=new Border{Child=labels,Padding=new Thickness(16,11,16,11),BorderThickness=new Thickness(0,0,0,1)};header.SetResourceReference(Border.BackgroundProperty,"Subtle");header.SetResourceReference(Border.BorderBrushProperty,"Line");table.Children.Add(header);table.Children.Add(rows);
         var tableCard=AdminUi.Card(table,0);tableCard.ClipToBounds=true;tableCard.VerticalAlignment=VerticalAlignment.Top;content.Children.Add(tableCard);
-        var panelCard=AdminUi.Card(panel,20);panelCard.VerticalAlignment=VerticalAlignment.Top;content.Children.Add(panelCard);
-        content.SizeChanged+=(_,_)=>{var wide=content.ActualWidth>=760;Grid.SetColumn(panelCard,wide?2:0);Grid.SetRow(panelCard,wide?0:1);Grid.SetColumnSpan(panelCard,wide?1:3);Grid.SetColumnSpan(tableCard,wide?1:3);panelCard.Margin=new Thickness(0,wide?0:16,0,0);};
+        var panelCard=AdminUi.Card(panel,16);panelCard.VerticalAlignment=VerticalAlignment.Top;content.Children.Add(panelCard);
+        panelCard.SetResourceReference(Border.BackgroundProperty,"Subtle");
+        body.Children.Add(noStaff);
+        void ArrangeStaff()
+        {
+            var wide = content.ActualWidth >= 760;
+            Grid.SetColumn(panelCard, wide ? 2 : 0);
+            Grid.SetRow(panelCard, wide ? 0 : 1);
+            Grid.SetColumnSpan(panelCard, wide ? 1 : 3);
+            Grid.SetColumnSpan(tableCard, wide ? 1 : 3);
+            panelCard.Margin = new Thickness(0, wide ? 0 : 12, 0, 0);
+        }
+        ArrangeStaff();
+        content.SizeChanged += (_, _) => ArrangeStaff();
         static Border Status(StaffRow s)=>s.Pending?AdminUi.Badge("활성화 대기","Warning"):s.Active?AdminUi.Badge("사용 중","Success"):AdminUi.Badge("중지","Neutral");
         void Rows()
         {
@@ -100,7 +114,12 @@ public sealed partial class OfficeWindow
                 var line=new Button{Content=row,Tag=selected?"selected":null};line.SetResourceReference(StyleProperty,"TableRow");AutomationProperties.SetName(line,s.Name+" 계정 설정");AutomationProperties.SetItemStatus(line,selected?"선택됨":"");
                 line.Click+=(_,_)=>{selectedStaff=s.Id;Rows();Detail();};rows.Children.Add(line);
             }
-            if(visible.Length==0){var none=AdminUi.Label("일치하는 교직원이 없습니다.","Muted",14);none.Margin=new Thickness(16,20,16,20);rows.Children.Add(none);}
+            content.Visibility = visible.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+            noStaff.Visibility = visible.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (visible.Length == 0)
+                noStaff.Content = staff.Length == 0
+                    ? AdminUi.EmptyCard("등록된 교직원이 없습니다", "위쪽 ‘교직원 등록’에서 학교 계정을 추가할 수 있습니다.")
+                    : AdminUi.EmptyCard("일치하는 교직원이 없습니다.", "검색어나 상태 필터를 바꿔 보세요.");
             count.Text=visible.Length==staff.Length?$"전체 {staff.Length}명":$"{visible.Length}명 표시 · 전체 {staff.Length}명";
         }
         void Detail()
@@ -182,7 +201,7 @@ public sealed partial class OfficeWindow
         if(back is{} link){var b=new Button{Content="← "+link.Label,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(-8,0,0,6)};b.SetResourceReference(StyleProperty,"SubtleButton");b.Click+=async(_,_)=>await Run(link.Open);body.Children.Add(b);}
         var heading=new DockPanel{Margin=new Thickness(0,0,0,16)};
         if(action is not null){DockPanel.SetDock(action,Dock.Right);if(action is FrameworkElement e)e.VerticalAlignment=VerticalAlignment.Bottom;heading.Children.Add(action);}
-        var text=new StackPanel();text.Children.Add(AdminUi.Heading(title,22));var detail=AdminUi.Label(description,"Muted",14);detail.Margin=new Thickness(0,4,0,0);text.Children.Add(detail);heading.Children.Add(text);body.Children.Add(heading);
+        heading.Children.Add(AdminUi.PageTitle(title,description));body.Children.Add(heading);
     }
     async Task Administration()
     {

@@ -21,27 +21,28 @@ public sealed partial class TimetableWindow
     bool CanManageSchedule => setup.GetProperty("canManage").GetBoolean();
     string? ScheduleUser => api.Session?.User?.Id;
 
-    void AddScheduleActions()
+    void AddScheduleActions(bool hasTimetable)
     {
-        var tools = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
-        void Add(string label, Func<Task> action)
+        var tools = new WrapPanel();
+        void Add(string label, Func<Task> action, string? style = "SubtleButton")
         {
             var button = new Button { Content = label, Margin = new Thickness(0, 0, 8, 4) };
-            button.SetResourceReference(StyleProperty, "SubtleButton");
+            if (style is not null) button.SetResourceReference(StyleProperty, style);
             button.Click += async (_, _) => await Run(action);
             tools.Children.Add(button);
         }
-        Add("수업 교체 신청", SwapEditor);
-        Add("교체 신청 현황", SwapQueue);
+        Add("수업 교체 신청", SwapEditor, hasTimetable ? "PrimaryButton" : "SubtleButton");
+        Add("교체 신청 현황", SwapQueue, null);
         if (CanManageSchedule) Add("묶음수업 설정", BundleEditor);
         if (printDays.Any(day => day.PublishedAt > 0))
             Add("게시 시간표 인쇄", () => { PrintTimetable(); return Task.CompletedTask; });
-        body.Children.Insert(body.Children.IndexOf(view), tools);
+        scheduleFooter.Child=tools;
+        scheduleFooter.Visibility=Visibility.Visible;
     }
 
     void SchedulePage(string title)
     {
-        body.Children.Clear();
+        ResetBody();
         body.Children.Add(AdminUi.Heading(title, 22));
         body.Children.Add(feedback);
         Action("시간표로 돌아가기", Load);

@@ -10,6 +10,8 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using SchoolMessenger.Contracts;
 
@@ -30,7 +32,25 @@ public partial class MainWindow
     {
         var checks = new List<string>();
         void Check(bool ok, string message) { if (!ok) throw new InvalidOperationException(message); checks.Add(message); }
+        var preview = Path.GetDirectoryName(Path.GetFullPath(Environment.GetEnvironmentVariable("SCHOOL_UI_OUTPUT")!))!;
+        async Task CaptureAfterResize(Window window,string name)
+        {
+            await Task.Delay(120);
+            await Dispatcher.InvokeAsync(()=>window.UpdateLayout(),DispatcherPriority.ApplicationIdle);
+            var visual=(FrameworkElement)VisualTreeHelper.GetChild(window,0);
+            var bitmap=new RenderTargetBitmap((int)Math.Ceiling(visual.ActualWidth),(int)Math.Ceiling(visual.ActualHeight),96,96,PixelFormats.Pbgra32);
+            bitmap.Render(visual);
+            var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var file=File.Create(Path.Combine(preview,name+".png"));encoder.Save(file);
+        }
         await VerifyRosterSelection(Check);
+        PeopleSearch.Text = "존재하지 않는 가상 교직원";
+        var (originalWidth,originalHeight)=(Width,Height);
+        Width=MinWidth;Height=MinHeight;
+        await CaptureAfterResize(this,"organization-empty-compact");
+        Check(RosterEmpty.IsVisible&&!OrganizationTree.IsVisible,"compact organization shows a dedicated empty search card");
+        PeopleSearch.Clear();await CaptureAfterResize(this,"organization-compact");
+        Width=originalWidth;Height=originalHeight;
         async Task Bring(Window window)
         {
             window.Activate(); SetForegroundWindow(new WindowInteropHelper(window).Handle);
@@ -46,6 +66,40 @@ public partial class MainWindow
         Window[] windows = [compose, mailbox, chat, survey, work, timetable];
         foreach (var window in windows) window.Show();
         await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
+        for(var i=0;i<80&&mailbox.MailboxEmptyTitle.Text!="받은 메시지가 없습니다";i++)await Task.Delay(50);
+        mailbox.Width=mailbox.MinWidth;mailbox.Height=mailbox.MinHeight;
+        await CaptureAfterResize(mailbox,"mailbox-empty-compact");
+        Check(mailbox.MailboxEmptyTitle.IsVisible&&!mailbox.ReplyButton.IsVisible&&Grid.GetColumnSpan(mailbox.ReaderPane)==2,
+            "compact empty mailbox retains search and uses the full reading area without reply controls");
+        mailbox.Width=880;mailbox.Height=660;
+        IEnumerable<DependencyObject> Controls(DependencyObject parent)
+        {
+            for(var index=0;index<VisualTreeHelper.GetChildrenCount(parent);index++)
+            {
+                var child=VisualTreeHelper.GetChild(parent,index);yield return child;
+                foreach(var nested in Controls(child))yield return nested;
+            }
+        }
+        async Task WaitUntil(Func<bool> condition)
+        {
+            for(var i=0;i<100&&!condition();i++)await Task.Delay(50);
+            timetable.UpdateLayout();
+        }
+        bool TextOnSchedule(string text)=>Controls(timetable).OfType<TextBlock>().Any(label=>label.Text==text&&label.IsVisible);
+        await WaitUntil(()=>TextOnSchedule("7교시"));
+        SavePreview(timetable,Path.Combine(preview,"timetable.png"));
+        timetable.Width=timetable.MinWidth;timetable.Height=timetable.MinHeight;
+        await CaptureAfterResize(timetable,"timetable-compact");
+        var swapButton=Controls(timetable).OfType<Button>().Single(button=>Equals(button.Content,"수업 교체 신청"));
+        Check(TextOnSchedule("7교시")&&swapButton.IsVisible&&
+            swapButton.TranslatePoint(new Point(),timetable).Y+swapButton.ActualHeight<=timetable.ActualHeight,
+            "compact timetable keeps the schedule actions in the viewport");
+        var next=Controls(timetable).OfType<Button>().Single(button=>System.Windows.Automation.AutomationProperties.GetName(button)=="다음");
+        next.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await WaitUntil(()=>TextOnSchedule("아직 올라온 시간표가 없습니다"));
+        SavePreview(timetable,Path.Combine(preview,"timetable-empty-compact.png"));
+        Check(TextOnSchedule("아직 올라온 시간표가 없습니다")&&Controls(timetable).OfType<Button>().Count(button=>Equals(button.Content,"시간표 올리기")&&button.IsVisible)==1,
+            "unpublished week highlights one upload action in the empty card");
         Check(windows.All(w => w.Owner is null && !w.Topmost && OrderWindow(new WindowInteropHelper(w).Handle, 4) == 0), "work windows have no native owner and are not topmost");
         Check(windows.All(w => SessionWindows.Contains(w)), "all work windows are still tracked by their signed-in session");
         try
@@ -78,10 +132,14 @@ public partial class MainWindow
         await Refresh();
         for (var i = 0; i < 40 && !mailbox.MessageList.Items.OfType<MessageItem>().Any(m => m.Id == messageId); i++) { await Task.Delay(50); await RefreshWindows(); }
         Check(mailbox.MessageList.Items.OfType<MessageItem>().Any(m => m.Id == messageId), "session refresh still delivers a new message to an independent mailbox");
-        var preview = Path.GetDirectoryName(Path.GetFullPath(Environment.GetEnvironmentVariable("SCHOOL_UI_OUTPUT")!))!;
         SavePreview(this, Path.Combine(preview, "organization.png"));
-        await mailbox.ShowMessage(messageId);
+        await mailbox.ShowMessage(messageId!);
         SavePreview(mailbox, Path.Combine(preview, "mailbox.png"));
+        mailbox.Width=mailbox.MinWidth;mailbox.Height=mailbox.MinHeight;
+        await CaptureAfterResize(mailbox,"mailbox-compact");
+        Check(mailbox.ReplyButton.IsVisible&&Grid.GetRow(mailbox.DetailPanel)==0&&
+            mailbox.ReplyButton.TranslatePoint(new Point(),mailbox.ReaderPane).Y>=mailbox.DetailPanel.ActualHeight,
+            "compact message reader keeps reply outside the scrolling message");
         SavePreview(compose, Path.Combine(preview, "compose.png"));
         var folderCompose=new ComposeWindow(this,people,null,"폴더 시험");folderCompose.Show();
         await folderCompose.VerifyFolderRetry(preview,Check);

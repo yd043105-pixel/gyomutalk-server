@@ -6,7 +6,7 @@
     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="23"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
      <ContentControl x:Name="IdentityDot" VerticalAlignment="Center"/>
      <StackPanel Grid.Column="1"><TextBlock x:Name="IdentityLabel" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/><TextBlock x:Name="IdentityDepartment" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/></StackPanel>
-     <StackPanel Grid.Column="2" Margin="10,0,0,0"><TextBlock x:Name="IdentityStatus" Text="연결 중" Foreground="{DynamicResource Muted}" FontSize="10" HorizontalAlignment="Right"/><Button x:Name="UnreadShortcut" Content="미확인 0" Tag="unread" Click="OpenMailboxClick" BorderThickness="0" Background="{DynamicResource Pale}" Foreground="{DynamicResource Blue}" Padding="8,4" FontSize="10" Margin="0,5,0,0"/></StackPanel>
+     <StackPanel Grid.Column="2" Margin="10,0,0,0"><Border Background="{DynamicResource Soft}" CornerRadius="6" Padding="7,3" HorizontalAlignment="Right"><TextBlock x:Name="IdentityStatus" Text="연결 중" Foreground="{DynamicResource Muted}" FontSize="10"/></Border><Button x:Name="UnreadShortcut" Content="미확인 0" Tag="unread" Click="OpenMailboxClick" BorderThickness="0" Background="{DynamicResource Pale}" Foreground="{DynamicResource Blue}" Padding="8,4" FontSize="10" Margin="0,4,0,0"/></StackPanel>
     </Grid>
    </Border>
    <Border DockPanel.Dock="Bottom" Background="{DynamicResource Soft}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="10,7"><StackPanel>
@@ -32,8 +32,8 @@
     </StackPanel>
    </DockPanel></Border>
    <DockPanel>
-    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="12,12,12,10"><StackPanel><DockPanel Margin="0,0,0,10"><Button x:Name="SortButton" DockPanel.Dock="Right" Content="이름순 ↕" FontSize="10" Foreground="{DynamicResource Muted}" BorderThickness="0" Padding="4,5" Click="ToggleSort"/><TextBlock x:Name="RosterTitle" Text="교직원" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"/></DockPanel>
-     <Grid><TextBox x:Name="PeopleSearch" ToolTip="이름 · 부서 · 폴더 검색" TextChanged="SearchPeople" Padding="30,8,8,8"/>
+    <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" Padding="12,12,12,10"><StackPanel><DockPanel Margin="0,0,0,10"><Button x:Name="SortButton" DockPanel.Dock="Right" Content="이름순 ↕" FontSize="10" Foreground="{DynamicResource Muted}" BorderThickness="0" Padding="4,5" Click="ToggleSort"/><TextBlock x:Name="RosterTitle" Text="교직원" FontSize="18" FontWeight="Bold" VerticalAlignment="Center"/></DockPanel>
+     <Grid><TextBox x:Name="PeopleSearch" ToolTip="이름 · 부서 · 폴더 검색" AutomationProperties.Name="교직원 검색" TextChanged="SearchPeople" Padding="30,8,8,8"/>
       <Path Data="M10,4 A6,6 0 1 1 9.99,4 M14,14 L19,19" Stroke="{DynamicResource Muted}" StrokeThickness="1.4" Width="17" Height="17" Stretch="Uniform" HorizontalAlignment="Left" Margin="9,0,0,0" IsHitTestVisible="False"/>
       <TextBlock Text="이름 · 부서 · 폴더 검색" Foreground="{DynamicResource Muted}" Margin="32,0,0,0" FontSize="11" VerticalAlignment="Center" IsHitTestVisible="False"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding Text, ElementName=PeopleSearch}" Value=""><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
      </Grid>
@@ -43,7 +43,12 @@
      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"><Button Content="파일" Click="SendFilesClick" FontSize="11" Padding="10,7" Margin="0,0,6,0"/><Button Click="Compose" Style="{StaticResource PrimaryButton}" FontSize="11" Padding="10,7"><StackPanel Orientation="Horizontal"><Path Data="{StaticResource MailIcon}" Style="{StaticResource Glyph}" Width="14" Height="14"/><TextBlock Text="메시지" Margin="6,0,0,0"/></StackPanel></Button></StackPanel>
      <TextBlock x:Name="SelectionHint" Text="선택 0명" Foreground="{DynamicResource Muted}" FontSize="11" VerticalAlignment="Center"/>
     </DockPanel></Border>
-    <TreeView x:Name="OrganizationTree" Margin="8,9,7,5" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+    <Grid>
+     <Border x:Name="RosterEmpty" Visibility="Collapsed" Margin="12,12,12,0" Padding="12" VerticalAlignment="Top" Background="{DynamicResource Subtle}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8">
+      <StackPanel><TextBlock x:Name="RosterEmptyTitle" FontWeight="SemiBold" TextWrapping="Wrap"/><TextBlock x:Name="RosterEmptyDescription" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,4,0,0" TextWrapping="Wrap"/></StackPanel>
+     </Border>
+     <TreeView x:Name="OrganizationTree" Margin="8,9,7,5" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+    </Grid>
    </DockPanel>
   </DockPanel></Border>
   <ScrollViewer x:Name="LoginPanel" Padding="24" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel VerticalAlignment="Center">

@@ -298,9 +298,19 @@ public partial class MainWindow : Window
             .ToDictionary(person => person.Id);
         var groups = RosterGroup.Build(rosterFolders, filtered.Values.Select(person => (person.Id, person.Label, person.Department)).ToArray(),
             query, favoritesOnly || onlineOnly || awayOnly);
+        RosterEmpty.Visibility = groups.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        OrganizationTree.Visibility = groups.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        if (groups.Length == 0)
+        {
+            var narrowed = query.Length > 0 || onlineOnly || awayOnly;
+            RosterEmptyTitle.Text = narrowed ? "일치하는 교직원이 없습니다" : favoritesOnly ? "즐겨찾기가 없습니다" : "표시할 교직원이 없습니다";
+            RosterEmptyDescription.Text = narrowed ? "검색어나 접속 상태 필터를 바꿔 보세요." : favoritesOnly
+                ? "조직도에서 교직원을 우클릭해 즐겨찾기에 추가하세요." : "관리자가 교직원을 등록하면 여기에 표시됩니다.";
+            SyncRosterChecks();
+            return;
+        }
         var school = GroupRow(schoolName, "school", groups.SelectMany(group => group.AllIds()).Distinct().ToArray(), schoolExpanded || query.Length > 0);
         OrganizationTree.Items.Add(school);
-        if (groups.Length == 0) school.Items.Add(new TreeViewItem { Header = favoritesOnly ? "즐겨찾기를 추가하세요." : "검색 결과가 없습니다.", IsEnabled = false });
         foreach (var group in groups) AddGroup(school, group);
         SyncRosterChecks();
 
@@ -322,7 +332,7 @@ public partial class MainWindow : Window
                 }
                 check.Checked += ChangePerson; check.Unchecked += ChangePerson;
                 personChecks.Add((check, person.Id));
-                var panel = new Grid { MinHeight = 36,ToolTip=person.Presence };
+                var panel = new Grid { MinHeight = 32,ToolTip=person.Presence };
                 ToolTipService.SetInitialShowDelay(panel,500);
                 panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 panel.ColumnDefinitions.Add(new ColumnDefinition()); panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });

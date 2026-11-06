@@ -15,6 +15,15 @@ static class AdminUi
         label.SetResourceReference(TextBlock.ForegroundProperty,brush);return label;
     }
     public static TextBlock Heading(string text,double size=15){var heading=Label(text,"Ink",size);heading.FontWeight=FontWeights.Bold;return heading;}
+    public static StackPanel PageTitle(string title, string description)
+    {
+        var block = new StackPanel();
+        block.Children.Add(Heading(title, 22));
+        var subtitle = Label(description, "Muted", 13);
+        subtitle.Margin = new Thickness(0, 4, 0, 0);
+        block.Children.Add(subtitle);
+        return block;
+    }
     public static TextBlock Group(string text){var group=Label(text,"Faint",12,true);group.Margin=new Thickness(0,0,0,8);return group;}
     public static Border Card(UIElement child,double padding=20)
     {
@@ -63,6 +72,14 @@ static class AdminUi
         var text=Label(detail);text.TextAlignment=TextAlignment.Center;text.Margin=new Thickness(0,8,0,0);panel.Children.Add(text);
         if(action is not null){action.HorizontalAlignment=HorizontalAlignment.Center;action.Margin=new Thickness(0,16,0,0);panel.Children.Add(action);}
         return panel;
+    }
+    public static Border EmptyCard(string title, string detail, Button? action = null)
+    {
+        var content = Empty(title, detail, action);
+        content.Margin = new Thickness(16, 24, 16, 24);
+        var card = Card(content, 0);
+        card.SetResourceReference(Border.BackgroundProperty, "Subtle");
+        return card;
     }
     public static StackPanel IconLabel(string key,string text)
     {
