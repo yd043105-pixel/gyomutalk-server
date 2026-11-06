@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     bool syncingRosterChecks;
     readonly HashSet<long> knownTimetables = new();
     Person[] people = [];
+    RosterFolder[]? rosterFolders;
     string schoolName="학교";
     bool favoritesOnly, onlineOnly, awayOnly, onlineFirst = true, schoolExpanded = true, refreshing, exiting;
     int unreadCount, peopleRefreshVersion;
@@ -247,10 +248,19 @@ public partial class MainWindow : Window
     {
         var api = Api; if (api is null) return;
         var version = ++peopleRefreshVersion;
-        var updated = await api.Get<Person[]>("api/users");
+        var peopleTask = api.Get<Person[]>("api/users");
+        var foldersTask = ReadRosterFolders();
+        await Task.WhenAll(peopleTask, foldersTask);
         if (api != Api || version != peopleRefreshVersion) return;
-        people = updated;
+        people = await peopleTask;
+        rosterFolders = await foldersTask;
         selectedPeople.IntersectWith(people.Select(p => p.Id)); RenderTree(); UpdateRosterHint();
+
+        async Task<RosterFolder[]?> ReadRosterFolders()
+        {
+            try { return (await api.Get<RosterFolders>("api/roster-folders")).Folders; }
+            catch (ApiRequestException error) when (error.StatusCode == System.Net.HttpStatusCode.NotFound) { return null; }
+        }
     }
     void UpdateRosterHint()
     {
@@ -274,32 +284,32 @@ public partial class MainWindow : Window
         finally { syncingRosterChecks = false; }
         UpdateSelectionHint();
     }
-    void ChangeRosterMode(object sender, SelectionChangedEventArgs e) => RenderTree();
     void RenderTree()
     {
-        if (OrganizationTree is null || PeopleSearch is null || RosterMode is null) return;
+        if (OrganizationTree is null || PeopleSearch is null) return;
         var selected = (OrganizationTree.SelectedItem as TreeViewItem)?.Tag as Person;
         void Remember(ItemsControl parent) { foreach (var row in parent.Items.OfType<TreeViewItem>()) { if (row.Tag is string key) { if (key == "school") schoolExpanded = row.IsExpanded; else if (row.IsExpanded) collapsedGroups.Remove(key); else collapsedGroups.Add(key); } Remember(row); } }
         Remember(OrganizationTree);
         OrganizationTree.Items.Clear();
         personChecks.Clear(); groupChecks.Clear();
-        var view = (RosterView)Math.Max(0, RosterMode.SelectedIndex);
         var query = PeopleSearch.Text.Trim();
         var filtered = people.Where(p =>
-            (view != RosterView.Unclassified || (p.Classification ?? RosterClassification.Empty).Groups(view, p.Department).Length > 0) &&
-            (p.Label.Contains(query, StringComparison.OrdinalIgnoreCase) || p.Classification?.Matches(query) == true) &&
-            (!favoritesOnly || Favorites.Contains(p.Id)) && (!onlineOnly || p.Available) && (!awayOnly || p.Online && p.Away)).ToArray();
-        var school = GroupRow(schoolName, "school", filtered.Select(p => p.Id).ToArray(), schoolExpanded || PeopleSearch.Text.Length > 0); OrganizationTree.Items.Add(school);
-        if (filtered.Length == 0) school.Items.Add(new TreeViewItem { Header = favoritesOnly ? "즐겨찾기를 추가하세요." : "검색 결과가 없습니다.", IsEnabled = false });
-        var groups = filtered.SelectMany(person => (person.Classification ?? RosterClassification.Empty)
-            .Groups(view, person.Department).Select(label => (Label: label, Person: person)))
-            .GroupBy(row => row.Label, row => row.Person, StringComparer.OrdinalIgnoreCase).OrderBy(group => group.Key);
-        foreach (var group in groups)
+            (!favoritesOnly || Favorites.Contains(p.Id)) && (!onlineOnly || p.Available) && (!awayOnly || p.Online && p.Away))
+            .ToDictionary(person => person.Id);
+        var groups = RosterGroup.Build(rosterFolders, filtered.Values.Select(person => (person.Id, person.Label, person.Department)).ToArray(),
+            query, favoritesOnly || onlineOnly || awayOnly);
+        var school = GroupRow(schoolName, "school", groups.SelectMany(group => group.AllIds()).Distinct().ToArray(), schoolExpanded || query.Length > 0);
+        OrganizationTree.Items.Add(school);
+        if (groups.Length == 0) school.Items.Add(new TreeViewItem { Header = favoritesOnly ? "즐겨찾기를 추가하세요." : "검색 결과가 없습니다.", IsEnabled = false });
+        foreach (var group in groups) AddGroup(school, group);
+        SyncRosterChecks();
+
+        void AddGroup(TreeViewItem parent, RosterGroup group)
         {
-            var key = $"{view}:{group.Key}";
-            var row = GroupRow(group.Key, key, group.Select(p => p.Id).ToArray(), !collapsedGroups.Contains(key) || PeopleSearch.Text.Length > 0);
-            school.Items.Add(row);
-            foreach (var person in group.OrderBy(p => onlineFirst?(p.Online?(p.Away?2:0):p.Mobile?1:3):0).ThenBy(p => p.Name))
+            var row = GroupRow(group.Name, group.Key, group.AllIds(), !collapsedGroups.Contains(group.Key) || query.Length > 0);
+            parent.Items.Add(row);
+            foreach (var child in group.Children) AddGroup(row, child);
+            foreach (var person in group.DirectIds.Select(id => filtered[id]).OrderBy(p => onlineFirst?(p.Online?(p.Away?2:0):p.Mobile?1:3):0).ThenBy(p => p.Name))
             {
                 var check = new CheckBox { Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center };
                 System.Windows.Automation.AutomationProperties.SetName(check, person.Name + " 선택");
@@ -330,7 +340,6 @@ public partial class MainWindow : Window
                 row.Items.Add(contact); if (selected?.Id == person.Id) contact.IsSelected = true;
             }
         }
-        SyncRosterChecks();
     }
     TreeViewItem GroupRow(string label, string key, string[] ids, bool expanded)
     {
@@ -458,7 +467,7 @@ public partial class MainWindow : Window
         if (remote is not null) { await remote.DisposeAsync(); remote = null; }
         timer.Stop(); activityTimer.Stop();sentAway=null; toast?.Close(); chatSeen.Clear(); knownSurveys.Clear(); CloseSessionWindows();
         if (hub is not null) { await hub.DisposeAsync(); hub = null; } Api?.Dispose(); Api = null;
-        OrganizationTree.Items.Clear(); people = []; selectedPeople.Clear(); Workspace.Visibility = Visibility.Collapsed; LoginPanel.Visibility = Visibility.Visible;
+        OrganizationTree.Items.Clear(); people = []; rosterFolders = null; selectedPeople.Clear(); Workspace.Visibility = Visibility.Collapsed; LoginPanel.Visibility = Visibility.Visible;
         TimetableButton.Visibility=Visibility.Collapsed;
     }
     void ShowWindow() { Show(); WindowState = WindowState.Normal; Activate(); }

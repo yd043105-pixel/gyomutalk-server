@@ -25,7 +25,7 @@
     <Compile Include="../SchoolMessenger.Contracts/Timetables.cs" Link="Contracts/Timetables.cs" />
     <Compile Include="../SchoolMessenger.Contracts/SchoolDay.cs" Link="Contracts/SchoolDay.cs" />
     <Compile Include="../SchoolMessenger.Contracts/Office.cs" Link="Contracts/Office.cs" />
-    <Compile Include="../SchoolMessenger.Contracts/RosterClassification.cs" Link="Contracts/RosterClassification.cs" />
+    <Compile Include="../SchoolMessenger.Contracts/RosterFolders.cs" Link="Contracts/RosterFolders.cs" />
     <Compile Include="../SchoolMessenger.Contracts/MessageFormatting.cs" Link="Contracts/MessageFormatting.cs" />
     <Compile Include="../SchoolMessenger.Contracts/Feedback.cs" Link="Contracts/Feedback.cs" />
     <Compile Include="../SchoolMessenger.Contracts/RegistrationPolicies.cs" Link="Contracts/RegistrationPolicies.cs" />

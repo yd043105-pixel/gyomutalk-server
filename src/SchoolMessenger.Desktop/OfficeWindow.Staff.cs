@@ -14,7 +14,6 @@ namespace SchoolMessenger.Desktop;
 public sealed partial class OfficeWindow
 {
     string? selectedStaff;string staffFilter="all";
-    static readonly JsonSerializerOptions StaffJson = new(JsonSerializerDefaults.Web);
     record StaffRow(JsonElement User,string Id,string Name,string Department,string Position,string Username,string Seat,bool Active,bool Pending,bool Admin,bool Broadcast,bool Calendar,bool Rooms,bool Timetable);
     static string Value(JsonElement row,string key)=>row.TryGetProperty(key,out var value)&&value.ValueKind==JsonValueKind.String?value.GetString()??"":"";
     static bool Flag(JsonElement row,string key)=>row.TryGetProperty(key,out var value)&&value.ValueKind==JsonValueKind.True;
@@ -43,6 +42,8 @@ public sealed partial class OfficeWindow
         var add=new Button{Content=AdminUi.IconLabel("AdminPlusIcon","교직원 등록"),VerticalAlignment=VerticalAlignment.Bottom,ToolTip="교직원 사전 등록 · 가입 승인"};add.SetResourceReference(StyleProperty,"PrimaryButton");AutomationProperties.SetName(add,"교직원 등록 · 승인");add.Click+=async(_,_)=>await Run(Administration);DockPanel.SetDock(add,Dock.Right);heading.Children.Add(add);
         var codes=new Button{Content="활성화 번호 일괄 받기",Margin=new Thickness(0,0,8,0),VerticalAlignment=VerticalAlignment.Bottom,IsEnabled=staff.Any(s=>s.Pending&&!s.Admin),ToolTip="아직 활성화하지 않은 교직원의 활성화 번호를 새로 발급해 CSV 파일 하나로 저장합니다."};
         codes.Click+=async(_,_)=>await Run(DownloadActivationCodes);DockPanel.SetDock(codes,Dock.Right);heading.Children.Add(codes);
+        var folders = new Button { Content = "조직도 폴더 관리", Margin = new Thickness(0,0,8,0), VerticalAlignment = VerticalAlignment.Bottom };
+        folders.Click += async (_, _) => await Run(EditRosterFolders); DockPanel.SetDock(folders, Dock.Right); heading.Children.Add(folders);
         var introduction=new StackPanel();introduction.Children.Add(AdminUi.Heading("교직원·권한",22));var description=AdminUi.Label("교직원 계정과 학교 업무 권한을 한 곳에서 관리합니다.","Muted",14);description.Margin=new Thickness(0,4,0,0);introduction.Children.Add(description);heading.Children.Add(introduction);body.Children.Add(heading);
         // Toolbar: search and status filters; the sign-up filter opens the approval page.
         var toolbar=new DockPanel{Margin=new Thickness(0,0,0,16)};var count=AdminUi.Label("","Faint");count.Margin=new Thickness(2,8,0,0);DockPanel.SetDock(count,Dock.Bottom);toolbar.Children.Add(count);
@@ -105,21 +106,6 @@ public sealed partial class OfficeWindow
                 var box=new TextBox{Text=value,MaxLength=maxLength};AutomationProperties.SetName(box,label);cell.Children.Add(box);Grid.SetRow(cell,index/2);Grid.SetColumn(cell,index%2==0?0:2);fields.Children.Add(cell);return box;
             }
             var name=Input("이름",s.Name,0,40);var position=Input("직책",s.Position,1,50);var department=Input("부서",s.Department,2,60);var seat=Input("좌석 IP",s.Seat,3,15);seat.ToolTip="교사 PC 자동 로그인용 IPv4 · 계정 인증을 대신하지 않습니다. 비우면 연결 해제";
-            var storedClassification = s.User.TryGetProperty("classification", out var classificationJson) && classificationJson.ValueKind == JsonValueKind.Object
-                ? classificationJson.Deserialize<RosterClassification>(StaffJson) : null;
-            var classification = storedClassification ?? RosterClassification.Empty;
-            if (storedClassification is not null)
-            {
-                var guidance = AdminUi.Label("조직도 분류는 쉼표로 여러 개를 구분합니다. 예) 1, 2 / 담임, 방송", "Muted", 12);
-                guidance.TextWrapping = TextWrapping.Wrap;
-                stack.Children.Add(guidance);
-            }
-            var grades = Input("학년 분류", string.Join(", ", classification.Grades), 4, 24);
-            var duties = Input("담당업무 분류", string.Join(", ", classification.Duties), 5, 420);
-            grades.Visibility = duties.Visibility = storedClassification is null ? Visibility.Collapsed : Visibility.Visible;
-            ((FrameworkElement)grades.Parent).Visibility = ((FrameworkElement)duties.Parent).Visibility = grades.Visibility;
-            grades.ToolTip = "예: 1, 2 · 비워 두면 학년 미지정";
-            duties.ToolTip = "예: 담임, 방송 · 비워 두면 업무 미지정";
             var roles=AdminUi.Group("업무 권한");roles.Margin=new Thickness(0,8,0,0);stack.Children.Add(roles);
             CheckBox Switch(string title,string detail,bool value)
             {
@@ -138,18 +124,9 @@ public sealed partial class OfficeWindow
             actions.Children.Add(save);actions.Children.Add(toggleActive);actions.Children.Add(new Border());stack.Children.Add(actions);
             save.Click+=async(_,_)=>await Run(async()=>
             {
-                var gradeValues = grades.Text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-                    .Select(value => int.TryParse(value, out var number) ? number : 0).ToArray();
-                var dutyValues = duties.Text.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
-                var updatedClassification = RosterClassification.Normalize(gradeValues, dutyValues);
-                if (updatedClassification is null)
-                    throw new InvalidOperationException("학년은 1~6, 담당업무는 최대 10개·이름당 40자입니다. '업무 미지정'은 시스템 표시명입니다.");
                 if (name.Text.Trim() != s.Name || department.Text.Trim() != s.Department || position.Text.Trim() != s.Position ||
                     (admin.IsChecked == true) != s.Admin || (broadcast.IsChecked == true) != s.Broadcast)
                     await api.Send<JsonElement>(HttpMethod.Patch,"api/admin/users/"+s.Id,new{name=name.Text,department=department.Text,position=position.Text,password="",isAdmin=admin.IsChecked==true,canBroadcast=broadcast.IsChecked==true,active=s.Active});
-                if (storedClassification is not null && (!updatedClassification.Grades.SequenceEqual(classification.Grades) ||
-                    !updatedClassification.Duties.SequenceEqual(classification.Duties)))
-                    await api.Send<JsonElement>(HttpMethod.Put, "api/admin/users/" + s.Id + "/roster-classification", updatedClassification);
                 if(calendar.IsChecked!=s.Calendar||rooms.IsChecked!=s.Rooms)await api.Send<JsonElement>(HttpMethod.Post,"api/admin/office/permissions",new OfficePermissionRequest(s.Id,calendar.IsChecked==true,rooms.IsChecked==true));
                 if(admin.IsChecked!=true&&timetable.IsChecked!=s.Timetable)await api.Send<JsonElement>(HttpMethod.Post,"api/admin/timetable-managers",new{userId=s.Id,enabled=timetable.IsChecked==true});
                 if(seat.Text.Trim()!=s.Seat)await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff/"+s.Id+"/seat",new StaffSeatRequest(seat.Text.Trim()));

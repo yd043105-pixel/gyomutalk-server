@@ -27,17 +27,22 @@ export async function officeChecks({Client,admin,password,address,data,check,sta
  await teacher.login(request.loginName,false,personal);assert.equal(teacher.user.activationRequired,false);
  check('activation requires current terms, individual one-time proof and a different personal password; lockout persists and initial sessions are revoked');
  const peer=new Client();const other=await admin.request('/api/admin/users','POST',{username:'office.peer',name:'다른교사',department:'수업부',password,isAdmin:false,canBroadcast:false});await peer.login('office.peer');
- const rosterPath='/api/admin/users/'+registered.id+'/roster-classification';
- const rosterValues={grades:[2,1,2],duties:[' 담임 ','방송','담임']},normalizedRoster={grades:[1,2],duties:['담임','방송']};
+ const rosterPath='/api/admin/roster-folders', readRoster='/api/roster-folders';
+ const rootFolder={id:id(),parentId:null,name:'가상 프로젝트',memberIds:[registered.id]};
+ const childFolder={id:id(),parentId:rootFolder.id,name:'준비팀',memberIds:[registered.id,other.id]};
+ const rosterValues={revision:0,folders:[rootFolder,childFolder]};
  await teacher.request(rosterPath,'PUT',rosterValues,403);
- await admin.request(rosterPath,'PUT',{grades:[7],duties:[]},400);
- await admin.request(rosterPath,'PUT',{grades:[1],duties:['업무 미지정']},400);
- await admin.request(rosterPath,'PUT',{grades:[1],duties:[null]},400);
- await admin.request(rosterPath,'PUT',rosterValues);
- assert.deepEqual((await peer.request('/api/users')).find(user=>user.id===registered.id).classification,normalizedRoster);
- assert.equal((await peer.request('/api/users')).find(user=>user.id===other.id).classification,null);
- assert.deepEqual((await admin.request('/api/admin/users')).find(user=>user.id===registered.id).classification,normalizedRoster);
- assert.ok((await admin.request('/api/admin/office/audit')).some(a=>a.action==='staff.roster-classification'&&a.resourceId===registered.id));
+ await teacher.request(rosterPath,'GET',undefined,403);
+ await new Client().request(readRoster,'GET',undefined,401);
+ await admin.request(rosterPath,'PUT',{revision:0,folders:[...rosterValues.folders,{...childFolder,id:id(),parentId:childFolder.id}]},400);
+ await admin.request(rosterPath,'PUT',{revision:0,folders:[{...rootFolder,parentId:rootFolder.id}]},400);
+ await admin.request(rosterPath,'PUT',{revision:0,folders:[{...rootFolder,name:'미분류'}]},400);
+ await admin.request(rosterPath,'PUT',{revision:0,folders:[rootFolder,{...rootFolder,id:id(),name:' '+rootFolder.name+' '}]},400);
+ await admin.request(rosterPath,'PUT',{revision:0,folders:[{...rootFolder,memberIds:[id()]}]},400);
+ assert.deepEqual(await admin.request(rosterPath,'PUT',{...rosterValues,folders:[{...rootFolder,memberIds:[registered.id,registered.id]},childFolder]}),{...rosterValues,revision:1});
+ await admin.request(rosterPath,'PUT',rosterValues,409);
+ assert.deepEqual(await peer.request(readRoster),{...rosterValues,revision:1});
+ assert.ok((await admin.request('/api/admin/office/audit')).some(a=>a.action==='staff.roster-folders'));
  await teacher.request('/api/admin/office/permissions','POST',{userId:registered.id,calendarManager:true,roomManager:true},403);
  const begin=new Date(Date.now()+2*86400000);begin.setUTCHours(1,0,0,0);const iso=n=>new Date(begin.getTime()+n*3600000).toISOString();
  const event={clientId:id(),title:'학교 행사 검증',description:'가상 일정',start:iso(0),end:iso(2),allDay:false};
@@ -80,10 +85,10 @@ export async function officeChecks({Client,admin,password,address,data,check,sta
  // Start the separate reactivation scenario with a new in-memory limiter; DB lockout tests above remain persistent.
  await stop();start();await ready();teacher.csrf=(await teacher.request('/api/session')).csrfToken;
  admin.csrf=(await admin.request('/api/session')).csrfToken;
- assert.deepEqual((await admin.request('/api/users')).find(user=>user.id===registered.id).classification,normalizedRoster);
- await admin.request(rosterPath,'PUT',{grades:[],duties:[]});
- assert.equal((await admin.request('/api/users')).find(user=>user.id===registered.id).classification,null);
- check('only admins can set valid roster classifications; classifications are normalized, audited, persisted across restarts and removable');
+ assert.deepEqual(await admin.request(readRoster),{...rosterValues,revision:1});
+ await admin.request(rosterPath,'PUT',{revision:1,folders:[]});
+ assert.deepEqual(await admin.request(readRoster),{revision:2,folders:[]});
+ check('roster folders enforce authorization, two levels and revisions; changes are audited and persist across restarts');
  await teacher.request('/api/activate','POST',{code:registered.activationCode,newPassword:personal,agreement},400);
  await teacher.request('/api/activate','POST',{code:reset.activationCode,newPassword:personal,agreement});await teacher.login(request.loginName,false,personal);
  const ledger=new DatabaseSync(path.join(data,'school.db')); ledger.exec('PRAGMA busy_timeout=5000');assert.equal(ledger.prepare('SELECT COUNT(*) AS count FROM StaffActivationAgreements WHERE UserId=?').get(registered.id).count,2);ledger.close();
@@ -112,4 +117,22 @@ export async function officeChecks({Client,admin,password,address,data,check,sta
  const legacyOld=new Client();legacyOld.cookies=new Map(legacy.cookies);legacyOld.csrf=legacy.csrf;await legacy.request('/api/password','POST',{currentPassword:'12345678',newPassword:personal});await legacyOld.request('/api/messages','GET',undefined,401);
  await legacy.login('김기존',true,personal);assert.equal(legacy.user.passwordChangeRequired,false);assert.equal(legacy.user.sharedPassword,false);await legacy.request('/api/messages');
  check('Previously activated common-password accounts cannot use APIs or realtime transports until changing password; change clears the legacy flag atomically and invalidates copied sessions');
+ await stop();
+ const previous = new DatabaseSync(path.join(data,'school.db'));
+ previous.exec('DROP TABLE RosterFolderSettings; CREATE TABLE RosterClassifications(UserId TEXT PRIMARY KEY,Grades TEXT,Duties TEXT)');
+ previous.prepare('INSERT INTO RosterClassifications VALUES(?,?,?)').run(registered.id,'[1,2]','["방송"]');
+ previous.close();
+ start(); await ready(); admin.csrf=(await admin.request('/api/session')).csrfToken;
+ const migrated=await admin.request(rosterPath);
+ assert.equal(migrated.revision,0);
+ assert.equal(migrated.folders.length,5);
+ for(const [parent,children] of [['학년',['1학년','2학년']],['담당업무',['방송']]]){
+   const category=migrated.folders.find(folder=>folder.parentId===null&&folder.name===parent);
+   assert.deepEqual(migrated.folders.filter(folder=>folder.parentId===category.id).map(folder=>folder.name).sort(),children);
+   assert.ok(migrated.folders.filter(folder=>folder.parentId===category.id).every(folder=>folder.memberIds.join()===registered.id));
+ }
+ await admin.request(rosterPath,'PUT',{revision:0,folders:[]});
+ await stop(); start(); await ready();
+ assert.deepEqual(await admin.request(rosterPath),{revision:1,folders:[]});
+ check('existing grade and duty assignments migrate once into editable folders without recreating deleted folders');
 }

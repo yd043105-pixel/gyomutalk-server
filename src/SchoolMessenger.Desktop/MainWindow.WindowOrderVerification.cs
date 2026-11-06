@@ -11,6 +11,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Threading;
+using SchoolMessenger.Contracts;
 
 namespace SchoolMessenger.Desktop;
 
@@ -109,12 +110,22 @@ public partial class MainWindow
         var first = await AddTeacher("roster.first", "검증 교사 가");
         var second = await AddTeacher("roster.second", "검증 교사 나");
         var outside = await AddTeacher("roster.outside", "검증 교사 다");
-        await Api!.Send<JsonElement>(System.Net.Http.HttpMethod.Put, $"api/admin/users/{first}/roster-classification",
-            new { grades = new[] { 1, 2 }, duties = new[] { "담임", "방송" } });
+        var parent = Guid.NewGuid().ToString("N");
+        var child = Guid.NewGuid().ToString("N");
+        var snapshot = await Api!.Get<RosterFolders>("api/admin/roster-folders");
+        await Api.Send<RosterFolders>(System.Net.Http.HttpMethod.Put, "api/admin/roster-folders", new RosterFolders(snapshot.Revision,
+            [new(parent, null, "검증 프로젝트", [first]), new(child, parent, "방송 준비", [first, second])]));
         await RefreshPeople();
 
-        TreeViewItem[] Groups() => ((TreeViewItem)OrganizationTree.Items[0]).Items.OfType<TreeViewItem>().ToArray();
-        TreeViewItem[] Rows(string id) => Groups().SelectMany(group => group.Items.OfType<TreeViewItem>())
+        IEnumerable<TreeViewItem> RowsBelow(ItemsControl control)
+        {
+            foreach (var row in control.Items.OfType<TreeViewItem>())
+            {
+                yield return row;
+                foreach (var childRow in RowsBelow(row)) yield return childRow;
+            }
+        }
+        TreeViewItem[] Rows(string id) => RowsBelow(OrganizationTree)
             .Where(row => row.Tag is Person person && person.Id == id).ToArray();
         static CheckBox Box(TreeViewItem row) => ((Grid)row.Header).Children.OfType<CheckBox>().Single();
         async Task<string[]> OpenFromMenu(string id)
@@ -140,23 +151,24 @@ public partial class MainWindow
         }
         string Label(string id) => people.Single(person => person.Id == id).Label;
 
-        RosterMode.SelectedIndex = 1;
-        check(Rows(first).Length == 2, "a teacher assigned to two grades appears in both grade groups");
+        var parentRow = RowsBelow(OrganizationTree).Single(row => Equals(row.Tag, "folder:" + parent));
+        check(parentRow.Items.OfType<TreeViewItem>().Any(row => Equals(row.Tag, "folder:" + child)) &&
+            Rows(first).Length == 2, "a folder contains a second level and a teacher can appear in both");
+        check(RowsBelow(OrganizationTree).Single(row => Equals(row.Tag, "unclassified")).Items.OfType<TreeViewItem>()
+            .Any(row => row.Tag is Person p && p.Id == outside), "unassigned teachers appear in the unclassified folder");
         Box(Rows(first)[0]).IsChecked = true;
         check(Rows(first).All(row => Box(row).IsChecked == true) && selectedPeople.SetEquals([first]), "duplicate roster rows synchronize and select one recipient");
-        RosterMode.SelectedIndex = 2;
-        check(Rows(first).Length == 2 && Rows(first).All(row => Box(row).IsChecked == true), "duty groups preserve selection from the grade view");
-        RosterMode.SelectedIndex = 3;
-        check(Rows(first).Length == 0 && Rows(second).Length == 1 && Rows(outside).Length == 1, "unclassified view shows only teachers without a grade or duty");
-        Box(Rows(second)[0]).IsChecked = true;
-        RosterMode.SelectedIndex = 0;
+        PeopleSearch.Text = "방송 준비";
+        check(Rows(first).Length == 1 && Box(Rows(first)[0]).IsChecked == true && Rows(outside).Length == 0,
+            "folder search opens matching paths and keeps prior selections");
+        PeopleSearch.Clear();
+        var groupCheck = (CheckBox)RowsBelow(OrganizationTree).Single(row => Equals(row.Tag, "folder:" + parent)).Header;
+        check(groupCheck.IsChecked is null, "partially selected folders display a mixed checkbox");
+        groupCheck.IsChecked = false;
+        check(selectedPeople.SetEquals([first, second]) && groupCheck.IsChecked == true, "toggling a parent selects its direct and nested members once");
         check((await OpenFromMenu(outside)).ToHashSet().SetEquals([Label(first), Label(second)]),
             "right-click on an unchecked teacher composes to all checked recipients only");
-        var groupCheck = Groups().Select(group => (CheckBox)group.Header).Single(box => ((string)box.Content).StartsWith("검증부"));
-        check(groupCheck.IsChecked is null, "partially selected groups display a mixed checkbox");
-        groupCheck.IsChecked = false;
-        check(selectedPeople.SetEquals([first, second, outside]) && groupCheck.IsChecked == true, "toggling a mixed group selects all its members");
-        groupCheck.IsChecked = false;
+        ((CheckBox)RowsBelow(OrganizationTree).Single(row => Equals(row.Tag, "folder:" + parent)).Header).IsChecked = false;
         check((await OpenFromMenu(outside)).SequenceEqual([Label(outside)]), "right-click with no checked teachers composes to one teacher");
     }
 }

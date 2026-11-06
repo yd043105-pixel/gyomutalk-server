@@ -120,7 +120,7 @@ scheduled.Deliver=async(request,sender)=>
     return(context.Response.StatusCode,result.RootElement.TryGetProperty("id",out var id)?id.GetString():null,result.RootElement.TryGetProperty("error",out var error)?error.GetString():null);
 };
 StaffAccounts.Initialize(store);
-var roster = new RosterClassifications(store);
+var roster = new RosterFolderStore(store);
 OfficeFeatures.Initialize(store);
 var registrationPolicy=new RegistrationPolicy(builder.Configuration["Registration:PolicyFile"],builder.Environment.IsDevelopment(),builder.Environment.ContentRootPath);
 using(var policyDatabase=store.Open())RegistrationPolicy.EnsureSchema(policyDatabase);
@@ -331,14 +331,16 @@ app.MapPost("/api/password", async Task<IResult> (PasswordChange request, HttpCo
     return Results.Ok();
 }).RequireAuthorization().RequireRateLimiting("credentials");
 var api = app.MapGroup("/api").RequireAuthorization();
-api.MapGet("/users", (Presence presence) =>
+api.MapGet("/users", (Presence presence) => store.Users().Where(u => u.Active).Select(u => new
 {
-    var classifications = roster.ReadAll();
-    return store.Users().Where(u => u.Active).Select(u => new
-    {
-        u.Id, u.Name, u.Department, u.Position, online = presence.Online(u.Id), away = presence.Away(u.Id),
-        mobile = false, classification = classifications.GetValueOrDefault(u.Id)
-    });
+    u.Id, u.Name, u.Department, u.Position, online = presence.Online(u.Id), away = presence.Away(u.Id), mobile = false
+}));
+api.MapGet("/roster-folders", () =>
+{
+    var directory = roster.Read();
+    var active = store.Query("SELECT Id FROM Users WHERE Active=1", reader => reader.GetString(0)).ToHashSet();
+    return directory with { Folders = directory.Folders.Select(folder =>
+        folder with { MemberIds = folder.MemberIds.Where(active.Contains).ToArray() }).ToArray() };
 });
 
 api.MapPost("/attachments", async Task<IResult> (HttpContext c) =>
@@ -651,21 +653,9 @@ IResult DecideRegistration(string id, bool approve)
 }
 store.Execute("INSERT OR IGNORE INTO BackendRoot(UserId) SELECT Id FROM Users WHERE Username='admin' AND NOT EXISTS(SELECT 1 FROM BackendRoot)");
 bool Root(HttpContext c)=>store.Query("SELECT 1 FROM BackendRoot WHERE UserId=$id",r=>r.GetInt32(0),("$id",UserId(c))).Count==1;
-adminApi.MapGet("/users", () =>
-{
-    var classifications = roster.ReadAll();
-    return store.Users().Select(user => PublicUser(user, classifications.GetValueOrDefault(user.Id, RosterClassification.Empty)));
-});
-adminApi.MapPut("/users/{id}/roster-classification", IResult (string id, RosterClassification request, HttpContext c) =>
-{
-    var classification = RosterClassification.Normalize(request.Grades, request.Duties);
-    if (classification is null) return Error("학년은 1~6, 담당업무는 최대 10개·이름당 40자입니다. '업무 미지정'은 시스템 표시명입니다.");
-    var user = store.GetUser(id);
-    if (user is null) return Results.NotFound();
-    if (user.IsAdmin && !Root(c)) return Error("관리자 계정 변경은 최고관리자만 할 수 있습니다.", 403);
-    roster.Save(id, classification, UserId(c));
-    return Results.Ok();
-});
+adminApi.MapGet("/users", () => store.Users().Select(PublicUser));
+adminApi.MapGet("/roster-folders", roster.Read);
+adminApi.MapPut("/roster-folders", (RosterFolders request, HttpContext c) => roster.Save(request, UserId(c)));
 adminApi.MapPost("/users", IResult (CreateUser request,HttpContext c) =>
 {
     if(request.IsAdmin&&!Root(c))return Error("관리자 권한 부여는 최고관리자만 할 수 있습니다.",403);
@@ -715,8 +705,8 @@ ManagedServerLifetime.Attach(app);
 app.Run();
 
 static string UserId(HttpContext c) => c.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-object PublicUser(User u, RosterClassification? classification = null)
-{var profile=StaffAccounts.Get(store,u.Id);return new { u.Id, u.Username, u.Name, u.Department,u.Position, u.IsAdmin, u.CanBroadcast, u.Active, activationRequired=profile?.NeedsActivation==true,seatIp=profile?.SeatIp,sharedPassword=profile?.SharedPassword==true,passwordChangeRequired=profile is{SharedPassword:true,NeedsActivation:false}, classification };}
+object PublicUser(User u)
+{var profile=StaffAccounts.Get(store,u.Id);return new { u.Id, u.Username, u.Name, u.Department,u.Position, u.IsAdmin, u.CanBroadcast, u.Active, activationRequired=profile?.NeedsActivation==true,seatIp=profile?.SeatIp,sharedPassword=profile?.SharedPassword==true,passwordChangeRequired=profile is{SharedPassword:true,NeedsActivation:false} };}
 static IResult Error(string message, int status = 400) => Results.Json(new { error = message }, statusCode: status);
 static bool ValidPassword(string? password) => password is { Length: >= 12 and <= 128 } && !string.IsNullOrWhiteSpace(password);
 static bool ValidProfile(string? username, string? name, string? department) => username is not null && Regex.IsMatch(username, "^[A-Za-z0-9._-]{3,32}$") &&
