@@ -11,9 +11,16 @@ const listener=net.createServer();await new Promise(resolve=>listener.listen(0,'
 const address='http://127.0.0.1:'+listener.address().port;await new Promise(resolve=>listener.close(resolve));
 const password='Test-'+randomUUID();
 const dll=path.join(root,'src/SchoolMessenger.Server/bin/Debug/net10.0/SchoolMessenger.Server.dll');
-const server=spawn('dotnet',[dll,'--urls',address],{cwd:path.dirname(dll),windowsHide:true,
- env:{...process.env,ASPNETCORE_ENVIRONMENT:'Development',School__DataDirectory:data,School__AdminPassword:password}});
-let logs='';server.stdout.on('data',bytes=>logs+=bytes);server.stderr.on('data',bytes=>logs+=bytes);
+let server,logs='';
+async function start(){
+ server=spawn('dotnet',[dll,'--urls',address],{cwd:path.dirname(dll),windowsHide:true,
+  env:{...process.env,ASPNETCORE_ENVIRONMENT:'Development',School__DataDirectory:data,School__AdminPassword:password}});
+ server.stdout.on('data',bytes=>logs+=bytes);server.stderr.on('data',bytes=>logs+=bytes);
+ let ready=false;
+ for(let i=0;i<120&&!ready;i++){assert.equal(server.exitCode,null,logs);try{ready=(await fetch(address+'/health')).ok;}catch{}if(!ready)await new Promise(resolve=>setTimeout(resolve,100));}
+ assert.ok(ready,logs);
+}
+async function stop(){if(server?.exitCode===null&&server.signalCode===null){const done=new Promise(resolve=>server.once('exit',resolve));server.kill();await done;}}
 function client(){
  const cookies=new Map();let csrf='';
  async function call(route,options={}){
@@ -28,11 +35,20 @@ function client(){
 }
 
 try{
- let ready=false;
- for(let i=0;i<120&&!ready;i++){assert.equal(server.exitCode,null,logs);try{ready=(await fetch(address+'/health')).ok;}catch{}if(!ready)await new Promise(resolve=>setTimeout(resolve,100));}
- assert.ok(ready,logs);
- const sender=client(),other=client();const self=await sender.login('admin');
+ await start();
+ let sender=client(),other=client(),self=await sender.login('admin');
  await sender.json('admin/users',{username:'other',name:'가상 사용자',department:'시험',password,isAdmin:false,canBroadcast:false});await other.login('other');
+ const GiB=2**30,policy='attachments/policy',setting='admin/attachment-policy';
+ const getLimit=async client=>(await (await client.call(policy)).json()).maxBytes;
+ const change=(actor,limitGiB)=>actor.call(setting,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limitGiB})});
+ assert.equal(await getLimit(sender),2*GiB);
+ assert.equal((await change(other,3)).status,403);
+ assert.equal((await change(sender,11)).status,400);
+ assert.equal((await change(sender,3)).status,200);
+ assert.equal(await getLimit(other),3*GiB);
+ await stop();await start();sender=client();other=client();self=await sender.login('admin');await other.login('other');
+ assert.equal(await getLimit(sender),3*GiB);
+ console.log('PASS only an administrator can set 2–10 GiB and the selected school limit survives a restart');
 
  const size=Number(process.env.YY_LARGE_ATTACHMENT_MIB??101)*1024*1024,block=randomBytes(256*1024),original=createHash('sha256');
  async function* payload(){for(let sent=0;sent<size;sent+=block.length){const part=block.subarray(0,Math.min(size-sent,block.length));original.update(part);yield part;}}
@@ -41,7 +57,12 @@ try{
  assert.equal(upload.status,200,await upload.clone().text());
  const attachment=await upload.json(),hash=original.digest('hex');assert.equal(attachment.size,size);assert.equal(attachment.name,'대용량 자료.txt');
  console.log(`PASS ${(size/2**20).toFixed(0)} MiB raw upload saved and checked in ${((performance.now()-start)/1000).toFixed(1)}s`);
+ assert.deepEqual(await sender.json('attachments/staged/check',[attachment.id]),[attachment.id]);
+ assert.deepEqual(await other.json('attachments/staged/check',[attachment.id]),[]);
  await sender.json('messages',{clientId:randomUUID(),title:'대용량 시험',body:'합성 파일입니다.',recipientIds:[self.id],attachmentIds:[attachment.id]});
+ assert.deepEqual(await sender.json('attachments/staged/check',[attachment.id]),[]);
+ assert.equal((await change(sender,2)).status,200);
+ console.log('PASS only the owner can find a reusable staged attachment, and published files survive a lower limit');
 
  const route='attachments/'+attachment.id+'/download',cut=3*1024*1024;
  const denied=await other.call(route,{headers:{Range:`bytes=${cut}-`}});assert.equal(denied.status,404);await denied.body.cancel();
@@ -57,4 +78,4 @@ try{
  assert.equal(stale.status,200);assert.equal(Number(stale.headers.get('content-length')),size);await stale.body.cancel();
  console.log('PASS other users cannot request ranges and an obsolete validator requires a fresh download');
 }catch(error){console.error(logs.slice(-3000));throw error;}
-finally{if(server.exitCode===null){const closed=new Promise(resolve=>server.once('exit',resolve));server.kill();await closed;}}
+finally{await stop();}

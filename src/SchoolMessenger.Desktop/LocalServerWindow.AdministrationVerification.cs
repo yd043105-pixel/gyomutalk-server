@@ -32,6 +32,10 @@ public sealed partial class LocalServerWindow
         feature.IsChecked=false;await Click(Action("설정 저장"));await Wait(()=>HasText("시간표를 숨깁니다"),"시간표 설정이 저장되지 않았습니다.");
         check(!(await source.Get<JsonElement>("api/timetable/status")).GetProperty("enabled").GetBoolean(),"the administrator switches off the school timetable from the native settings page");
         feature.IsChecked=true;await Click(Action("설정 저장"));await Wait(()=>HasText("시간표가 표시됩니다"),"시간표를 다시 켜지 못했습니다.");
+        await OpenAdministration("attachment-limit","office");
+        var capacity=ViewControls<ComboBox>(administrationView).Single();capacity.SelectedItem=3;
+        await Click(Action("설정 저장"));await Wait(()=>HasText("3GiB로 저장했습니다"),"첨부 용량 설정이 저장되지 않았습니다.");
+        await source.RefreshAttachmentLimit();check(source.AttachmentLimit==3L*1024*1024*1024,"the native administrator can change the school attachment limit");
         var teacher=await source.Send<JsonElement>(HttpMethod.Post,"api/admin/users",new{username=login,name,department="가상 교무부",password,isAdmin=false,canBroadcast=false});
         await OpenAdministration("members","office");await Wait(()=>HasText(name),"구성원 목록이 로드되지 않았습니다.");
         check(administrationController is OfficeWindow&&!administrationController.IsVisible&&!OwnedWindows.Cast<Window>().Any(w=>w.IsVisible),"existing member settings load inside the single administrator window");capture("administrator-members.png",this);

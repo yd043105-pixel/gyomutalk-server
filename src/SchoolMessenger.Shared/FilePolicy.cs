@@ -82,7 +82,8 @@ public static class FilePolicy
         var info = new ProcessStartInfo(scanner) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var argument in new[] { "-Scan", "-ScanType", "3", "-File", path, "-DisableRemediation" }) info.ArgumentList.Add(argument);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-        timeout.CancelAfter(TimeSpan.FromMinutes(new FileInfo(path).Length > MaxFile ? 5 : 1));
+        var bytes=new FileInfo(path).Length;
+        timeout.CancelAfter(TimeSpan.FromMinutes(bytes<=MaxFile?1:Math.Clamp(Math.Ceiling(bytes/(1024d*1024*1024))*2,5,20)));
         using var scan = Process.Start(info) ?? throw new FilePolicyException("파일 검사기를 실행하지 못했습니다.", 503);
         try
         {

@@ -6,6 +6,35 @@ namespace SchoolMessenger.Desktop;
 
 public partial class ComposeWindow
 {
+    internal async Task VerifyFolderRetry(string directory,Action<bool,string> check)
+    {
+        var api=main.Api!;
+        var source=Path.Combine(directory,"합성 첨부-"+Guid.NewGuid().ToString("N"));
+        var folder=Path.Combine(source,"교무 자료");var nested=Path.Combine(folder,"하위");
+        Directory.CreateDirectory(nested);Directory.CreateDirectory(Path.Combine(folder,"빈 폴더"));
+        var first=Path.Combine(source,"먼저.txt");var second=Path.Combine(nested,"문서.txt");
+        File.WriteAllText(first,"first synthetic upload");File.WriteAllText(second,"nested synthetic upload");
+        await AddPaths([first,folder]);
+        check(files.Count==2&&files[1].IsFolder,"the composer accepts a folder alongside a file");
+        using(var locked=new FileStream(second,FileMode.Open,FileAccess.Read,FileShare.None))
+        {
+            try{await UploadAttachments(api);throw new InvalidOperationException("The locked folder should fail");}
+            catch(IOException){}
+        }
+        var id=uploaded[0]?.Id;
+        check(id is not null&&uploaded[1] is null,"a failed folder leaves the successful attachment staged");
+        await UploadAttachments(api);
+        check(uploaded[0]?.Id==id&&uploaded[1]?.Name=="교무 자료.zip","retry reuses the first upload and sends the folder as one ZIP");
+        await api.Send<JsonElement>(System.Net.Http.HttpMethod.Post,"api/messages",new
+        {
+            clientId=Guid.NewGuid().ToString("N"),title="폴더 시험",body="합성 자료",recipientIds=new[]{api.Session!.User!.Id},attachmentIds=uploaded.Select(file=>file!.Id).ToArray()
+        });
+        var result=Path.Combine(source,"받은 자료.zip");await api.Download(uploaded[1]!.Id,result);
+        using var zip=System.IO.Compression.ZipFile.OpenRead(result);
+        using var contents=new StreamReader(zip.GetEntry("교무 자료/하위/문서.txt")!.Open());
+        check(zip.GetEntry("교무 자료/빈 폴더/") is not null&&await contents.ReadToEndAsync()=="nested synthetic upload","the downloaded ZIP preserves nested files and empty folders");
+        sent=true;File.Delete(draftPath);Close();
+    }
     internal void CloseUnsaved(){sent=true;Close();}
     internal void VerifyEditor()
     {

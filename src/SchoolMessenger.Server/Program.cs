@@ -48,6 +48,7 @@ if (builder.Configuration["School:CertificateThumbprint"] is { Length: > 0 } thu
 }
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o => o.MultipartBodyLengthLimit = 105L * 1024 * 1024);
 builder.Services.AddSingleton<Store>();
+builder.Services.AddSingleton<AttachmentPolicy>();
 builder.Services.AddSingleton<ServerDiscovery>();
 builder.Services.AddHostedService(s=>s.GetRequiredService<ServerDiscovery>());
 builder.Services.AddSingleton(s=>new FeedbackMail(s.GetRequiredService<Store>().Open,"office",s.GetRequiredService<Microsoft.AspNetCore.DataProtection.IDataProtectionProvider>(),builder.Configuration,(host,recipient)=>deploymentReview.Demand("error-mail",host,587,recipient)));
@@ -105,6 +106,7 @@ builder.Services.AddRateLimiter(o =>
 
 var app = builder.Build();
 var store = app.Services.GetRequiredService<Store>();
+var attachmentPolicy=app.Services.GetRequiredService<AttachmentPolicy>();
 MessageStorage.Migrate(store);
 var resources=new ServerResources(store.Root,"School",store.Open,builder.Configuration,app.Environment.IsDevelopment());
 var scheduled=app.Services.GetRequiredService<ScheduledMessages>();scheduled.Initialize();
@@ -146,6 +148,7 @@ File.WriteAllText(Path.Combine(store.Root, ".initialized"), "initialized");
 var networks = (builder.Configuration["School:AllowedNetworks"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
     .Select(System.Net.IPNetwork.Parse).ToArray();
 using var largeUpload = new SemaphoreSlim(1);
+var uploadDiskGate=new object();long reservedUploadBytes=0;
 // Never accept credentials over plain HTTP from another computer, including Development.
 app.Use(async (context, next) =>
 {
@@ -162,7 +165,7 @@ app.Use(async (context, next) =>
     if(context.Request.Method=="POST"&&context.Request.Path=="/api/attachments"&&context.Request.ContentType=="application/octet-stream")
     {
         var limit=context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
-        if(limit is{IsReadOnly:false})limit.MaxRequestBodySize=AttachmentLimits.Message;
+        if(limit is{IsReadOnly:false})limit.MaxRequestBodySize=attachmentPolicy.Limit;
     }
     if (!context.Request.IsHttps && context.Connection.RemoteIpAddress is { } ip && !System.Net.IPAddress.IsLoopback(ip))
     { context.Response.StatusCode = 400; await context.Response.WriteAsync("교내 접속에는 HTTPS가 필요합니다."); return; }
@@ -243,6 +246,7 @@ app.MapGet("/api/session", (HttpContext c, IAntiforgery antiforgery) => Results.
     schoolName = builder.Configuration["School:Name"],
     csrfToken = antiforgery.GetAndStoreTokens(c).RequestToken,
     external = false,
+    attachmentLimitBytes=attachmentPolicy.Limit,
     user = c.User.Identity?.IsAuthenticated == true ? PublicUser(store.GetUser(UserId(c))!) : null
 }));
 // One wording for every failure, so the answer never tells whether an account exists or is locked.
@@ -351,17 +355,24 @@ api.MapPost("/attachments", async Task<IResult> (HttpContext c) =>
     string name;
     try { name=FilePolicy.Name(rawName); } catch(FilePolicyException e) { return Error(e.Message,e.Status); }
     if(size<=0)return Error("빈 파일은 첨부할 수 없습니다.");
-    if(size>(streamed?AttachmentLimits.Message:AttachmentLimits.LegacyFile))return Error(streamed?"파일당 2GiB까지 첨부할 수 있습니다.":"파일당 100MB까지 첨부할 수 있습니다.",413);
+    var maximum=attachmentPolicy.Limit;
+    if(size>(streamed?maximum:AttachmentLimits.LegacyFile))return Error(streamed?$"파일당 {AttachmentLimits.Label(maximum)}까지 첨부할 수 있습니다.":"파일당 100MB까지 첨부할 수 있습니다.",413);
     var large=size>AttachmentLimits.LegacyFile;
     if(large&&!largeUpload.Wait(0)){c.Response.Headers.RetryAfter="2";return Error("대용량 파일을 전송 중입니다. 잠시 후 다시 시도하세요.",429);}
+    var reserved=false;
     try
     {
         var owner = UserId(c);
         var staged = store.Query("SELECT COALESCE(SUM(Size),0) FROM Attachments a WHERE OwnerId=$id AND MessageId IS NULL AND DeletedAt IS NULL AND NOT EXISTS(SELECT 1 FROM SubmissionFiles sf WHERE sf.AttachmentId=a.Id)",
             r => r.GetInt64(0), ("$id", owner))[0];
-        if (staged + size > AttachmentLimits.Staged) return Error("미전송 첨부가 너무 많습니다. 첨부를 정리하거나 메시지를 보내세요.", 413);
-        if (new DriveInfo(Path.GetPathRoot(store.Root)!).AvailableFreeSpace < size + 524_288_000)
-            return Error("서버 저장 공간이 부족합니다. 관리자에게 문의하세요.", 507);
+        var stagedLimit=maximum+AttachmentLimits.DiskReserve;
+        if (staged + size > stagedLimit) return Error("미전송 첨부가 너무 많습니다. 첨부를 정리하거나 메시지를 보내세요.", 413);
+        lock(uploadDiskGate)
+        {
+            if(new DriveInfo(Path.GetPathRoot(store.Root)!).AvailableFreeSpace-reservedUploadBytes<size+AttachmentLimits.DiskReserve)
+                return Error("서버 저장 공간이 부족합니다. 관리자에게 문의하세요.",507);
+            reservedUploadBytes+=size;reserved=true;
+        }
         var id = Guid.NewGuid().ToString("N");
         var path = Path.Combine(store.Files, id);
         var kept=false;
@@ -384,15 +395,29 @@ api.MapPost("/attachments", async Task<IResult> (HttpContext c) =>
                 INSERT INTO Attachments(Id,OwnerId,Name,Size,UploadedAt,ExpiresAt)
                 SELECT $id,$owner,$name,$size,$now,$expires WHERE
                 (SELECT COALESCE(SUM(Size),0) FROM Attachments a WHERE OwnerId=$owner AND MessageId IS NULL AND DeletedAt IS NULL AND NOT EXISTS(SELECT 1 FROM SubmissionFiles sf WHERE sf.AttachmentId=a.Id))+$size <= $limit
-                """, uploadTx,("$id", id), ("$owner", owner), ("$name", name), ("$size", size), ("$limit",AttachmentLimits.Staged),("$now", Maintenance.Now),("$expires",Maintenance.Now+(app.Environment.IsDevelopment()?Math.Max(1,builder.Configuration.GetValue("School:RetentionSeconds",2_592_000)):2_592_000)*1000L));
+                """, uploadTx,("$id", id), ("$owner", owner), ("$name", name), ("$size", size), ("$limit",stagedLimit),("$now", Maintenance.Now),("$expires",Maintenance.Now+(app.Environment.IsDevelopment()?Math.Max(1,builder.Configuration.GetValue("School:RetentionSeconds",2_592_000)):2_592_000)*1000L));
             if (uploadInsert.ExecuteNonQuery() == 0) return Error("미전송 첨부가 너무 많습니다.", 413);
             StoredFiles.State(uploadDb,"office",id,"ready",hash,uploadTx);uploadTx.Commit();kept=true;
             return Results.Ok(new { id, name, size });
         }
         finally { if(!kept){File.Delete(path);using var state=store.Open();StoredFiles.State(state,"office",id,"rejected");} }
     }
-    finally { if(large)largeUpload.Release(); }
+    finally
+    {
+        if(reserved)lock(uploadDiskGate)reservedUploadBytes-=size;
+        if(large)largeUpload.Release();
+    }
 }).RequireRateLimiting("upload");
+api.MapPost("/attachments/staged/check",(string[] ids,HttpContext c)=>
+{
+    if(ids.Length>10||ids.Any(id=>!Guid.TryParseExact(id,"N",out _)))return Error("첨부 목록을 확인하세요.");
+    var now=Maintenance.Now;
+    return Results.Ok(ids.Distinct().Where(id=>File.Exists(Path.Combine(store.Files,id))&&store.Query("""
+        SELECT 1 FROM Attachments a WHERE Id=$id AND OwnerId=$owner AND MessageId IS NULL AND DeletedAt IS NULL
+        AND ExpiresAt>$now AND UploadedAt>$cutoff AND NOT EXISTS(SELECT 1 FROM SubmissionFiles WHERE AttachmentId=a.Id)
+        AND NOT EXISTS(SELECT 1 FROM ScheduledAttachments WHERE AttachmentId=a.Id)
+        """,r=>r.GetInt32(0),("$id",id),("$owner",UserId(c)),("$now",now),("$cutoff",now-86_400_000)).Count>0).ToArray());
+});
 api.MapDelete("/attachments/{id}", (string id, HttpContext c) =>
 {
     var changed = store.Execute("UPDATE Attachments SET DeletedAt=$now WHERE Id=$id AND OwnerId=$owner AND MessageId IS NULL AND DeletedAt IS NULL AND NOT EXISTS(SELECT 1 FROM SubmissionFiles sf WHERE sf.AttachmentId=Attachments.Id) AND NOT EXISTS(SELECT 1 FROM ScheduledAttachments WHERE AttachmentId=Attachments.Id)",
@@ -469,7 +494,8 @@ IResult SendStoredMessage(SendMessage request, HttpContext c, IHubContext<Messag
             if (size is null || !Guid.TryParseExact(fileId, "N", out _) || !File.Exists(Path.Combine(store.Files, fileId))) return Error("사용할 수 없는 첨부파일입니다.");
             total += Convert.ToInt64(size);
         }
-        if (total > AttachmentLimits.Message) return Error("메시지당 첨부 합계는 2GiB입니다.", 413);
+        var maximum=scheduledDelivery?AttachmentLimits.Maximum:attachmentPolicy.Limit;
+        if (total > maximum) return Error($"메시지당 첨부 합계는 {AttachmentLimits.Label(maximum)}입니다.", 413);
         id = Guid.NewGuid().ToString("N");
         var now = Maintenance.Now;
         using (var insert = Store.Command(connection, "INSERT INTO Messages(Id,SenderId,ClientId,Fingerprint,Title,Body,CreatedAt) VALUES($id,$sender,$client,$fingerprint,$title,$body,$now)", transaction,
@@ -587,6 +613,7 @@ api.MapGet("/attachments/{id}/download", (string id, HttpContext c) =>
 });
 
 var adminApi = app.MapGroup("/api/admin").RequireAuthorization("Admin");
+AttachmentPolicy.Map(api,adminApi,attachmentPolicy);
 StaffAccounts.Map(app,adminApi,store,hasher,registrationPolicy);
 OfficeFeatures.Map(api,adminApi,store);
 CollaborationFeatures.Map(api, store);

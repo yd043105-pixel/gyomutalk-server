@@ -126,13 +126,20 @@ public partial class ChatWindow : Window
         if (!older) { MessagesScroll.ScrollToBottom(); if (all.Length > 0 && IsActive) await main.Api.Send<JsonElement>(HttpMethod.Post, $"api/chats/{room}/read", new { sequence = all[^1].Sequence }); }
     }
     async void Older(object sender, RoutedEventArgs e) => await Run(() => LoadMessages(true));
-    void Attach(object sender, RoutedEventArgs e)
+    async void Attach(object sender, RoutedEventArgs e)
     {
         var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Filter = "업무 자료|*.hwp;*.hwpx;*.pdf;*.doc;*.docx;*.xls;*.xlsx;*.ppt;*.pptx;*.txt;*.csv;*.png;*.jpg;*.jpeg;*.zip" };
         if (dialog.ShowDialog(this) != true) return;
-        var added = dialog.FileNames.Where(p => files.All(f => f.Path != p)).Select(p => new SourceFile(p)).ToArray(); var all = files.Concat(added).Select(f => new FileInfo(f.Path).Length).ToArray();
-        if (all.Length > 10 || all.Any(size => size > AttachmentLimits.Message) || all.Sum() > AttachmentLimits.Message) { Feedback.Text = "파일당 2GiB, 합계 2GiB, 최대 10개입니다."; return; }
-        foreach (var file in added) files.Add(file);
+        var room=RoomId;var api=main.Api;
+        if(api is null)return;
+        await Run(async()=>
+        {
+            await api.RefreshAttachmentLimit();if(busy||pending is not null||api!=main.Api||room!=RoomId)return;
+            var added=dialog.FileNames.Where(p=>files.All(f=>f.Path!=p)).Select(p=>new SourceFile(p)).ToArray();
+            var sizes=files.Concat(added).Select(f=>f.Uploaded?.Size??f.KnownSize).ToArray();
+            if(sizes.Length>10||sizes.Any(n=>n<=0)||sizes.Sum()>api.AttachmentLimit)throw new IOException($"첨부 합계는 {AttachmentLimits.Label(api.AttachmentLimit)}, 최대 10개입니다.");
+            foreach(var file in added)files.Add(file);
+        });
     }
     async void RemoveFile(object sender, RoutedEventArgs e)
     {
@@ -159,20 +166,25 @@ public partial class ChatWindow : Window
     public async Task SendMessage()
     {
         var room = RoomId;
-        if (room is null || busy || main.Api is null || (pending is null && string.IsNullOrWhiteSpace(BodyBox.Text) && files.Count == 0)) return;
+        if (room is null || busy || main.Api is not { } api || (pending is null && string.IsNullOrWhiteSpace(BodyBox.Text) && files.Count == 0)) return;
         busy = true; Freeze(true); SendButton.IsEnabled = false;
         try
         {
             if (pending is null)
             {
-                foreach (var file in files) file.Uploaded ??= await main.Api.Upload(file.Path);
-                pending = new ChatPending(main.Api.Address.ToString(), room, Guid.NewGuid().ToString(), BodyBox.Text, files.Select(f => f.Uploaded!.Id).ToArray());
+                await api.RefreshAttachmentLimit();
+                var ready=await api.StagedAttachments(files.Select(f=>f.Uploaded).OfType<Attachment>().Select(f=>f.Id).ToArray());
+                foreach(var file in files)if(file.Uploaded is { } existing&&!ready.Contains(existing.Id))file.Uploaded=null;
+                if(files.Sum(f=>f.Uploaded?.Size??f.KnownSize)>api.AttachmentLimit)throw new IOException($"첨부 합계는 {AttachmentLimits.Label(api.AttachmentLimit)}까지입니다.");
+                foreach (var file in files) file.Uploaded ??= await api.Upload(file.Path);
+                pending = new ChatPending(api.Address.ToString(), room, Guid.NewGuid().ToString(), BodyBox.Text, files.Select(f => f.Uploaded!.Id).ToArray());
                 File.WriteAllText(DraftPath(room), JsonSerializer.Serialize(pending));
             }
-            await main.Api.Send<JsonElement>(HttpMethod.Post, $"api/chats/{room}/messages", pending);
+            await api.Send<JsonElement>(HttpMethod.Post, $"api/chats/{room}/messages", pending);
             File.Delete(DraftPath(room)); pending = null; BodyBox.Clear(); files.Clear(); Feedback.Text = "";
             await LoadMessages(false);
         }
+        catch(ApiRequestException e)when((int)e.StatusCode is 400 or 401 or 403 or 404 or 413 or 415 or 422){pending=null;File.Delete(DraftPath(room));throw;}
         catch { Feedback.Text = pending is null ? "첨부 업로드 실패. 다시 시도하세요." : "전송 결과 미확인. 보내기를 눌러 재시도하세요."; throw; }
         finally { busy = false; Freeze(pending is not null); SendButton.IsEnabled = true; }
     }

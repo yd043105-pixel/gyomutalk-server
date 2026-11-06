@@ -60,8 +60,11 @@ public partial class ComposeWindow
         TitleBox.Text = draft.Title; BodyBox.Load(draft.Body, draft.Format); pending = draft.Pending;
         foreach (var person in people) person.Selected = draft.RecipientIds.Contains(person.Id) || draft.All || draft.Department == person.Department;
         files.Clear(); uploaded.Clear();
-        foreach (var file in draft.Files) if (File.Exists(file.Path)) files.Add(file);
-        uploaded.AddRange(draft.Uploaded);
+        for(var i=0;i<draft.Files.Length;i++)
+        {
+            var file=draft.Files[i];var attachment=draft.Uploaded.ElementAtOrDefault(i);
+            if(file.Exists||attachment is not null){files.Add(file);uploaded.Add(attachment);}
+        }
         CollectFiles.IsChecked = draft.CollectRequested || draft.SubmissionDeadline is not null;
         if (draft.CollectionDate is not null) SubmissionDate.SelectedDate = ParseDay(draft.CollectionDate);
         else if (draft.SubmissionDeadline is { } deadline) SubmissionDate.SelectedDate = DateTimeOffset.FromUnixTimeMilliseconds(deadline).ToOffset(TimeSpan.FromHours(9)).Date;

@@ -110,6 +110,7 @@ public sealed partial class LocalServerWindow
             await source.Get<JsonElement>("api/admin/server-resources");
             if(revision!=viewRevision||!adminSessions.TryGetValue(role,out var current)||!ReferenceEquals(source,current))return;
             if(page=="timetable-feature") { await ShowTimetableFeature(source,revision); return; }
+            if(page=="attachment-limit") { await ShowAttachmentLimit(source,revision); return; }
             administrationView.Children.Clear();
             Window controller=page switch
             {
@@ -129,6 +130,30 @@ public sealed partial class LocalServerWindow
         }
         catch(ApiRequestException e)when(e.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden){await SignOutAdministrator(role);}
         catch(Exception e){if(revision==viewRevision){var panel=new StackPanel();panel.Children.Add(Note(e.Message));var retry=new Button{Content="다시 연결",HorizontalAlignment=HorizontalAlignment.Left};retry.Click+=async(_,_)=>await OpenAdministration(page,role);panel.Children.Add(retry);administrationView.Children.Add(Surface(panel));}}
+    }
+    async Task ShowAttachmentLimit(Api source,int revision)
+    {
+        await source.RefreshAttachmentLimit();
+        if(revision!=viewRevision)return;
+        var panel=new StackPanel();panel.Children.Add(AdminUi.Heading("첨부 용량",22));
+        panel.Children.Add(Note("일반 메시지·채팅의 파일 한 개와 메시지 전체에 같은 상한을 적용합니다. 폴더는 ZIP 크기를 기준으로 계산합니다."));
+        var limit=new ComboBox{ItemsSource=Enumerable.Range(2,9).ToArray(),SelectedItem=(int)(source.AttachmentLimit/SchoolMessenger.Contracts.AttachmentLimits.GiB),Width=140,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,12,0,12)};
+        System.Windows.Automation.AutomationProperties.SetName(limit,"메시지당 최대 첨부 용량 (GiB)");
+        panel.Children.Add(Note("최대 첨부 용량 (GiB)"));panel.Children.Add(limit);
+        var status=Note("기본값 2GiB · 설정 범위 2~10GiB");
+        var save=new Button{Content="설정 저장",HorizontalAlignment=HorizontalAlignment.Left};save.SetResourceReference(StyleProperty,"PrimaryButton");panel.Children.Add(save);panel.Children.Add(status);
+        save.Click+=async(_,_)=>
+        {
+            save.IsEnabled=limit.IsEnabled=false;
+            try
+            {
+                var result=await source.Send<JsonElement>(HttpMethod.Post,"api/admin/attachment-policy",new { limitGiB=(int)limit.SelectedItem });
+                status.Text=$"{SchoolMessenger.Contracts.AttachmentLimits.Label(result.GetProperty("maxBytes").GetInt64())}로 저장했습니다.";
+            }
+            catch(Exception error){status.Text=error.Message;}
+            finally{save.IsEnabled=limit.IsEnabled=true;}
+        };
+        administrationView.Children.Clear();administrationView.Children.Add(Surface(panel));
     }
     async Task ShowTimetableFeature(Api source,int revision)
     {

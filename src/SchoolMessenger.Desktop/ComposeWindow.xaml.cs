@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Security.Cryptography;
 using System.Windows;
 using SchoolMessenger.Contracts;
+using SchoolMessenger.Shared;
 
 namespace SchoolMessenger.Desktop;
 
@@ -12,7 +13,7 @@ public partial class ComposeWindow : Window
     readonly MainWindow main;
     readonly Person[] people;
     readonly ObservableCollection<SourceFile> files = new();
-    readonly List<Attachment> uploaded = new();
+    readonly List<Attachment?> uploaded = new();
     string draftPath;
     readonly string draftDirectory;
     readonly string server;
@@ -36,7 +37,7 @@ public partial class ComposeWindow : Window
         Department.ItemsSource = new[] { "선택 안 함" }.Concat(people.Select(p => p.Department).Distinct().Order()).ToArray();
         Department.SelectedIndex = 0;
         SendAll.Visibility = main.Api.Session.User.IsAdmin || main.Api.Session.User.CanBroadcast ? Visibility.Visible : Visibility.Collapsed;
-        FilesList.ItemsSource = files; TitleBox.Text = title ?? "";
+        FilesList.ItemsSource = files; TitleBox.Text = title ?? "";UpdateAttachmentHint(main.Api);
         MigrateLegacyDraft(); UpdateDraftCount();
         foreach(var person in people)if(SendAll.IsChecked==true||Department.SelectedIndex>0&&person.Department==(string)Department.SelectedItem)person.Selected=true;
         Department.SelectedIndex=0;SendAll.IsChecked=false;RefreshRecipients();
@@ -50,25 +51,35 @@ public partial class ComposeWindow : Window
     }
     void AddFiles(object sender, RoutedEventArgs e)
         => ChooseFiles();
-    public void ChooseFiles()
+    public async void ChooseFiles()
     {
         var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Filter = "업무 자료|*.hwp;*.hwpx;*.pdf;*.doc;*.docx;*.xls;*.xlsx;*.ppt;*.pptx;*.txt;*.csv;*.png;*.jpg;*.jpeg;*.zip" };
-        if (dialog.ShowDialog(this) == true) AddPaths(dialog.FileNames);
+        if (dialog.ShowDialog(this) == true) await AddPaths(dialog.FileNames);
     }
-    void AddPaths(string[] paths)
+    void UpdateAttachmentHint(Api api)
+    {var limit=AttachmentLimits.Label(api.AttachmentLimit);AttachmentHint.Text=$"파일당·합계 {limit} · 최대 10개 · 파일 또는 폴더 끌어놓기 (폴더는 ZIP)";}
+    async Task AddPaths(string[] paths)
     {
-        if (pending is not null || sending) return;
-        foreach (var path in paths)
+        if (pending is not null || sending || main.Api is not { } api) return;
+        try
         {
-            if (!File.Exists(path) || files.Any(f => f.Path == path)) continue;
-            var info = new FileInfo(path);
-            if (info.Length is <= 0 or > AttachmentLimits.Message || files.Count >= 10 || files.Sum(f => new FileInfo(f.Path).Length) + info.Length > AttachmentLimits.Message)
-            { Feedback.Text = "파일당 2GiB, 합계 2GiB, 최대 10개입니다."; break; }
-            files.Add(new SourceFile(path));
+            await api.RefreshAttachmentLimit();
+            if(sending||pending is not null||api!=main.Api||!IsVisible)return;
+            UpdateAttachmentHint(api);
+            foreach (var path in paths)
+            {
+                var folder=Directory.Exists(path);
+                if ((!folder&&!File.Exists(path)) || files.Any(f => StringComparer.OrdinalIgnoreCase.Equals(f.Path,path))) continue;
+                var file=new SourceFile(path,folder);
+                if ((!folder&&file.KnownSize<=0)||files.Count>=10||files.Sum(f=>f.KnownSize)+file.KnownSize>api.AttachmentLimit)
+                { Feedback.Text=$"파일당·합계 {AttachmentLimits.Label(api.AttachmentLimit)}, 최대 10개입니다.";break; }
+                files.Add(file);
+            }
         }
+        catch(Exception error){Feedback.Text=error.Message;}
     }
-    void DropFiles(object sender, System.Windows.DragEventArgs e)
-    { if (e.Data.GetData(System.Windows.DataFormats.FileDrop) is string[] paths) { AddPaths(paths); e.Handled = true; } }
+    async void DropFiles(object sender, System.Windows.DragEventArgs e)
+    { if (e.Data.GetData(System.Windows.DataFormats.FileDrop) is string[] paths) { e.Handled=true;await AddPaths(paths); } }
     void FilesDragOver(object sender, System.Windows.DragEventArgs e)
     { if (e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop)) { e.Effects = pending is null && !sending ? System.Windows.DragDropEffects.Copy : System.Windows.DragDropEffects.None; e.Handled = true; } }
     async void RemoveFile(object sender, RoutedEventArgs e)
@@ -81,7 +92,7 @@ public partial class ComposeWindow : Window
         var index = files.IndexOf(file); files.Remove(file);
         if (index >= uploaded.Count) return;
         var sent = uploaded[index]; uploaded.RemoveAt(index); SaveDraft();
-        await main.Api!.Send<JsonElement>(HttpMethod.Delete, $"api/attachments/{sent.Id}");
+        if(sent is not null)await main.Api!.Send<JsonElement>(HttpMethod.Delete, $"api/attachments/{sent.Id}");
     }
     internal async Task<string> VerifyTakeBack(string path)
     {
@@ -106,7 +117,7 @@ public partial class ComposeWindow : Window
     }
     async void Send(object sender, RoutedEventArgs e)
     {
-        if (main.Api is null || sending) return;
+        if (main.Api is not { } api || sending) return;
         if (pending is null && (BodyBox.Text.Length > 20_000 || !MessageFormatRules.Valid(BodyBox.Formatting, BodyBox.Text) || JsonSerializer.SerializeToUtf8Bytes(BodyBox.Formatting, Json).Length > 80_000)) { Feedback.Text = "본문은 20,000자 이내로 작성하고, 서식이 너무 많으면 일부 서식을 지워 주세요."; return; }
         if (pending is null && CollectFiles.IsChecked == true && SubmissionDate.SelectedDate is null) { Feedback.Text = "제출 마감일을 선택하세요."; return; }
         if (pending is null && (string.IsNullOrWhiteSpace(BodyBox.Text) ||
@@ -125,16 +136,13 @@ public partial class ComposeWindow : Window
             if (pending is null)
             {
                 // An older server must not silently interpret a scheduled request as immediate delivery.
-                if(schedule is not null)await main.Api.Get<JsonElement[]>("api/messages/scheduled");
-                // Previous partial uploads are discarded before starting a new upload attempt.
-                foreach (var old in uploaded) await main.Api.Send<JsonElement>(HttpMethod.Delete, $"api/attachments/{old.Id}");
-                uploaded.Clear();
-                foreach (var file in files) { Feedback.Text = $"첨부 업로드 중: {file.Description}"; uploaded.Add(await main.Api.Upload(file.Path)); SaveDraft(); }
-                pending = new Pending(Guid.NewGuid().ToString(), TitleBox.Text.Trim(), BodyBox.Text, people.Where(p => p.Selected).Select(p => p.Id).ToArray(), uploaded.Select(f => f.Id).ToArray(), SendAll.IsChecked == true, Department.SelectedIndex > 0 ? (string)Department.SelectedItem : null, Deadline(),schedule,BodyBox.Formatting);
+                if(schedule is not null)await api.Get<JsonElement[]>("api/messages/scheduled");
+                await UploadAttachments(api);
+                pending = new Pending(Guid.NewGuid().ToString(), TitleBox.Text.Trim(), BodyBox.Text, people.Where(p => p.Selected).Select(p => p.Id).ToArray(), uploaded.Select(f => f!.Id).ToArray(), SendAll.IsChecked == true, Department.SelectedIndex > 0 ? (string)Department.SelectedItem : null, Deadline(),schedule,BodyBox.Formatting);
                 SaveDraft();
             }
             Feedback.Text = "서버 저장 확인 중…";
-            var result=await main.Api.Send<JsonElement>(HttpMethod.Post, "api/messages", pending);
+            var result=await api.Send<JsonElement>(HttpMethod.Post, "api/messages", pending);
             var collection=pending.SubmissionDeadline is not null&&pending.ScheduledAt is null;
             sent = true; File.Delete(draftPath); Close();
             if(collection)new WorkWindow(main,result.GetProperty("id").GetString()).Show();
@@ -142,11 +150,40 @@ public partial class ComposeWindow : Window
         catch (Exception error)
         {
             if(error is ApiRequestException rejected&&(int)rejected.StatusCode is 400 or 401 or 403 or 404 or 413 or 415 or 422)pending=null;
-            Feedback.Text = error.Message + (pending is null ? "" : "\n같은 내용으로 다시 보내면 중복 저장되지 않습니다.");
+            var completed=uploaded.Count(file=>file is not null);
+            Feedback.Text = error.Message + (pending is not null ? "\n같은 내용으로 다시 보내면 중복 저장되지 않습니다." : completed>0 ? $"\n다시 보내면 이미 올린 첨부 {completed}개를 재사용합니다." : "");
             if (pending is null) Unfreeze();
             SaveDraft();
         }
         finally { sending = false; SendButton.IsEnabled = true;if(pending is null&&!sent)Unfreeze(); }
+    }
+    async Task UploadAttachments(Api api)
+    {
+        await api.RefreshAttachmentLimit();UpdateAttachmentHint(api);
+        var ready=await api.StagedAttachments(uploaded.OfType<Attachment>().Select(a=>a.Id).ToArray());
+        while(uploaded.Count<files.Count)uploaded.Add(null);
+        var planned=files.Select(file=>file.KnownSize).ToArray();
+        long bytes=0;
+        for(var i=0;i<files.Count;i++)
+        {
+            if(uploaded[i] is { } attachment&&ready.Contains(attachment.Id))bytes+=attachment.Size;
+            else {uploaded[i]=null;bytes+=planned[i];}
+        }
+        if(bytes>api.AttachmentLimit)throw new InvalidOperationException($"첨부 합계는 {AttachmentLimits.Label(api.AttachmentLimit)}까지입니다.");
+        for(var i=0;i<files.Count;i++)
+        {
+            if(uploaded[i] is not null)continue;
+            var file=files[i];
+            if(!file.Exists)throw new IOException($"첨부를 찾지 못했습니다. 다시 선택하세요. {file.Description}");
+            if(file.IsFolder)Feedback.Text=$"폴더 ZIP 준비 중 ({i+1}/{files.Count}) · {file.Description}";
+            using var archive=file.IsFolder?await Task.Run(()=>FolderAttachment.Create(file.Path,api.AttachmentLimit-bytes)):null;
+            Feedback.Text=$"첨부 업로드 중 ({i+1}/{files.Count}) · {file.Description}";
+            var attachment=await api.Upload(archive?.Path??file.Path);
+            uploaded[i]=attachment;
+            bytes+=attachment.Size-planned[i];
+            SaveDraft();
+            if(bytes>api.AttachmentLimit)throw new IOException($"첨부 합계는 {AttachmentLimits.Label(api.AttachmentLimit)}까지입니다.");
+        }
     }
     long? Deadline() => CollectFiles.IsChecked == true && SubmissionDate.SelectedDate is { } day ? new DateTimeOffset(DateTime.SpecifyKind(day.Date.AddDays(1).AddSeconds(-1), DateTimeKind.Unspecified), TimeSpan.FromHours(9)).ToUnixTimeMilliseconds() : null;
     void SaveDraftClick(object sender,RoutedEventArgs e)
@@ -178,11 +215,13 @@ public partial class ComposeWindow : Window
         Department.SelectedIndex=0;SendAll.IsChecked=false;RefreshRecipients();
     }
 }
-record SourceFile(string Path)
+record SourceFile(string Path,bool IsFolder=false)
 {
     [System.Text.Json.Serialization.JsonIgnore] public Attachment? Uploaded { get; set; }
-    public string Description => System.IO.Path.GetFileName(Path);
-    public string SizeLabel { get { var info = new FileInfo(Path); return !info.Exists ? "" : info.Length < 1_048_576 ? Math.Max(1, info.Length / 1024) + "KB" : (info.Length / 1_048_576.0).ToString("0.#") + "MB"; } }
+    public string Description => System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(Path));
+    [System.Text.Json.Serialization.JsonIgnore] public bool Exists=>IsFolder?Directory.Exists(Path):File.Exists(Path);
+    [System.Text.Json.Serialization.JsonIgnore] public long KnownSize=>!IsFolder&&new FileInfo(Path) is {Exists:true} info?info.Length:0;
+    public string SizeLabel => IsFolder?"폴더 · ZIP":KnownSize<1_048_576?Math.Max(1,KnownSize/1024)+"KB":(KnownSize/1_048_576.0).ToString("0.#")+"MB";
 }
 record Pending(string ClientId, string Title, string Body, string[] RecipientIds, string[] AttachmentIds, bool All, string? Department, long? SubmissionDeadline = null,long? ScheduledAt=null,[property: System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] MessageFormat? Format=null);
-record Draft(string Server, string Title, string Body, string[] RecipientIds, string? Department, bool All, SourceFile[] Files, Attachment[] Uploaded, Pending? Pending, long? SubmissionDeadline = null,long? ScheduledAt=null,bool ReserveRequested=false,string? ReserveDate=null,string? ReserveTime=null,bool CollectRequested=false,string? CollectionDate=null,MessageFormat? Format=null,long SavedAt=0);
+record Draft(string Server, string Title, string Body, string[] RecipientIds, string? Department, bool All, SourceFile[] Files, Attachment?[] Uploaded, Pending? Pending, long? SubmissionDeadline = null,long? ScheduledAt=null,bool ReserveRequested=false,string? ReserveDate=null,string? ReserveTime=null,bool CollectRequested=false,string? CollectionDate=null,MessageFormat? Format=null,long SavedAt=0);

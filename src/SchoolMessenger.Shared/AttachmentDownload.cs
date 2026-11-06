@@ -63,7 +63,7 @@ public static class AttachmentDownload
                     if (resumable) await File.WriteAllTextAsync(validator, tag, cancellation);
                     else File.Delete(validator);
                     var total = continued ? range!.Length!.Value : response.Content.Headers.ContentLength ?? 0;
-                    if(total>AttachmentLimits.Message){resumable=false;throw new IOException("파일당 2GiB까지 받을 수 있습니다.");}
+                    if(total>AttachmentLimits.Maximum){resumable=false;throw new IOException("파일당 10GiB까지 받을 수 있습니다.");}
                     var clock = Stopwatch.StartNew();
                     long received = offset, last = -200;
                     progress?.Invoke(new(received, total, 0));
@@ -73,7 +73,7 @@ public static class AttachmentDownload
                     while ((count = await input.ReadAsync(buffer, cancellation)) > 0)
                     {
                         received += count;
-                        if (received>AttachmentLimits.Message||total > 0 && received > total) { resumable = false; throw new IOException("받은 파일이 예상 크기를 초과했습니다."); }
+                        if (received>AttachmentLimits.Maximum||total > 0 && received > total) { resumable = false; throw new IOException("받은 파일이 예상 크기를 초과했습니다."); }
                         await output.WriteAsync(buffer.AsMemory(0, count), cancellation);
                         if (progress is not null && clock.ElapsedMilliseconds - last >= 200)
                         {

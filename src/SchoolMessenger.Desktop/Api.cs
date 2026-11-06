@@ -16,6 +16,7 @@ public sealed class Api : IDisposable
     public HttpClient Http { get; }
     readonly HttpClient transfers;
     public Session? Session { get; private set; }
+    public long AttachmentLimit { get; private set; }=AttachmentLimits.Message;
     static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     public Api(string address)
     {
@@ -25,14 +26,33 @@ public sealed class Api : IDisposable
             throw new InvalidOperationException("교내 서버 주소는 HTTPS여야 합니다. HTTP는 이 PC의 개발 서버에만 허용됩니다.");
         var handler=CertificatePins.Handler(Address,new HttpClientHandler { CookieContainer=Cookies,AllowAutoRedirect=false });
         Http=new HttpClient(handler){BaseAddress=Address,Timeout=TimeSpan.FromSeconds(90)};
-        transfers=new HttpClient(handler,false){BaseAddress=Address,Timeout=TimeSpan.FromMinutes(20)};
+        transfers=new HttpClient(handler,false){BaseAddress=Address,Timeout=TimeSpan.FromHours(2)};
         foreach(var client in new[]{Http,transfers})
         {
             client.DefaultRequestHeaders.Add("X-YY-Product","windows");
             client.DefaultRequestHeaders.Add("X-YY-Version",typeof(Api).Assembly.GetName().Version?.ToString(3)??"1.0.0");
         }
     }
-    public async Task RefreshSession(CancellationToken cancellationToken = default) => Session = await Get<Session>("api/session", cancellationToken);
+    public async Task RefreshSession(CancellationToken cancellationToken = default)
+    {
+        Session=await Get<Session>("api/session",cancellationToken);
+        AttachmentLimit=Session.AttachmentLimitBytes is >=AttachmentLimits.Message and <=AttachmentLimits.Maximum ? Session.AttachmentLimitBytes : AttachmentLimits.Message;
+    }
+    public async Task RefreshAttachmentLimit()
+    {
+        try
+        {
+            var value=(await Get<JsonElement>("api/attachments/policy")).GetProperty("maxBytes").GetInt64();
+            if(value is >=AttachmentLimits.Message and <=AttachmentLimits.Maximum)AttachmentLimit=value;
+        }
+        catch(ApiRequestException error)when(error.StatusCode==HttpStatusCode.NotFound){}
+    }
+    public async Task<HashSet<string>> StagedAttachments(string[] ids)
+    {
+        if(ids.Length==0)return [];
+        try { return (await Send<string[]>(HttpMethod.Post,"api/attachments/staged/check",ids)).ToHashSet(); }
+        catch(ApiRequestException error)when(error.StatusCode==HttpStatusCode.NotFound){return ids.ToHashSet();}
+    }
     public async Task<T> Get<T>(string path, CancellationToken cancellationToken = default)
     {
         using var response = await Http.GetAsync(path, cancellationToken);
@@ -59,7 +79,7 @@ public sealed class Api : IDisposable
     public async Task<Attachment> Upload(string path)
     {
         var file=new FileInfo(path);
-        if(file.Length>AttachmentLimits.Message)throw new InvalidOperationException("파일당 2GiB까지 첨부할 수 있습니다.");
+        if(file.Length>AttachmentLimit)throw new InvalidOperationException($"파일당 {AttachmentLimits.Label(AttachmentLimit)}까지 첨부할 수 있습니다.");
         if(file.Length>AttachmentLimits.LegacyFile)
         {
             using var stream=new StreamContent(file.OpenRead());
@@ -109,7 +129,7 @@ public sealed class Api : IDisposable
 internal sealed class ApiRequestException(HttpStatusCode status,string message):InvalidOperationException(message)
 {public HttpStatusCode StatusCode{get;}=status;}
 public record UserInfo(string Id, string Username, string Name, string Department, bool IsAdmin, bool CanBroadcast, bool Active, bool ActivationRequired=false, string? SeatIp=null,string Position="",bool SharedPassword=false,bool PasswordChangeRequired=false);
-public record Session(string SchoolName, string CsrfToken, UserInfo? User);
+public record Session(string SchoolName, string CsrfToken, UserInfo? User,long AttachmentLimitBytes=AttachmentLimits.Message);
 public record Person(string Id, string Name, string Department, bool Online,string Position="",bool Away=false,bool Mobile=false)
 {
     public string Label => $"{Name} · {Department}";

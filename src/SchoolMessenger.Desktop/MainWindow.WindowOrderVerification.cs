@@ -80,6 +80,8 @@ public partial class MainWindow
         await mailbox.ShowMessage(messageId);
         SavePreview(mailbox, Path.Combine(preview, "mailbox.png"));
         SavePreview(compose, Path.Combine(preview, "compose.png"));
+        var folderCompose=new ComposeWindow(this,people,null,"폴더 시험");folderCompose.Show();
+        await folderCompose.VerifyFolderRetry(preview,Check);
         await SignOut();
         Check(windows.All(w => !w.IsVisible) && SessionWindows.Length == 0 && Api is null, "logout closes every independent work window and clears the session");
         Check(Directory.EnumerateFiles(Path.Combine(LocalDirectory, "drafts"), "*.dpapi", SearchOption.AllDirectories).Any(p => JsonDocument.Parse(ProtectedData.Unprotect(File.ReadAllBytes(p), null, DataProtectionScope.CurrentUser)).RootElement.GetProperty("title").GetString() == "창 전환 검사"), "logout preserves the unsent message in an encrypted draft");
