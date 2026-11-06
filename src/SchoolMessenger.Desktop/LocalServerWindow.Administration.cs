@@ -109,6 +109,7 @@ public sealed partial class LocalServerWindow
         {
             await source.Get<JsonElement>("api/admin/server-resources");
             if(revision!=viewRevision||!adminSessions.TryGetValue(role,out var current)||!ReferenceEquals(source,current))return;
+            if(page=="timetable-feature") { await ShowTimetableFeature(source,revision); return; }
             administrationView.Children.Clear();
             Window controller=page switch
             {
@@ -128,6 +129,30 @@ public sealed partial class LocalServerWindow
         }
         catch(ApiRequestException e)when(e.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden){await SignOutAdministrator(role);}
         catch(Exception e){if(revision==viewRevision){var panel=new StackPanel();panel.Children.Add(Note(e.Message));var retry=new Button{Content="다시 연결",HorizontalAlignment=HorizontalAlignment.Left};retry.Click+=async(_,_)=>await OpenAdministration(page,role);panel.Children.Add(retry);administrationView.Children.Add(Surface(panel));}}
+    }
+    async Task ShowTimetableFeature(Api source,int revision)
+    {
+        var current=(await source.Get<JsonElement>("api/timetable/status")).GetProperty("enabled").GetBoolean();
+        if(revision!=viewRevision)return;
+        var panel=new StackPanel();
+        panel.Children.Add(AdminUi.Heading("시간표 기능",22));
+        panel.Children.Add(Note("별도 시간표 서비스를 사용하는 학교는 교무톡의 시간표를 끌 수 있습니다. 다시 켜면 기존 시간표와 교체 신청을 볼 수 있습니다."));
+        var enabled=new CheckBox{Content="교무톡 시간표 사용",IsChecked=current,Margin=new Thickness(0,16,0,12)};panel.Children.Add(enabled);
+        var status=Note(current?"현재 켜짐":"현재 꺼짐");
+        var save=new Button{Content="설정 저장",HorizontalAlignment=HorizontalAlignment.Left};save.SetResourceReference(StyleProperty,"PrimaryButton");
+        panel.Children.Add(save);panel.Children.Add(status);
+        save.Click+=async(_,_)=>
+        {
+            save.IsEnabled=enabled.IsEnabled=false;
+            try
+            {
+                var result=await source.Send<JsonElement>(HttpMethod.Post,"api/admin/timetable-feature",new { enabled=enabled.IsChecked==true });
+                status.Text=result.GetProperty("enabled").GetBoolean()?"저장했습니다. 교직원 메신저에 시간표가 표시됩니다.":"저장했습니다. 교직원 메신저에서 시간표를 숨깁니다.";
+            }
+            catch(Exception error){status.Text=error.Message;}
+            finally{save.IsEnabled=enabled.IsEnabled=true;}
+        };
+        administrationView.Children.Clear();administrationView.Children.Add(Surface(panel));
     }
     void ShowAdministratorLogin(string service,string page,string? message=null)
     {

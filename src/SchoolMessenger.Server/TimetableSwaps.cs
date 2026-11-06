@@ -36,7 +36,7 @@ public sealed partial class Timetables
     async Task<IResult> WithSchedule(HttpContext context, Func<IResult> action)
     {
         await gate.WaitAsync(context.RequestAborted);
-        try { return Safe(action); }
+        try { return Safe(() => { RequireEnabled(); return action(); }); }
         finally { gate.Release(); }
     }
 

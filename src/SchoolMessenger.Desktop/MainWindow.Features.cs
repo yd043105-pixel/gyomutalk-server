@@ -30,7 +30,9 @@ public partial class MainWindow
             if (SessionWindows.OfType<ChatWindow>().FirstOrDefault() is not { } open) { new ChatWindow(this, people, null, room).Show(); return; }
             open.Activate(); if (room is not null) _ = Run(() => open.ShowRoom(room));
         }
-        else if (target == "survey") OpenSurvey(); else if (target == "timetable") new TimetableWindow(this, room).Show(); else OpenMailbox("unread");
+        else if (target == "survey") OpenSurvey();
+        else if (target == "timetable") { if (TimetableButton.IsVisible) new TimetableWindow(this, room).Show(); }
+        else OpenMailbox("unread");
     }
     // Everything unread in one number: mail and chat together, without rooms set to silent or the room being read right now.
     async Task NotifyUnread(string target, string? room, ChatRoom[]? rooms = null)
@@ -57,10 +59,28 @@ public partial class MainWindow
     // Several changed days arrive together when a weekly file goes up, so they share one notice.
     async Task NotifyTimetable()
     {
-        if (Api is null) return;
-        var fresh = (await Api.Get<SchoolMessenger.Contracts.TimetableNotice[]>("api/timetable/notices")).Where(n => knownTimetables.Add(n.Revision) && n.ReadAt is null).OrderBy(n => n.Date, StringComparer.Ordinal).ToArray();
+        var source=Api;
+        if (source is null || !await RefreshTimetableAvailability()) return;
+        SchoolMessenger.Contracts.TimetableNotice[] notices;
+        try { notices=await source.Get<SchoolMessenger.Contracts.TimetableNotice[]>("api/timetable/notices"); }
+        catch(ApiRequestException e) when(e.StatusCode==System.Net.HttpStatusCode.Forbidden) { await RefreshTimetableAvailability(); return; }
+        if(source!=Api||TimetableButton.Visibility!=Visibility.Visible)return;
+        var fresh=notices.Where(n => knownTimetables.Add(n.Revision) && n.ReadAt is null).OrderBy(n => n.Date, StringComparer.Ordinal).ToArray();
         foreach (var window in SessionWindows.OfType<TimetableWindow>().ToArray()) await window.Refresh();
         if (fresh.Length > 0) ShowToast(fresh.Length == 1 ? "시간표가 변경되었습니다" : $"시간표 변경 {fresh.Length}건", fresh[0].Title, "timetable", fresh[0].Date);
+    }
+    int timetableAvailabilityRequest;
+    async Task<bool> RefreshTimetableAvailability()
+    {
+        var source=Api;if(source is null)return false;
+        var request=++timetableAvailabilityRequest;
+        var enabled=true; // Older school servers have no toggle and always show the timetable.
+        try { enabled=(await source.Get<JsonElement>("api/timetable/status")).GetProperty("enabled").GetBoolean(); }
+        catch(ApiRequestException e) when(e.StatusCode==System.Net.HttpStatusCode.NotFound) { }
+        if(source!=Api||request!=timetableAvailabilityRequest)return false;
+        TimetableButton.Visibility=enabled?Visibility.Visible:Visibility.Collapsed;
+        if(!enabled)foreach(var window in SessionWindows.OfType<TimetableWindow>().ToArray())window.Close();
+        return enabled;
     }
     async Task NotifySurvey(string id)
     {
@@ -72,7 +92,7 @@ public partial class MainWindow
     void OpenChatClick(object sender, RoutedEventArgs e) => OpenChat();
     void OpenSurveyClick(object sender, RoutedEventArgs e) => OpenSurvey();
     void OpenWorkClick(object sender, RoutedEventArgs e) { if (Api is not null) new WorkWindow(this).Show(); }
-    void OpenTimetableClick(object sender,RoutedEventArgs e){if(Api is not null)new TimetableWindow(this).Show();}
+    void OpenTimetableClick(object sender,RoutedEventArgs e){if(Api is not null&&TimetableButton.IsVisible)new TimetableWindow(this).Show();}
     void OpenChat(string[]? ids = null)
     {
         if (Api is null) return;

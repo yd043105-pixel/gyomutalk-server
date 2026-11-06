@@ -69,10 +69,15 @@ class Client{
  upload(bytes,name,status=200){const form=new FormData();form.set('file',new Blob([bytes]),name);return this.request('timetable/import','POST',form,status);}
 }
 const base0='http://127.0.0.1:'+await port(),dll=path.join(root,'src/SchoolMessenger.Server/bin/Debug/net10.0/SchoolMessenger.Server.dll');
-const server=spawn(dotnet,[dll,'--urls',base0],{cwd:path.dirname(dll),env:{...process.env,ASPNETCORE_ENVIRONMENT:'Development',School__DataDirectory:data,School__AdminPassword:password,School__LoginLimitPerMinute:'300'},windowsHide:true});
-let logs='';server.stdout.on('data',b=>logs+=b);server.stderr.on('data',b=>logs+=b);
-try{
+let server,logs='';
+async function start(){
+ server=spawn(dotnet,[dll,'--urls',base0],{cwd:path.dirname(dll),env:{...process.env,ASPNETCORE_ENVIRONMENT:'Development',School__DataDirectory:data,School__AdminPassword:password,School__LoginLimitPerMinute:'300'},windowsHide:true});
+ server.stdout.on('data',b=>logs+=b);server.stderr.on('data',b=>logs+=b);
  for(let i=0;;i++){try{if((await fetch(base0+'/health')).ok)break;}catch{}if(i>150||server.exitCode!==null)throw Error('Server did not start\n'+logs);await new Promise(r=>setTimeout(r,100));}
+}
+async function stop(){if(server?.exitCode===null&&server.signalCode===null){const done=new Promise(r=>server.once('exit',r));server.kill();await done;}}
+try{
+ await start();
  const admin=await new Client(base0).login();
  const person=async(username,name)=>{await admin.request('admin/users','POST',{username,name,department:'가상부서',password,isAdmin:false,canBroadcast:false});return new Client(base0).login(username);};
  const homeroom=await person('homeroom-a','가상담임'),teacher=await person('teacher-a','가상교사'),duty=await person('duty-a','가상담당');
@@ -215,5 +220,26 @@ try{
  assert.equal((await teacher.request('timetable/day?date='+thursday+'&classId='+firstClass)).slots[0].subject,'자율·자치활동');
  assert.deepEqual((await duty.request('timetable/bundles')).find(b=>b.id===bundle.id).slots,[pos(thursday,1),pos(thursday,2)]);
  check('bundle requests move all members together, wrong imports leave requests and official dates untouched, and matching multi-day publication approves exactly once');
+ const setting='admin/timetable-feature', status='timetable/status';
+ assert.deepEqual(await teacher.request(status),{enabled:true});
+ await new Client(base0).request(status,'GET',undefined,401);
+ await duty.request(setting,'POST',{enabled:false},403);
+ await admin.request(setting,'POST',{},400);
+ await admin.request(setting,'POST',{enabled:false});
+ assert.deepEqual(await teacher.request(status),{enabled:false});
+ for(const route of ['timetable/setup','timetable/day','timetable/history','timetable/swaps','timetable/bundles'])
+  await admin.request(route,'GET',undefined,403);
+ assert.deepEqual(await teacher.request('timetable/notices'),[]);
+ await duty.upload(classroom,'시간표.xlsx',403);
+ await teacher.request('timetable/swap-plan','POST',{dates:[mondayText],dependencies:[]},403);
+ assert.ok(Array.isArray(await teacher.request('messages?box=received')));
+ await stop();await start();
+ const restoredAdmin=await new Client(base0).login();
+ assert.deepEqual(await restoredAdmin.request(status),{enabled:false});
+ await restoredAdmin.request(setting,'POST',{enabled:true});
+ assert.deepEqual(await restoredAdmin.request(status),{enabled:true});
+ assert.equal((await restoredAdmin.request('timetable/swaps')).find(s=>s.id===approval.id).status,'approved');
+ assert.equal((await restoredAdmin.request('timetable/day?date='+mondayText+'&classId='+firstClass)).slots[0].subject,'음악');
+ check('only administrators can toggle timetables, disabled data is inaccessible, the setting survives a restart and re-enabling restores the timetable and requests');
 }catch(e){console.error(logs.slice(-2500));throw e;}
-finally{if(server.exitCode===null){server.kill();await new Promise(r=>server.once('exit',r));}}
+finally{await stop();}

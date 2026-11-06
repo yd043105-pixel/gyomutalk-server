@@ -45,6 +45,20 @@ public partial class MainWindow
         await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
         Check(windows.All(w => w.Owner is null && !w.Topmost && OrderWindow(new WindowInteropHelper(w).Handle, 4) == 0), "work windows have no native owner and are not topmost");
         Check(windows.All(w => SessionWindows.Contains(w)), "all work windows are still tracked by their signed-in session");
+        try
+        {
+            await Api!.Get<JsonElement>("api/timetable/status");
+            async Task Toggle(bool enabled)
+            {
+                await Api.Send<JsonElement>(System.Net.Http.HttpMethod.Post,"api/admin/timetable-feature",new { enabled });
+                for(var i=0;i<80&&TimetableButton.IsVisible!=enabled;i++)await Task.Delay(50);
+                Check(TimetableButton.IsVisible==enabled&&(enabled||!timetable.IsVisible),enabled
+                    ?"enabling the timetable restores the sidebar without signing in again"
+                    :"disabling the timetable hides the sidebar entry and closes its open window");
+            }
+            await Toggle(false);await Toggle(true);
+        }
+        catch(ApiRequestException error) when(error.StatusCode==System.Net.HttpStatusCode.NotFound) { }
         await Bring(compose); await Bring(this);
         Check(Above(this, compose), "activating the roster brings it in front of the composer");
         await Bring(compose);

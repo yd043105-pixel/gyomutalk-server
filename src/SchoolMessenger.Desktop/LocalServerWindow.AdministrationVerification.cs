@@ -27,6 +27,11 @@ public sealed partial class LocalServerWindow
         check(administrationController is null&&HasText("교내 업무 관리자 로그인")&&!OwnedWindows.Cast<Window>().Any(w=>w.IsVisible),"member administration requires in-place authentication without opening the teacher messenger");capture("administrator-signin.png",this);
         check(await SignInAdministrator("office","http://127.0.0.1:5080","admin",password,viewRevision),"office administrator signs in directly in the administrator application");
         var source=adminSessions["office"];var login="synthetic"+Guid.NewGuid().ToString("N")[..8];var name="가상교사 가";
+        await OpenAdministration("timetable-feature","office");
+        var feature=ViewControls<CheckBox>(administrationView).Single(c=>c.Content?.ToString()=="교무톡 시간표 사용");
+        feature.IsChecked=false;await Click(Action("설정 저장"));await Wait(()=>HasText("시간표를 숨깁니다"),"시간표 설정이 저장되지 않았습니다.");
+        check(!(await source.Get<JsonElement>("api/timetable/status")).GetProperty("enabled").GetBoolean(),"the administrator switches off the school timetable from the native settings page");
+        feature.IsChecked=true;await Click(Action("설정 저장"));await Wait(()=>HasText("시간표가 표시됩니다"),"시간표를 다시 켜지 못했습니다.");
         var teacher=await source.Send<JsonElement>(HttpMethod.Post,"api/admin/users",new{username=login,name,department="가상 교무부",password,isAdmin=false,canBroadcast=false});
         await OpenAdministration("members","office");await Wait(()=>HasText(name),"구성원 목록이 로드되지 않았습니다.");
         check(administrationController is OfficeWindow&&!administrationController.IsVisible&&!OwnedWindows.Cast<Window>().Any(w=>w.IsVisible),"existing member settings load inside the single administrator window");capture("administrator-members.png",this);

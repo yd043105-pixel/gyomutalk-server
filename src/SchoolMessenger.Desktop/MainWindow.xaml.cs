@@ -199,6 +199,7 @@ public partial class MainWindow : Window
         hub.On<string>("ChatChanged", id => Dispatcher.InvokeAsync(() => Run(async () => { ChatChanged?.Invoke(id); await NotifyChat(id); })).Task.Unwrap());
         hub.On<string>("SurveyChanged", id => Dispatcher.InvokeAsync(() => Run(async () => { SurveyChanged?.Invoke(id); await NotifySurvey(id); })).Task.Unwrap());
         hub.On<string,long>("TimetableChanged",(date,revision)=>Dispatcher.InvokeAsync(()=>Run(NotifyTimetable)).Task.Unwrap());
+        hub.On("TimetableAvailabilityChanged",()=>Dispatcher.InvokeAsync(()=>Run(async()=>{await RefreshTimetableAvailability();})).Task.Unwrap());
         hub.Reconnecting += _ => { Dispatcher.Invoke(() => ConnectionLabel.Text = "재연결 중 · 수신 확인 계속"); return Task.CompletedTask; };
         hub.Reconnected += _ => Dispatcher.InvokeAsync(() => Run(async()=>{sentAway=null;await SynchronizeActivity();await Refresh();})).Task.Unwrap();
         hub.Closed += _ => { Dispatcher.Invoke(() => ConnectionLabel.Text = "알림 연결 끊김 · 재시도 중"); return Task.CompletedTask; };
@@ -406,6 +407,7 @@ public partial class MainWindow : Window
         timer.Stop(); activityTimer.Stop();sentAway=null; toast?.Close(); chatSeen.Clear(); knownSurveys.Clear(); CloseSessionWindows();
         if (hub is not null) { await hub.DisposeAsync(); hub = null; } Api?.Dispose(); Api = null;
         OrganizationTree.Items.Clear(); people = []; selectedPeople.Clear(); Workspace.Visibility = Visibility.Collapsed; LoginPanel.Visibility = Visibility.Visible;
+        TimetableButton.Visibility=Visibility.Collapsed;
     }
     void ShowWindow() { Show(); WindowState = WindowState.Normal; Activate(); }
     void WindowClosing(object? sender, CancelEventArgs e)

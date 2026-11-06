@@ -23,6 +23,9 @@ public sealed partial class Timetables
     record Candidate(string Owner,long Revision,TimetableBatch[] Batches);
     record ManagerChange(string UserId,bool Enabled);
     record HomeroomChange(string ClassId,string TeacherId);
+    record FeatureChange(bool? Enabled);
+    bool enabled;
+    bool Enabled => Volatile.Read(ref enabled);
     public Timetables(Store school,IConfiguration config,IHostEnvironment environment,IHubContext<MessageHub> hub,DeploymentReview review)
     {
         this.review=review;
@@ -33,7 +36,9 @@ public sealed partial class Timetables
             CREATE TABLE IF NOT EXISTS TimetableDrafts(Id TEXT PRIMARY KEY,Owner TEXT NOT NULL,Payload TEXT NOT NULL,ExpiresAt INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS TimetableCandidates(Id TEXT PRIMARY KEY,Owner TEXT NOT NULL,Payload TEXT NOT NULL,ExpiresAt INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS TimetableClasses(Id TEXT PRIMARY KEY,Name TEXT NOT NULL,Grade INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS TimetableFeature(Id INTEGER PRIMARY KEY CHECK(Id=1),Enabled INTEGER NOT NULL CHECK(Enabled IN (0,1)));
             """);
+        enabled = Data.Query("SELECT Enabled FROM TimetableFeature WHERE Id=1", r=>r.GetInt32(0)!=0).SingleOrDefault(true);
     }
     bool Manager(string id)=>school.GetUser(id) is{Active:true} user&&(user.IsAdmin||Data.Query("SELECT 1 FROM TimetableManagers WHERE UserId=$id",r=>r.GetInt32(0),("$id",id)).Count>0);
     static string User(HttpContext c)=>c.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -43,7 +48,12 @@ public sealed partial class Timetables
     static IResult Safe(Func<IResult> action){try{return action();}catch(FilePolicyException e){return Error(e);}}
     public static void Map(WebApplication app,Timetables service)
     {
+        app.MapGet("/api/timetable/status", () => Results.Ok(new { enabled=service.Enabled })).RequireAuthorization();
+        // Older clients poll this at sign-in. An empty list lets them connect during a staged upgrade.
+        app.MapGet("/api/timetable/notices", (HttpContext c) => Results.Ok(service.Enabled ? service.Data.Notices(User(c)) : [])).RequireAuthorization();
+        app.MapPost("/api/admin/timetable-feature", (FeatureChange change, HttpContext c) => service.SetFeature(change,c)).RequireAuthorization("Admin");
         var api=app.MapGroup("/api/timetable").RequireAuthorization();
+        api.AddEndpointFilter((context,next) => service.Enabled ? next(context) : ValueTask.FromResult<object?>(Error(Disabled())));
         service.MapSwaps(api);
         api.MapGet("/setup",(HttpContext c)=>Safe(()=>Results.Ok(new{canManage=service.Manager(User(c)),isAdmin=service.school.GetUser(User(c))!.IsAdmin,
             classes=service.Directory().Classes,teachers=service.school.Users().Where(u=>u.Active).Select(u=>new{u.Id,u.Name,u.Department,u.Username}),homerooms=service.Homerooms(),myClasses=service.Homerooms().Where(h=>h.TeacherId==User(c)).Select(h=>h.ClassId),
@@ -54,8 +64,7 @@ public sealed partial class Timetables
             var day=service.Data.Day(date??TimetableData.Today,classId is null?rooms.Select(r=>r.Id).ToArray():[classId]);
             if(mine==true){var me=service.UniqueName(User(c));day=day with{Slots=day.Slots.Where(s=>s.TeacherId==User(c)||s.TeacherId.Length==0&&s.TeacherName==me).ToArray()};}return Results.Ok(day);
         }));
-        api.MapGet("/notices",(HttpContext c)=>Results.Ok(service.Data.Notices(User(c))));
-        api.MapPost("/notices/{revision:long}/read",(long revision,HttpContext c)=>{service.Data.Execute("UPDATE TimetableNotices SET ReadAt=COALESCE(ReadAt,$now) WHERE Revision=$rev AND UserId=$user",("$now",Now),("$rev",revision),("$user",User(c)));return Results.Ok();});
+        api.MapPost("/notices/{revision:long}/read",(long revision,HttpContext c)=>service.WithSchedule(c,()=>{service.Data.Execute("UPDATE TimetableNotices SET ReadAt=COALESCE(ReadAt,$now) WHERE Revision=$rev AND UserId=$user",("$now",Now),("$rev",revision),("$user",User(c)));return Results.Ok();}));
         api.MapGet("/history",(HttpContext c)=>Safe(()=>{service.RequireManager(User(c));return Results.Ok(service.Data.Batches().OrderByDescending(b=>b.Revision).Take(200).Select(b=>new{b.Id,b.Revision,b.Kind,b.Start,b.End,b.Date,b.FileName,b.PublishedAt,b.Withdrawn,approvedSwapCount=b.ApprovedSwapIds?.Length??0,classes=b.Cells.Select(s=>s.ClassName).Distinct()}));}));
         api.MapPost("/import",async Task<IResult>(HttpContext c)=>
         {
@@ -79,7 +88,25 @@ public sealed partial class Timetables
             service.Data.Execute("INSERT INTO TimetableHomerooms VALUES($class,$teacher) ON CONFLICT(ClassId) DO UPDATE SET TeacherId=excluded.TeacherId",("$class",request.ClassId),("$teacher",request.TeacherId));return Results.Ok();
         })).RequireAuthorization("Admin");
     }
-    void RequireManager(string user){if(!Manager(user))throw new FilePolicyException("시간표 담당자 권한이 필요합니다.",403);}
+    static FilePolicyException Disabled()=>new("이 학교에서는 교무톡 시간표를 사용하지 않습니다.",403);
+    void RequireEnabled(){if(!Enabled)throw Disabled();}
+    void RequireManager(string user){RequireEnabled();if(!Manager(user))throw new FilePolicyException("시간표 담당자 권한이 필요합니다.",403);}
+    async Task<IResult> SetFeature(FeatureChange change,HttpContext c)
+    {
+        if(change.Enabled is not bool value)return Results.BadRequest(new { error="시간표 사용 여부를 선택하세요." });
+        await gate.WaitAsync(c.RequestAborted);
+        try
+        {
+            if(Enabled==value)return Results.Ok(new { enabled=value });
+            using var db=school.Open();using var tx=db.BeginTransaction();
+            using var command=Store.Command(db,"INSERT INTO TimetableFeature VALUES(1,$enabled) ON CONFLICT(Id) DO UPDATE SET Enabled=excluded.Enabled",tx,("$enabled",value?1:0));
+            command.ExecuteNonQuery();StaffAccounts.Audit(db,tx,User(c),value?"timetable.enable":"timetable.disable","timetable");tx.Commit();
+            Volatile.Write(ref enabled,value);
+        }
+        finally{gate.Release();}
+        try{await hub.Clients.All.SendAsync("TimetableAvailabilityChanged");}catch{ /* Clients also check the saved setting. */ }
+        return Results.Ok(new { enabled=value });
+    }
     // A name the file can stand for: with two active people of that name it cannot say which one is meant.
     string? UniqueName(string user)
     {
@@ -110,13 +137,17 @@ public sealed partial class Timetables
         {
             await using(var output=new FileStream(path,FileMode.CreateNew,FileAccess.Write,FileShare.None))await file.CopyToAsync(output,c.RequestAborted);
             await FilePolicy.Scan(path,name,environment.IsDevelopment(),config["School:ScannerPath"],c.RequestAborted);
-            var kind=form["kind"].ToString();var parsed=TimetableWorkbook.Read(path,kind.Length==0?"auto":kind);RequireManager(owner);
-            foreach(var room in parsed.Cells.DistinctBy(c=>Canonical(c.ClassKey)))Data.Execute("INSERT OR IGNORE INTO TimetableClasses VALUES($id,$name,$grade)",("$id",Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Canonical(room.ClassKey))))[..32]),("$name",room.ClassKey),("$grade",room.Grade));
-            var id=Guid.NewGuid().ToString("N");Data.Execute("DELETE FROM TimetableDrafts WHERE ExpiresAt<=$now",("$now",Now));Data.Execute("DELETE FROM TimetableCandidates WHERE ExpiresAt<=$now",("$now",Now));
-            if(Data.Query("SELECT COUNT(*) FROM TimetableDrafts WHERE Owner=$owner",r=>r.GetInt32(0),("$owner",owner))[0]>=20)throw new FilePolicyException("미게시 시간표가 많습니다. 기존 미리보기를 게시하거나 만료 후 다시 시도하세요.",429);
-            Data.Execute("INSERT INTO TimetableDrafts VALUES($id,$owner,$payload,$expires)",("$id",id),("$owner",owner),("$payload",JsonSerializer.Serialize(new Draft(owner,name,parsed),TimetableData.Json)),("$expires",Now+86_400_000));
-            var rooms=Directory().Classes;var teachers=school.Users().Where(u=>u.Active).ToArray();
-            return Results.Ok(new{draftId=id,workbook=parsed,classes=parsed.Cells.Select(s=>s.ClassKey).Distinct().Select(s=>new{source=s,candidates=rooms.Where(c=>Canonical(c.Name)==Canonical(s)).Select(c=>c.Id)}),teachers=parsed.Cells.Where(s=>s.Teacher.Length>0).Select(s=>s.Teacher).Distinct().Select(s=>new{source=s,candidates=teachers.Where(t=>t.Name==s).Select(t=>t.Id)})});
+            var kind=form["kind"].ToString();var parsed=TimetableWorkbook.Read(path,kind.Length==0?"auto":kind);
+            return await WithSchedule(c,()=>
+            {
+                RequireManager(owner);
+                foreach(var room in parsed.Cells.DistinctBy(c=>Canonical(c.ClassKey)))Data.Execute("INSERT OR IGNORE INTO TimetableClasses VALUES($id,$name,$grade)",("$id",Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Canonical(room.ClassKey))))[..32]),("$name",room.ClassKey),("$grade",room.Grade));
+                var id=Guid.NewGuid().ToString("N");Data.Execute("DELETE FROM TimetableDrafts WHERE ExpiresAt<=$now",("$now",Now));Data.Execute("DELETE FROM TimetableCandidates WHERE ExpiresAt<=$now",("$now",Now));
+                if(Data.Query("SELECT COUNT(*) FROM TimetableDrafts WHERE Owner=$owner",r=>r.GetInt32(0),("$owner",owner))[0]>=20)throw new FilePolicyException("미게시 시간표가 많습니다. 기존 미리보기를 게시하거나 만료 후 다시 시도하세요.",429);
+                Data.Execute("INSERT INTO TimetableDrafts VALUES($id,$owner,$payload,$expires)",("$id",id),("$owner",owner),("$payload",JsonSerializer.Serialize(new Draft(owner,name,parsed),TimetableData.Json)),("$expires",Now+86_400_000));
+                var rooms=Directory().Classes;var teachers=school.Users().Where(u=>u.Active).ToArray();
+                return Results.Ok(new{draftId=id,workbook=parsed,classes=parsed.Cells.Select(s=>s.ClassKey).Distinct().Select(s=>new{source=s,candidates=rooms.Where(c=>Canonical(c.Name)==Canonical(s)).Select(c=>c.Id)}),teachers=parsed.Cells.Where(s=>s.Teacher.Length>0).Select(s=>s.Teacher).Distinct().Select(s=>new{source=s,candidates=teachers.Where(t=>t.Name==s).Select(t=>t.Id)})});
+            });
         }
         finally{File.Delete(path);}
     }

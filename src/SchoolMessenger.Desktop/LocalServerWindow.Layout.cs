@@ -60,7 +60,7 @@ public sealed partial class LocalServerWindow
         Group("교직원");Menu("교직원·권한","members","AdminPeopleIcon","office");
         // Sections hold student accounts, so they sit with the student-parent service they depend on.
 
-        Group("학교 설정");Menu("특별실","rooms","AdminRoomIcon","office");Menu("학사일정","calendar","AdminCalendarIcon","office");Menu("약관·개인정보","policy","AdminDocIcon");
+        Group("학교 설정");Menu("시간표 기능","timetable-feature","AdminCalendarIcon","office");Menu("특별실","rooms","AdminRoomIcon","office");Menu("학사일정","calendar","AdminCalendarIcon","office");Menu("약관·개인정보","policy","AdminDocIcon");
         Group("기록");Menu("오류·의견","feedback","AdminChatIcon");Menu("운영 변경 기록","audit","AdminHistoryIcon","office");
         SelectCard(cards.FirstOrDefault(c=>c.Host.Installed)??cards[0]);
     }
