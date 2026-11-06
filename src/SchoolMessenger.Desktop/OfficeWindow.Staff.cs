@@ -38,13 +38,25 @@ public sealed partial class OfficeWindow
         var staff=(await usersTask).EnumerateArray().Select(u=>{var id=Value(u,"id");permissions.TryGetValue(id,out var p);return new StaffRow(u,id,Value(u,"name"),Value(u,"department"),Value(u,"position"),Value(u,"username"),Value(u,"seatIp"),Flag(u,"active"),Flag(u,"activationRequired"),Flag(u,"isAdmin"),Flag(u,"canBroadcast"),p.Calendar,p.Rooms,timetableDuty.Contains(id));}).ToArray();
         var pending=(await pendingTask).GetArrayLength();
         Page(false);
-        var heading=new DockPanel{Margin=new Thickness(0,0,0,16)};
-        var add=new Button{Content=AdminUi.IconLabel("AdminPlusIcon","교직원 등록"),VerticalAlignment=VerticalAlignment.Bottom,ToolTip="교직원 사전 등록 · 가입 승인"};add.SetResourceReference(StyleProperty,"PrimaryButton");AutomationProperties.SetName(add,"교직원 등록 · 승인");add.Click+=async(_,_)=>await Run(Administration);DockPanel.SetDock(add,Dock.Right);heading.Children.Add(add);
-        var codes=new Button{Content="활성화 번호 일괄 받기",Margin=new Thickness(0,0,8,0),VerticalAlignment=VerticalAlignment.Bottom,IsEnabled=staff.Any(s=>s.Pending&&!s.Admin),ToolTip="아직 활성화하지 않은 교직원의 활성화 번호를 새로 발급해 CSV 파일 하나로 저장합니다."};
-        codes.Click+=async(_,_)=>await Run(DownloadActivationCodes);DockPanel.SetDock(codes,Dock.Right);heading.Children.Add(codes);
-        var folders = new Button { Content = "조직도 폴더 관리", Margin = new Thickness(0,0,8,0), VerticalAlignment = VerticalAlignment.Bottom };
-        folders.Click += async (_, _) => await Run(EditRosterFolders); DockPanel.SetDock(folders, Dock.Right); heading.Children.Add(folders);
-        var introduction=new StackPanel();introduction.Children.Add(AdminUi.Heading("교직원·권한",22));var description=AdminUi.Label("교직원 계정과 학교 업무 권한을 한 곳에서 관리합니다.","Muted",14);description.Margin=new Thickness(0,4,0,0);introduction.Children.Add(description);heading.Children.Add(introduction);body.Children.Add(heading);
+        Heading("교직원·권한", "교직원 계정과 학교 업무 권한을 한 곳에서 관리합니다.");
+        var headerActions = new WrapPanel { Margin = new Thickness(0, 0, 0, 10) };
+        body.Children.Add(headerActions);
+        var add = new Button { Content = AdminUi.IconLabel("AdminPlusIcon", "교직원 등록"), ToolTip = "교직원 사전 등록 · 가입 승인" };
+        add.SetResourceReference(StyleProperty, "PrimaryButton");
+        AutomationProperties.SetName(add, "교직원 등록 · 승인");
+        var folders = new Button { Content = "조직도 폴더 관리" };
+        var codes = new Button
+        {
+            Content = "활성화 번호 일괄 받기", IsEnabled = staff.Any(s => s.Pending && !s.Admin),
+            ToolTip = "아직 활성화하지 않은 교직원의 활성화 번호를 새로 발급해 CSV 파일 하나로 저장합니다."
+        };
+        foreach (var (button, action) in new (Button Button, Func<Task> Action)[]
+            { (add, Administration), (folders, EditRosterFolders), (codes, DownloadActivationCodes) })
+        {
+            button.Margin = new Thickness(0, 0, 8, 6);
+            button.Click += async (_, _) => await Run(action);
+            headerActions.Children.Add(button);
+        }
         // Toolbar: search and status filters; the sign-up filter opens the approval page.
         var toolbar=new DockPanel{Margin=new Thickness(0,0,0,16)};var count=AdminUi.Label("","Faint");count.Margin=new Thickness(2,8,0,0);DockPanel.SetDock(count,Dock.Bottom);toolbar.Children.Add(count);
         var tools=new WrapPanel();toolbar.Children.Add(tools);body.Children.Add(toolbar);
