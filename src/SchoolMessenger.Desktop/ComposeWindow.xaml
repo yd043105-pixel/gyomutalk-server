@@ -3,7 +3,7 @@
  <DockPanel Background="{DynamicResource Surface}">
   <StackPanel Visibility="Collapsed"><TextBox x:Name="PeopleSearch"/><CheckBox x:Name="FavoritesOnly"/><ComboBox x:Name="Department"/><CheckBox x:Name="SendAll"/><ListBox x:Name="PeopleList"/></StackPanel>
 
-  <Border DockPanel.Dock="Bottom" Background="{DynamicResource Subtle}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="24,12">
+  <Border DockPanel.Dock="Bottom" Background="{DynamicResource Surface}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="24,12">
    <DockPanel>
     <Button x:Name="SendButton" DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Click="Send" Padding="20,6" Content="보내기"/>
     <TextBlock DockPanel.Dock="Right" Text="창을 닫아도 자동 임시저장됩니다." Foreground="{DynamicResource Faint}" FontSize="11" VerticalAlignment="Center" Margin="0,0,12,0"/>
@@ -23,8 +23,8 @@
    <TextBlock x:Name="RecipientCount" Text="받는 사람" Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,8,8,0"/>
    <StackPanel Grid.Column="1" Margin="0,0,0,12">
     <DockPanel>
-     <Button x:Name="RecipientsButton" DockPanel.Dock="Right" Content="수신자 추가" Click="ChooseRecipients" Margin="12,0,0,0" VerticalAlignment="Top"/>
-     <Border BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="6,4" MinHeight="34"><ScrollViewer x:Name="RecipientScroller" MaxHeight="72" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><WrapPanel x:Name="RecipientChips"/></ScrollViewer></Border>
+     <Button x:Name="RecipientsButton" DockPanel.Dock="Right" Click="ChooseRecipients" Margin="12,0,0,0" VerticalAlignment="Top" AutomationProperties.Name="수신자 추가"><StackPanel Orientation="Horizontal"><Path Data="{StaticResource TreeIcon}" Style="{StaticResource Glyph}" Width="15" Height="15"/><TextBlock Text="조직도에서 선택" Margin="6,0,0,0"/></StackPanel></Button>
+     <Border BorderBrush="{DynamicResource LineStrong}" BorderThickness="1" CornerRadius="8" Padding="6,3" MinHeight="36"><ScrollViewer x:Name="RecipientScroller" MaxHeight="72" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><WrapPanel x:Name="RecipientChips"/></ScrollViewer></Border>
     </DockPanel>
     <CheckBox x:Name="SelfBox" Content="나에게도 보내기" Click="SendToSelf" Margin="0,8,0,0" HorizontalAlignment="Left"/>
    </StackPanel>
@@ -34,7 +34,7 @@
 
    <Border Grid.Row="2" Grid.ColumnSpan="2" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="10">
     <DockPanel>
-     <Border DockPanel.Dock="Top" Background="{DynamicResource Subtle}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" CornerRadius="10,10,0,0" Padding="8,6">
+     <Border DockPanel.Dock="Top" Background="{DynamicResource Soft}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1" CornerRadius="10,10,0,0" Padding="8,6">
       <WrapPanel x:Name="FormattingToolbar">
        <ComboBox x:Name="FontChoice" Width="124" FontSize="12" ToolTip="이 컴퓨터에 설치된 글꼴" SelectionChanged="FontChanged" Margin="0,0,4,0"/>
        <ComboBox x:Name="SizeChoice" Width="60" FontSize="12" ToolTip="글자 크기 · pt" SelectionChanged="FontSizeChanged" Margin="0,0,8,0"/>
@@ -52,9 +52,9 @@
    </Border>
 
    <WrapPanel Grid.Row="3" Grid.ColumnSpan="2" Margin="0,12,0,0">
-    <Button x:Name="AddButton" Click="AddFiles" Content="파일 첨부" Margin="0,0,8,6"/>
+    <Button x:Name="AddButton" Click="AddFiles" Margin="0,0,8,6" AutomationProperties.Name="파일 첨부"><StackPanel Orientation="Horizontal"><Path Data="{StaticResource AttachIcon}" Style="{StaticResource Glyph}" Width="15" Height="15"/><TextBlock Text="파일 첨부" Margin="6,0,0,0"/></StackPanel></Button>
     <ItemsControl x:Name="FilesList"><ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel><ItemsControl.ItemTemplate><DataTemplate>
-     <Border Background="{DynamicResource Subtle}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="6" Padding="10,0,2,0" Margin="0,0,8,6" MinHeight="32"><StackPanel Orientation="Horizontal">
+     <Border Background="{DynamicResource Pale}" CornerRadius="16" Padding="10,0,4,0" Margin="0,0,8,6" MinHeight="32"><StackPanel Orientation="Horizontal"><Path Data="{StaticResource FolderIcon}" Stroke="{DynamicResource Blue}" StrokeThickness="1.6" StrokeLineJoin="Round" Width="14" Height="14" Stretch="Uniform" Margin="0,0,6,0" VerticalAlignment="Center"/>
       <TextBlock Text="{Binding Description}" ToolTip="{Binding Path}" FontSize="12" MaxWidth="180" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
       <TextBlock Text="{Binding SizeLabel}" Foreground="{DynamicResource Faint}" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center"/>
       <Button Content="×" Tag="{Binding}" Click="RemoveFile" ToolTip="첨부에서 빼기" AutomationProperties.Name="첨부에서 빼기" BorderThickness="0" Background="Transparent" Padding="0" MinHeight="24" Width="24" Height="24" Margin="4,0,0,0" Foreground="{DynamicResource Muted}" HorizontalContentAlignment="Center"/>

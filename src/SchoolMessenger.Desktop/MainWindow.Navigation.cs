@@ -17,14 +17,14 @@ public partial class MainWindow
     {
         if(NavigationLayout is null||NavigationItems is null)return;
         var buttons=NavigationItems.Children.OfType<Button>().Append(SettingsButton).Where(b=>b.Visibility==Visibility.Visible).ToArray();
-        var headings=NavigationItems.Children.OfType<Border>().Sum(h=>h.DesiredSize.Height);
-        var compact=ActualWidth<420||NavigationLayout.ActualHeight<buttons.Length*42+headings;
+        // Labels go first when the window is short; the icons and tooltips stay.
+        var compact=NavigationLayout.ActualHeight<buttons.Length*54;
         foreach(var button in buttons)
         {
-            button.MinHeight=compact?22:38;button.Padding=new Thickness(3,compact?2:1,3,compact?2:1);
-            if(button.Content is not StackPanel content)continue;
-            foreach(var icon in content.Children.OfType<Path>())icon.Visibility=compact?Visibility.Collapsed:Visibility.Visible;
-            foreach(var label in content.Children.OfType<TextBlock>())label.Margin=compact?new Thickness(0):new Thickness(0,3,0,0);
+            button.MinHeight=compact?38:50;button.Padding=new Thickness(0,compact?4:6,0,compact?4:6);
+            var content=button.Content as StackPanel??(button.Content as Grid)?.Children.OfType<StackPanel>().FirstOrDefault();
+            if(content is null)continue;
+            foreach(var label in content.Children.OfType<TextBlock>())label.Visibility=compact?Visibility.Collapsed:Visibility.Visible;
         }
     }
 }

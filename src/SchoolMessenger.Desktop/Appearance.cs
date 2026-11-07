@@ -10,7 +10,7 @@ public static class Appearance
     public sealed record Palette(string Id, string Name, string Accent, string Dark, string Tint);
     public static readonly Palette[] Palettes =
     [
-        new("blue", "클래식 블루", "#245BC6", "#182D50", "#EAF0FC"),
+        new("blue", "맑은 청", "#2463EB", "#0F1B2D", "#E8F0FE"),
         new("green", "숲 그린", "#17745D", "#193D35", "#E3F1EB"),
         new("lavender", "라벤더", "#7050B0", "#34294C", "#EEE8F7"),
         new("rose", "로즈", "#AD4865", "#4D2935", "#F7E7ED"),
@@ -26,14 +26,12 @@ public static class Appearance
         Color ColorOf(string hex) => (Color)ColorConverter.ConvertFromString(hex);
         void Brush(string key, string hex) => resources[key] = new SolidColorBrush(ColorOf(hex));
         Brush("Blue", palette.Accent); Brush("Navy", palette.Dark); Brush("Pale", palette.Tint);
-        Brush("Ink", "#17233A"); Brush("Muted", "#5B6B80"); Brush("Line", "#E2E7EE");
-        Brush("Soft", "#F3F5F9"); Brush("Surface", "#FFFFFF");
+        Brush("Ink", "#0F1B2D"); Brush("Muted", "#5B6B80"); Brush("Line", "#E3E8EF");
+        Brush("Soft", "#F4F7FB"); Brush("Surface", "#FFFFFF");
         Brush("Glass", glass ? "#ECFFFFFF" : "#FFFFFF");
-        Brush("GlassLine", glass ? "#FFFFFFFF" : "#E2E7EE"); Brush("OnAccent", "#FFFFFF");
-        Brush("MessageSectionTint","#EAF0FC");Brush("SchoolSectionTint","#E3F1EB");
-        resources["Canvas"] = glass
-            ? new LinearGradientBrush(ColorOf(palette.Tint), ColorOf("#F8FAFD"), 55)
-            : new SolidColorBrush(ColorOf("#F3F6FB"));
+        Brush("GlassLine", glass ? "#FFFFFFFF" : "#E3E8EF"); Brush("OnAccent", "#FFFFFF");
+        Brush("MessageSectionTint",palette.Tint);Brush("SchoolSectionTint","#E3F1EB");
+        resources["Canvas"] = new SolidColorBrush(ColorOf("#F4F7FB"));
         if (SystemParameters.HighContrast)
         {
             foreach (var key in new[] { "Surface", "Glass", "Canvas", "Soft", "Pale", "MessageSectionTint", "SchoolSectionTint" }) resources[key] = SystemColors.WindowBrush;

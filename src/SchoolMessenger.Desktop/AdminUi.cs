@@ -44,13 +44,7 @@ static class AdminUi
         var (back,fore)=Tone(tone);var row=(StackPanel)badge.Child;badge.SetResourceReference(Border.BackgroundProperty,back);
         foreach(var child in row.Children){if(child is Ellipse dot)dot.SetResourceReference(Shape.FillProperty,fore);else if(child is TextBlock label){label.Text=text;label.SetResourceReference(TextBlock.ForegroundProperty,fore);}}
     }
-    public static Border Avatar(string name,double size=32)
-    {
-        var initial=new TextBlock{Text=name.Length>0?name[..1]:"?",FontSize=size>40?16:13,FontWeight=FontWeights.SemiBold,HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center};
-        initial.SetResourceReference(TextBlock.ForegroundProperty,"Blue");
-        var avatar=new Border{Width=size,Height=size,CornerRadius=new CornerRadius(size/2),Child=initial,VerticalAlignment=VerticalAlignment.Center};
-        avatar.SetResourceReference(Border.BackgroundProperty,"Pale");return avatar;
-    }
+    public static Border Avatar(string name,double size=32,string? seed=null)=>SchoolMessenger.Desktop.Avatar.Create(name,size,seed);
     // Without a stroke brush the icon follows the enclosing control's foreground (Glyph style).
     public static Path Icon(string key,double size=16,string? stroke=null)
     {
@@ -68,6 +62,7 @@ static class AdminUi
     public static StackPanel Empty(string title,string detail,Button? action=null)
     {
         var panel=new StackPanel{HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(24,48,24,48)};
+        panel.Children.Add(EmptyArt(title.Contains("대화")?"ChatIcon":title.Contains("설문")?"SurveyIcon":title.Contains("시간표")||title.Contains("수업")?"TimetableIcon":title.Contains("메시지")?"MailIcon":title.Contains("할 일")||title.Contains("제출")?"FileIcon":title.Contains("교직원")?"TreeIcon":title.Contains("특별실")||title.Contains("일정")?"CalendarIcon":"FolderIcon"));
         var heading=Heading(title);heading.TextAlignment=TextAlignment.Center;panel.Children.Add(heading);
         var text=Label(detail);text.TextAlignment=TextAlignment.Center;text.Margin=new Thickness(0,8,0,0);panel.Children.Add(text);
         if(action is not null){action.HorizontalAlignment=HorizontalAlignment.Center;action.Margin=new Thickness(0,16,0,0);panel.Children.Add(action);}
@@ -91,5 +86,15 @@ static class AdminUi
         var copy=new Button{Content=Icon("AdminCopyIcon",15),Padding=new Thickness(6),MinHeight=0,Width=30,Height=30,ToolTip="복사",Margin=new Thickness(8,0,0,0)};
         System.Windows.Automation.AutomationProperties.SetName(copy,name+" 복사");
         copy.Click+=(_,_)=>{try{Clipboard.SetText(value());}catch(System.Runtime.InteropServices.ExternalException){}};return copy;
+    }
+    // Two stacked cards with the section's icon: the picture above every empty list.
+    public static Grid EmptyArt(string icon)
+    {
+        var art=new Grid{Width=92,Height=70,HorizontalAlignment=HorizontalAlignment.Center,Margin=new Thickness(0,0,0,18),IsHitTestVisible=false};
+        var back=new Border{Width=62,Height=48,CornerRadius=new CornerRadius(14),HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Top};
+        back.SetResourceReference(Border.BackgroundProperty,"Pale");art.Children.Add(back);
+        var front=new Border{Width=62,Height=48,CornerRadius=new CornerRadius(14),BorderThickness=new Thickness(1.5),HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Bottom,Child=Icon(icon,24,"Blue")};
+        front.SetResourceReference(Border.BackgroundProperty,"Surface");front.SetResourceReference(Border.BorderBrushProperty,"Blue");art.Children.Add(front);
+        return art;
     }
 }

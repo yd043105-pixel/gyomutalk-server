@@ -126,7 +126,7 @@ public sealed class WorkWindow : Window
     {
         var state=String(v,"status");var open=state is "open" or "suggested";
         var known=DateOnly.TryParseExact(String(v,"dueDate"),"yyyy-MM-dd",CultureInfo.InvariantCulture,DateTimeStyles.None,out var due);var days=known?due.DayNumber-displayedDay.DayNumber:0;
-        var (text,back,fore)=!open?("","",""):!known?("기한 없음","Subtle","Muted"):days<0?("지남 "+(-days)+"일","DangerTint","Danger"):days<=1?(days==0?"D-Day":"D-1","DangerTint","Danger"):days<=3?("D-"+days,"WarningTint","Warning"):("D-"+days,"Subtle","Muted");
+        var (text,back,fore)=!open?("","",""):!known?("기한 없음","Subtle","Muted"):days<0?("지남 "+(-days)+"일","DangerTint","Danger"):days<=1?(days==0?"D-Day":"D-1","DangerTint","Danger"):days<=7?("D-"+days,"WarningTint","Warning"):("D-"+days,"Subtle","Muted");
         return new WorkRow(v,String(v,"title").ReplaceLineEndings(" "),summary,text,text.Length>0?(Brush)FindResource(back):null,text.Length>0?(Brush)FindResource(fore):null,state=="open");
     }
     Task Show(JsonElement value) { if (view == "todos") { Todo(value); return Task.CompletedTask; } return Submission(value.GetProperty("id").GetString()!); }

@@ -95,6 +95,8 @@ public partial class MailboxWindow : Window
         DetailTitle.Text = SchoolMessenger.Shared.MessageText.Excerpt(detail.Message.Title, 200);
         DetailTitle.Visibility = detail.Message.Title == SchoolMessenger.Shared.MessageText.Excerpt(detail.Message.Body, 80) ? Visibility.Collapsed : Visibility.Visible;
         DetailMeta.Text = $"{detail.Message.SenderName}   ·   {DateTimeOffset.FromUnixTimeMilliseconds(detail.Message.CreatedAt).ToLocalTime():yyyy.MM.dd HH:mm}   ·   수신 {detail.Recipients.Length}명";
+        DetailAvatar.Content = Avatar.Create(detail.Message.SenderName, 32);
+        ReceiptPillText.Text = $"{detail.Recipients.Count(r => r.ReadAt is not null)}/{detail.Recipients.Length}명 확인";
         DetailBody.SetFormattedText(detail.Message.Body, detail.Message.Format);
         RecallButton.Visibility=detail.Message.SenderId==Api.Session!.User!.Id?Visibility.Visible:Visibility.Collapsed;
         RecallButton.IsEnabled=detail.Recipients.Any(r=>r.ReadAt is null);
@@ -152,6 +154,7 @@ public partial class MailboxWindow : Window
         Grid.SetColumn(ReaderPane, empty ? 0 : 1);
         Grid.SetColumnSpan(ReaderPane, empty ? 2 : 1);
         var filtered = !string.IsNullOrWhiteSpace(SearchBox.Text) || FromDate.SelectedDate is not null || ToDate.SelectedDate is not null;
+        EmptyArt.Content = AdminUi.EmptyArt("MailIcon");
         MailboxEmptyTitle.Text = !empty ? "메시지를 선택하세요" : filtered ? "검색 결과가 없습니다" : box switch
         {
             "sent" => "보낸 메시지가 없습니다",

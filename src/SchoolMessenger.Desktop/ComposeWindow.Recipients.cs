@@ -13,9 +13,10 @@ public partial class ComposeWindow
         if(selected.Length==0){RecipientChips.Children.Add(new TextBlock{Text="수신자를 추가하거나 조직도에서 선택하세요.",Margin=new Thickness(8),Foreground=(Brush)FindResource("Muted"),FontSize=11});return;}
         foreach(var person in selected)
         {
-            var row=new StackPanel{Orientation=Orientation.Horizontal};row.Children.Add(new TextBlock{Text=person.Label,FontSize=11,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(5,0,6,0)});
+            var row=new StackPanel{Orientation=Orientation.Horizontal};row.Children.Add(Avatar.Create(person.Name,20));row.Children.Add(new TextBlock{Text=person.Name,ToolTip=person.Label,FontSize=12,FontWeight=FontWeights.SemiBold,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(6,0,4,0)});
             var remove=new Button{Content="×",ToolTip=person.Name+" 수신자 삭제",Padding=new Thickness(0),Height=18,MinHeight=18,Width=18,MinWidth=18,BorderThickness=new Thickness(0),IsEnabled=pending is null&&!sending};remove.Click+=(_,_)=>{person.Selected=false;RefreshRecipients();};row.Children.Add(remove);
-            RecipientChips.Children.Add(new Border{Child=row,Background=(Brush)FindResource("Surface"),BorderBrush=(Brush)FindResource("Line"),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(9),Padding=new Thickness(5,2,3,2),Margin=new Thickness(3,2,3,2)});
+            remove.SetResourceReference(ForegroundProperty,"Muted");remove.Background=Brushes.Transparent;
+            var chip=new Border{Child=row,CornerRadius=new CornerRadius(14),Padding=new Thickness(3,3,5,3),Margin=new Thickness(2,2,4,2)};chip.SetResourceReference(Border.BackgroundProperty,"Soft");RecipientChips.Children.Add(chip);
         }
     }
     void SendToSelf(object sender,RoutedEventArgs e)

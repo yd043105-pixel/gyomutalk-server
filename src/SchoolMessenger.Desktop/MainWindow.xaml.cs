@@ -87,17 +87,14 @@ public partial class MainWindow : Window
     void OpenAppearance(object sender, RoutedEventArgs e) => new AppearanceWindow(this).ShowDialog();
     public void RefreshAppearance()
     {
-        AllFilter.SetResourceReference(System.Windows.Controls.Button.BackgroundProperty, onlineOnly||awayOnly ? "Soft" : "Pale");
-        AllFilter.SetResourceReference(System.Windows.Controls.Button.ForegroundProperty, onlineOnly||awayOnly ? "Muted" : "Blue");
-        OnlineFilter.SetResourceReference(System.Windows.Controls.Button.BackgroundProperty, onlineOnly ? "Pale" : "Soft");
-        OnlineFilter.SetResourceReference(System.Windows.Controls.Button.ForegroundProperty, onlineOnly ? "Blue" : "Muted");
-        AwayFilter.SetResourceReference(System.Windows.Controls.Button.BackgroundProperty, awayOnly ? "Pale" : "Soft");
-        AwayFilter.SetResourceReference(System.Windows.Controls.Button.ForegroundProperty, awayOnly ? "Blue" : "Muted");
+        void Chip(System.Windows.Controls.Button chip,bool on)
+        {
+            chip.SetResourceReference(System.Windows.Controls.Button.BackgroundProperty,on?"Blue":"Surface");chip.SetResourceReference(System.Windows.Controls.Button.BorderBrushProperty,on?"Blue":"Line");
+            chip.SetResourceReference(System.Windows.Controls.Button.ForegroundProperty,on?"OnAccent":"Muted");
+        }
+        Chip(AllFilter,!onlineOnly&&!awayOnly);Chip(OnlineFilter,onlineOnly);Chip(AwayFilter,awayOnly);
         RosterTitle.Text=favoritesOnly?"즐겨찾기":"교직원";
-        OrganizationButton.SetResourceReference(System.Windows.Controls.Button.BackgroundProperty, favoritesOnly ? "Glass" : "Blue");
-        FavoritesButton.SetResourceReference(System.Windows.Controls.Button.BackgroundProperty, favoritesOnly ? "Blue" : "Glass");
-        OrganizationButton.SetResourceReference(System.Windows.Controls.Button.ForegroundProperty, favoritesOnly ? "Muted" : "OnAccent");
-        FavoritesButton.SetResourceReference(System.Windows.Controls.Button.ForegroundProperty, favoritesOnly ? "OnAccent" : "Muted");
+        OrganizationButton.Tag=favoritesOnly?null:"selected";FavoritesButton.Tag=favoritesOnly?"selected":null;
         RenderTree();
     }
     void RememberChanged(object sender, RoutedEventArgs e)
@@ -242,7 +239,8 @@ public partial class MainWindow : Window
         if (Api is null) return;
         var unread = await Api.Get<MessageItem[]>("api/messages?box=unread");
         unreadCount = unread.Count(m => m.Title.Length > 0 || Archive.Has(m.Id)); UpdateRosterHint();
-        UnreadShortcut.Content=$"미확인 {unreadCount}{(unreadCount==100?"+":"")}";
+        var count=$"{unreadCount}{(unreadCount==100?"+":"")}";UnreadCount.Text=count;ReceivedBadgeText.Text=count;
+        ReceivedBadge.Visibility=unreadCount>0?Visibility.Visible:Visibility.Collapsed;UnreadShortcut.ToolTip=$"안 읽은 메시지 {count}개";
     }
     async Task RefreshPeople()
     {
@@ -268,7 +266,7 @@ public partial class MainWindow : Window
         AllFilter.Content = $"전체 {people.Length}"; OnlineFilter.Content = $"접속 중 {people.Count(p => p.Available)}"; AwayFilter.Content=$"자리비움 {people.Count(p=>p.Online&&p.Away)}";
         OnlineFilter.ToolTip="PC 온라인 또는 교사용 휴대폰 앱 접속 중";AwayFilter.ToolTip="PC에서 입력이 없거나 화면이 잠긴 교직원";
     }
-    void UpdateSelectionHint() => SelectionHint.Text = $"선택 {selectedPeople.Count}명";
+    void UpdateSelectionHint() => SelectionHint.Text = $"{selectedPeople.Count}명 선택";
     void SyncRosterChecks()
     {
         syncingRosterChecks = true;
@@ -304,6 +302,7 @@ public partial class MainWindow : Window
         {
             var narrowed = query.Length > 0 || onlineOnly || awayOnly;
             RosterEmptyTitle.Text = narrowed ? "일치하는 교직원이 없습니다" : favoritesOnly ? "즐겨찾기가 없습니다" : "표시할 교직원이 없습니다";
+            RosterEmptyArt.Content = AdminUi.EmptyArt(narrowed ? "SearchIcon" : favoritesOnly ? "StarIcon" : "TreeIcon");
             RosterEmptyDescription.Text = narrowed ? "검색어나 접속 상태 필터를 바꿔 보세요." : favoritesOnly
                 ? "조직도에서 교직원을 우클릭해 즐겨찾기에 추가하세요." : "관리자가 교직원을 등록하면 여기에 표시됩니다.";
             SyncRosterChecks();
@@ -332,18 +331,24 @@ public partial class MainWindow : Window
                 }
                 check.Checked += ChangePerson; check.Unchecked += ChangePerson;
                 personChecks.Add((check, person.Id));
-                var panel = new Grid { MinHeight = 32,ToolTip=person.Presence };
-                ToolTipService.SetInitialShowDelay(panel,500);
+                var panel = new Grid { MinHeight = 40 };
                 panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 panel.ColumnDefinitions.Add(new ColumnDefinition()); panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 panel.Children.Add(check);
-                var status = PresenceMark(person.Online,person.Away,person.Mobile);status.Margin=new Thickness(7,0,10,0);
+                var status = Avatar.WithPresence(person.Name, 32, null, person.Online, person.Away, person.Mobile, person.Presence); status.Margin = new Thickness(6, 0, 10, 0);
                 Grid.SetColumn(status,1);panel.Children.Add(status);
-                var name = new TextBlock { Text = person.Name + (Favorites.Contains(person.Id) ? " ★" : ""), FontSize = 13, FontWeight = FontWeights.Medium, Foreground = (Brush)FindResource("Ink"), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
-                name.SetResourceReference(TextBlock.ForegroundProperty, "Ink");
-                Grid.SetColumn(name, 2); panel.Children.Add(name);
-                var position = new TextBlock { Text = person.Position, FontSize = 10, MaxWidth = 72, Margin = new Thickness(8,0,0,0), VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = person.Position };
-                position.SetResourceReference(TextBlock.ForegroundProperty, "Muted");Grid.SetColumn(position,3);panel.Children.Add(position);
+                var names = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+                var name = new TextBlock { Text = person.Name + (Favorites.Contains(person.Id) ? " ★" : ""), FontSize = 13, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
+                name.SetResourceReference(TextBlock.ForegroundProperty, "Ink"); names.Children.Add(name);
+                var role = string.Join(" · ", new[] { person.Position, person.Department }.Where(t => t.Length > 0).Distinct());
+                var position = new TextBlock { Text = role, FontSize = 11, Margin = new Thickness(0, 1, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = role, Visibility = role.Length > 0 ? Visibility.Visible : Visibility.Collapsed };
+                position.SetResourceReference(TextBlock.ForegroundProperty, "Faint"); names.Children.Add(position);
+                Grid.SetColumn(names, 2); panel.Children.Add(names);
+                if (person.Online && person.Away || !person.Online && person.Mobile)
+                {
+                    var state = new TextBlock { Text = person.Presence, FontSize = 11, FontWeight = FontWeights.SemiBold, Margin = new Thickness(8, 0, 2, 0), VerticalAlignment = VerticalAlignment.Center };
+                    state.SetResourceReference(TextBlock.ForegroundProperty, person.Away ? "Warning" : "Blue"); Grid.SetColumn(state, 3); panel.Children.Add(state);
+                }
                 var contact = new TreeViewItem { Header = panel, Tag = person, ContextMenu = PersonMenu(person) };
                 contact.PreviewMouseRightButtonDown += (_, _) => contact.IsSelected = true;
                 contact.MouseDoubleClick += async (_, e) => { if (e.ChangedButton != MouseButton.Left) return; e.Handled = true; await WriteMessage(person.Id); };
@@ -353,7 +358,7 @@ public partial class MainWindow : Window
     }
     TreeViewItem GroupRow(string label, string key, string[] ids, bool expanded)
     {
-        var check = new CheckBox { Content = label + (key == "school" ? "" : $"  · {ids.Length}명"), FontSize = 11, FontWeight = FontWeights.SemiBold, IsEnabled = ids.Length > 0, Margin = new Thickness(0, 2, 0, 2) };
+        var check = new CheckBox { Content = label + (key == "school" ? "" : $"  {ids.Length}"), FontSize = 12, FontWeight = FontWeights.SemiBold, IsEnabled = ids.Length > 0, Margin = new Thickness(0, 2, 0, 2) };
         void ChangeGroup(object sender, RoutedEventArgs e)
         {
             if (syncingRosterChecks) return;
@@ -562,8 +567,8 @@ public partial class MainWindow : Window
                 if(contact.Tag is not Person person||contact.Header is not Grid panel)continue;
                 var mark=panel.Children.OfType<Grid>().Single();
                 if(mark.ToolTip?.ToString()!=person.Presence||ToolTipService.GetInitialShowDelay(mark)!=500)throw new InvalidOperationException("접속 상태 마우스 안내 표시 실패");
-                if(!person.Online&&person.Mobile){if(mark.Children.OfType<System.Windows.Shapes.Ellipse>().Any())throw new InvalidOperationException("휴대폰 모양 표시 실패");}
-                else{var dot=mark.Children.OfType<System.Windows.Shapes.Ellipse>().Single();if(dot.Width!=10||(!person.Online&&dot.Fill!=Brushes.Transparent))throw new InvalidOperationException("작은 접속 원 표시 실패");}
+                var dot=mark.Children.OfType<System.Windows.Shapes.Ellipse>().Single();
+                if(dot.Width!=10||!SystemParameters.HighContrast&&!person.Online&&!person.Mobile&&((SolidColorBrush)dot.Fill).Color!=Colors.White)throw new InvalidOperationException("아바타 접속 표시 실패");
             }
             if (OrganizationTree.Items.OfType<TreeViewItem>().SelectMany(r => r.Items.OfType<TreeViewItem>()).Any(r => !r.IsExpanded)) throw new InvalidOperationException("필터 변경 시 부서 펼침 상태 유지 실패");
             if (System.Windows.Shell.WindowChrome.GetWindowChrome(this)?.CaptionHeight != 38) throw new InvalidOperationException("제목줄 적용 실패");
@@ -573,7 +578,6 @@ public partial class MainWindow : Window
             {for(var i=0;i<VisualTreeHelper.GetChildrenCount(parent);i++){var child=VisualTreeHelper.GetChild(parent,i);yield return child;foreach(var nested in Descendants(child))yield return nested;}}
             var navigationButtons=Descendants(Workspace).OfType<System.Windows.Controls.Button>().Where(b=>b.Style==(Style)FindResource("RailButton")).ToArray();
             if(Descendants(NavigationRail).OfType<ScrollViewer>().Any()||NavigationItems.Children.OfType<TextBlock>().Any())throw new InvalidOperationException("툴바 스크롤 또는 연락처 분류가 남아 있습니다.");
-            if(((SolidColorBrush)MessageSection.Background).Color==((SolidColorBrush)SchoolSection.Background).Color)throw new InvalidOperationException("메시지·학교 업무 분류 색상 구분 실패");
             foreach(var size in new[]{(Width:450d,Height:820d),(Width:450d,Height:760d),(Width:380d,Height:580d),(Width:450d,Height:820d)})
             {
                 Width=size.Width;Height=size.Height;UpdateLayout();UpdateNavigationLayout();UpdateLayout();
@@ -584,8 +588,8 @@ public partial class MainWindow : Window
                     var buttonBounds=button.TransformToAncestor(NavigationLayout).TransformBounds(new Rect(button.RenderSize));
                     if(buttonBounds.Top<-.5||buttonBounds.Bottom>NavigationLayout.ActualHeight+.5)throw new InvalidOperationException($"스크롤 없는 툴바 범위 초과 ({size.Width}×{size.Height})");
                     var icons=Descendants(button).OfType<System.Windows.Shapes.Path>().ToArray();
-                    if(size.Width==380&&icons.Any(i=>i.IsVisible)||size.Width==450&&size.Height==820&&icons.Any(i=>!i.IsVisible))throw new InvalidOperationException("창 크기별 아이콘·텍스트 전환 실패");
-                    foreach(var label in Descendants(button).OfType<TextBlock>().Where(t=>t.IsVisible))
+                    if(icons.Where(i=>i.Width>=22).Any(i=>!i.IsVisible))throw new InvalidOperationException("왼쪽 메뉴 아이콘 표시 실패");
+                    foreach(var label in Descendants(button).OfType<TextBlock>().Where(t=>t.IsVisible&&t.Name!="ReceivedBadgeText"))
                     {
                         var bounds=label.TransformToAncestor(button).TransformBounds(new Rect(label.RenderSize));
                         if(bounds.Left<button.Padding.Left-.5||bounds.Right>button.ActualWidth-button.Padding.Right+.5||bounds.Top<button.Padding.Top-.5||bounds.Bottom>button.ActualHeight-button.Padding.Bottom+.5)
@@ -594,7 +598,7 @@ public partial class MainWindow : Window
                 }
                 SavePreview(this,Path.Combine(directory,$"navigation-{size.Width:0}x{size.Height:0}-preview.png"));
             }
-            File.WriteAllText(Path.Combine(directory,"navigation-ui-checks.json"),JsonSerializer.Serialize(new{noScroll=true,compactText=true,categoryColors=true,retiredAppMenusAbsent=true,windowSizes=new[]{"450x820","450x760","380x580"},realSchoolData=false}));
+            File.WriteAllText(Path.Combine(directory,"navigation-ui-checks.json"),JsonSerializer.Serialize(new{noScroll=true,compactText=true,railIcons=true,retiredAppMenusAbsent=true,windowSizes=new[]{"450x820","450x760","380x580"},realSchoolData=false}));
             SavePreview(this, output);
             var originalTheme = Appearance.Selected; var originalGlass = Appearance.Glass;
             var themedInbox = OpenMailbox("received"); await themedInbox.Reload();

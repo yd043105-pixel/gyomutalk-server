@@ -61,14 +61,16 @@ public sealed partial class OfficeWindow:Window
         string[] names=["일","월","화","수","목","금","토"];for(var d=0;d<7;d++){var label=AdminUi.Label(names[d],d==0?"Danger":"Muted",12);label.HorizontalAlignment=HorizontalAlignment.Center;var cell=new Border{Child=label,Padding=new Thickness(0,8,0,8)};cell.SetResourceReference(Border.BackgroundProperty,"Subtle");Grid.SetColumn(cell,d);grid.Children.Add(cell);}
         for(var w=0;w<weeks;w++)for(var d=0;d<7;d++)
         {
-            var date=start.AddDays(w*7+d);var inMonth=date.Month==first.Month;var stack=new StackPanel{Margin=new Thickness(8)};var cell=new Border{Child=stack,BorderThickness=new Thickness(0,1,0,0)};cell.SetResourceReference(Border.BorderBrushProperty,"Line");if(date==today)cell.SetResourceReference(Border.BackgroundProperty,"Pale");Grid.SetRow(cell,w+1);Grid.SetColumn(cell,d);grid.Children.Add(cell);
+            var date=start.AddDays(w*7+d);var inMonth=date.Month==first.Month;var stack=new StackPanel{Margin=new Thickness(8)};var cell=new Border{Child=stack,BorderThickness=new Thickness(0,1,0,0)};cell.SetResourceReference(Border.BorderBrushProperty,"Line");Grid.SetRow(cell,w+1);Grid.SetColumn(cell,d);grid.Children.Add(cell);
             if(!inMonth)continue;
-            stack.Children.Add(AdminUi.Label(date.Day.ToString(),date==today?"Blue":d==0?"Danger":"Muted",12,date==today));
+            if(date==today){var number=AdminUi.Label(date.Day.ToString(),"OnAccent",12,true);number.HorizontalAlignment=HorizontalAlignment.Center;number.VerticalAlignment=VerticalAlignment.Center;
+                var circle=new Border{Width=24,Height=24,CornerRadius=new CornerRadius(12),Child=number,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(-5,-4,0,0),ToolTip="오늘"};circle.SetResourceReference(Border.BackgroundProperty,"Blue");stack.Children.Add(circle);}
+            else stack.Children.Add(AdminUi.Label(date.Day.ToString(),d==0?"Danger":d==6?"Blue":"Muted",12));
             foreach(var row in rows.Where(r=>{var from=KoreaTime(r,"start").Date;var end=KoreaTime(r,"end");var to=(end.TimeOfDay==TimeSpan.Zero&&end.Date>from?end.AddDays(-1):end).Date;return date>=from&&date<=to;}))
             {
-                var text=new TextBlock{Text=row.GetProperty("title").GetString(),FontSize=11,TextTrimming=TextTrimming.CharacterEllipsis};text.SetResourceReference(TextBlock.ForegroundProperty,"Blue");
+                var title=row.GetProperty("title").GetString()??"";var text=new TextBlock{Text=title,FontSize=11,FontWeight=FontWeights.SemiBold,TextTrimming=TextTrimming.CharacterEllipsis,Foreground=Avatar.Ink(title)};
                 var tip=(row.GetProperty("allDay").GetBoolean()?"종일":Date(row,"start")+" ~ "+Date(row,"end"))+" · "+row.GetProperty("ownerName").GetString()+(row.GetProperty("description").GetString() is{Length:>0} about?"\n"+about:"");
-                var chip=new Border{Child=text,Padding=new Thickness(4),Margin=new Thickness(0,4,0,0),CornerRadius=new CornerRadius(4),ToolTip=tip};chip.SetResourceReference(Border.BackgroundProperty,date==today?"Surface":"Pale");
+                var chip=new Border{Child=text,Padding=new Thickness(6,3,6,3),Margin=new Thickness(0,4,0,0),CornerRadius=new CornerRadius(6),ToolTip=tip,Background=Avatar.Back(title)};
                 if(manager){chip.Cursor=System.Windows.Input.Cursors.Hand;var picked=row;chip.MouseLeftButtonUp+=async(_,_)=>await Run(()=>Editor(false,picked));}
                 stack.Children.Add(chip);
             }

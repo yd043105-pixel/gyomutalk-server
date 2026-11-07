@@ -199,7 +199,7 @@ public partial class MainWindow
                 if (opened is not null)
                 {
                     var labels = opened.RecipientChips.Children.OfType<Border>()
-                        .Select(chip => ((StackPanel)chip.Child).Children.OfType<TextBlock>().Single().Text).ToArray();
+                        .Select(chip => (string)((StackPanel)chip.Child).Children.OfType<TextBlock>().Single().ToolTip).ToArray();
                     opened.Close();
                     return labels;
                 }

@@ -17,6 +17,16 @@ public record ChatRoom(string Id, string Name, bool Direct, int Unread, Person[]
         }
     }
     public string Participants => string.Join(", ", Members.Select(p => p.Name));
+    // Group rooms show the first two other members as overlapping avatars.
+    string First => Members.Where(p => p.Id != SelfId).Select(p => p.Name).FirstOrDefault() ?? Display;
+    string Second => Members.Where(p => p.Id != SelfId).Select(p => p.Name).Skip(1).FirstOrDefault() ?? "";
+    [System.Text.Json.Serialization.JsonIgnore] public string Initial => Avatar.Initial(Direct ? First : Alias.Length > 0 || Second.Length == 0 ? Display : First);
+    [System.Text.Json.Serialization.JsonIgnore] public System.Windows.Media.Brush AvatarBack => Avatar.Back(Direct ? First : Display);
+    [System.Text.Json.Serialization.JsonIgnore] public System.Windows.Media.Brush AvatarInk => Avatar.Ink(Direct ? First : Display);
+    [System.Text.Json.Serialization.JsonIgnore] public bool Group => !Direct && Second.Length > 0;
+    [System.Text.Json.Serialization.JsonIgnore] public string SecondInitial => Avatar.Initial(Second.Length > 0 ? Second : Display);
+    [System.Text.Json.Serialization.JsonIgnore] public System.Windows.Media.Brush SecondBack => Avatar.Back(Second);
+    [System.Text.Json.Serialization.JsonIgnore] public System.Windows.Media.Brush SecondInk => Avatar.Ink(Second);
 }
 public record ChatEntry(long Sequence, string Id, string SenderId, string SenderName, string Body, long CreatedAt, Attachment[] Attachments)
 {
@@ -24,6 +34,9 @@ public record ChatEntry(long Sequence, string Id, string SenderId, string Sender
     // The signed-in teacher; their own messages sit on the right like in other messengers.
     public static string? Me { get; set; }
     public bool Mine => SenderId == Me;
+    [System.Text.Json.Serialization.JsonIgnore] public string Initial => Avatar.Initial(SenderName);
+    [System.Text.Json.Serialization.JsonIgnore] public System.Windows.Media.Brush AvatarBack => Avatar.Back(SenderName);
+    [System.Text.Json.Serialization.JsonIgnore] public System.Windows.Media.Brush AvatarInk => Avatar.Ink(SenderName);
 }
 public record Suggestion(string Id, string MessageId, string Title, string Evidence, string? DueDate, long CreatedAt);
 public record ChatPending(string Server, string RoomId, string ClientId, string Body, string[] AttachmentIds);

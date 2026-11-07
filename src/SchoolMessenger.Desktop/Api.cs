@@ -147,6 +147,13 @@ public record MessageItem(string Id, string Title, string Preview, long CreatedA
     public string ReadLabel => IsSent ? $"{ReadCount}/{RecipientCount}명 확인" : ReadAt is null ? "미확인" : "확인";
     public string DisplayTitle => SchoolMessenger.Shared.MessageText.Excerpt(string.IsNullOrWhiteSpace(Title) ? Preview : Title, 200);
     public string FilesLabel => AttachmentCount > 0 ? $"첨부 {AttachmentCount}" : "";
+    [System.Text.Json.Serialization.JsonIgnore] public string Initial => Avatar.Initial(SenderName);
+    [System.Text.Json.Serialization.JsonIgnore] public System.Windows.Media.Brush AvatarBack => Avatar.Back(SenderName);
+    [System.Text.Json.Serialization.JsonIgnore] public System.Windows.Media.Brush AvatarInk => Avatar.Ink(SenderName);
+    [System.Text.Json.Serialization.JsonIgnore] public bool IsUnread => !IsSent && ReadAt is null;
+    [System.Text.Json.Serialization.JsonIgnore] public bool HasFiles => AttachmentCount > 0;
+    [System.Text.Json.Serialization.JsonIgnore] public string PreviewLine => string.IsNullOrWhiteSpace(Title) ? "" : SchoolMessenger.Shared.MessageText.Excerpt(Preview, 120);
+    [System.Text.Json.Serialization.JsonIgnore] public string SentLabel => IsSent ? ReadLabel : "";
 }
 public record MessageContent(string Id, string SenderId, string SenderName, string Title, string Body, long CreatedAt, SchoolMessenger.Contracts.MessageFormat? Format = null, bool Purged = false);
 public record Attachment(string Id, string Name, long Size, long ExpiresAt = 0, bool Expired = false)

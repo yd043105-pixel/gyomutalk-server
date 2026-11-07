@@ -51,18 +51,9 @@ public partial class MainWindow
     }
     void ShowOwnPresence(bool online,bool away)
     {
-        IdentityDot.Content=PresenceMark(online,away);
+        var me=Api?.Session?.User;IdentityDot.Content=Avatar.WithPresence(me?.Name??"교",42,null,online,away,false,!online?"연결 중":away?"자리비움":"온라인");
         IdentityStatus.Text=online?(away?"자리비움":"온라인"):"연결 중";
         IdentityStatus.ToolTip=online?$"{AutomaticAwayMinutes}분 동안 입력이 없으면 자리비움 · 입력하면 복귀":"실시간 연결 상태를 확인하고 있습니다.";
-    }
-    static FrameworkElement PresenceMark(bool online,bool away,bool mobile=false)
-    {
-        var label=!online?"오프라인":away?"자리비움":"온라인";
-        var color=SystemParameters.HighContrast?SystemColors.WindowTextColor:!online?Color.FromRgb(139,153,166):away?Color.FromRgb(183,121,31):Color.FromRgb(20,137,105);
-        var brush=new SolidColorBrush(color);var mark=new Grid{Width=12,Height=12,VerticalAlignment=VerticalAlignment.Center,ToolTip=label};
-        mark.Children.Add(new Ellipse{Width=10,Height=10,Stroke=brush,StrokeThickness=1.6,Fill=online?brush:Brushes.Transparent});
-        if(online&&away)mark.Children.Add(new System.Windows.Shapes.Path{Data=Geometry.Parse("M6,3 L6,6 L8,7"),Stroke=SystemParameters.HighContrast?SystemColors.WindowBrush:Brushes.White,StrokeThickness=1.2});
-        ToolTipService.SetInitialShowDelay(mark,500);System.Windows.Automation.AutomationProperties.SetName(mark,label);return mark;
     }
     async Task VerifyPresenceUi(string directory)
     {
