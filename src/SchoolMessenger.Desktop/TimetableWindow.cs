@@ -178,13 +178,34 @@ public sealed partial class TimetableWindow:Window
     async Task Choose(string[] approvalIds)
     {
         var dialog=new Microsoft.Win32.OpenFileDialog{Title="나이스에서 받은 시간표 파일 선택",Filter="시간표 엑셀 (*.xlsx)|*.xlsx",Multiselect=true};if(dialog.ShowDialog(this)!=true)return;
-        publishingSwaps = approvalIds;
-        imports.Clear();
-        foreach(var path in dialog.FileNames)
+        if (dialog.FileNames.Length > 20)
+            throw new InvalidOperationException("시간표 엑셀은 한 번에 20개까지 선택할 수 있습니다.");
+        var selectedFiles = new List<(string Name, FileStream Stream)>();
+        try
         {
-            var name=Path.GetFileName(path);feedback.Text=name+" 읽는 중…";
-            using var form=new MultipartFormDataContent();await using var file=File.OpenRead(path);form.Add(new StreamContent(file),"file",name);
-            try{imports.Add((name,await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/import",content:form)));}catch(Exception e){throw new InvalidOperationException(name+": "+e.Message);}
+            // Check every local file before creating any import drafts on the server.
+            foreach (var path in dialog.FileNames)
+                selectedFiles.Add((Path.GetFileName(path), OpenTimetableFile(path)));
+            publishingSwaps = approvalIds;
+            imports.Clear();
+            foreach (var (name, stream) in selectedFiles)
+            {
+                feedback.Text = name + " 읽는 중…";
+                using var form = new MultipartFormDataContent();
+                form.Add(new StreamContent(stream), "file", name);
+                try
+                {
+                    imports.Add((name, await api.Send<JsonElement>(HttpMethod.Post, "api/timetable/import", content: form)));
+                }
+                catch (Exception e)
+                {
+                    throw new InvalidOperationException(name + ": " + e.Message, e);
+                }
+            }
+        }
+        finally
+        {
+            foreach (var (_, stream) in selectedFiles) stream.Dispose();
         }
         feedback.Text="";candidate=null;requestId=null;teacherLinks.Clear();pageScroll.ScrollToTop();
         ResetBody();body.Children.Add(AdminUi.Heading("시간표 올리기",22));var intro=AdminUi.Label("올린 파일을 확인하세요. 기초시간표에서 달라지는 수업은 노란색으로 표시됩니다.");intro.Margin=new Thickness(0,8,0,16);body.Children.Add(intro);body.Children.Add(feedback);
@@ -218,6 +239,17 @@ public sealed partial class TimetableWindow:Window
         var actions=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,16,0,0)};body.Children.Add(actions);
         var cancel=new Button{Content="취소",Margin=new Thickness(0,0,8,0)};cancel.SetResourceReference(StyleProperty,"SubtleButton");cancel.Click+=async(_,_)=>await Run(Load);actions.Children.Add(cancel);
         var next=new Button{Content="변경 내용 확인"};next.SetResourceReference(StyleProperty,"PrimaryButton");next.Click+=async(_,_)=>await Run(Preview);actions.Children.Add(next);
+    }
+    static FileStream OpenTimetableFile(string path)
+    {
+        try
+        {
+            return File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        }
+        catch (IOException e) when ((e.HResult & 0xffff) is 32 or 33)
+        {
+            throw new InvalidOperationException($"{Path.GetFileName(path)} 파일을 읽을 수 없습니다. 엑셀이나 파일을 사용 중인 프로그램에서 닫은 뒤 다시 올려주세요.", e);
+        }
     }
     async Task Preview()
     {
