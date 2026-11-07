@@ -8,7 +8,10 @@ with tempfile.TemporaryDirectory() as folder:
         arch='arm64' if product=='mac' else None
         asset=pathlib.Path(folder)/(f'gyomutalk-mac-1.0.1-macos-arm64.zip' if arch else f'gyomutalk-{product}-1.0.1-setup-win-x64.exe');asset.write_bytes(b'SYNTHETIC NONEXECUTABLE UPDATE PAYLOAD')
         config=dict(product=product,repository='yd043105-pixel/gyomutalk-'+product,publicKey=pub)
-        content,digest=module.create_feed(config,'1.0.1','v1.0.1',asset,seed,arch);enclosure=ET.fromstring(content).find('./channel/item/enclosure');signature=enclosure.attrib['{'+module.SPARKLE+'}edSignature'];key.public_key().verify(base64.b64decode(signature),asset.read_bytes())
+        content,digest=module.create_feed(config,'1.0.1','v1.0.1',asset,seed,arch)
+        item=ET.fromstring(content).find('./channel/item')
+        assert item.findtext('{'+module.SPARKLE+'}minimumSystemVersion')==('15.0' if arch else None)
+        enclosure=item.find('enclosure');signature=enclosure.attrib['{'+module.SPARKLE+'}edSignature'];key.public_key().verify(base64.b64decode(signature),asset.read_bytes())
         assert enclosure.attrib['{'+module.SPARKLE+'}version']==('1000001' if arch else '1.0.1')
         for invalid in ['v2.0.0','v1.0.1;echo injected']:
             try: module.create_feed(config,'1.0.1',invalid,asset,seed,arch)

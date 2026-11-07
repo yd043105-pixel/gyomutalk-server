@@ -28,7 +28,10 @@ def create_feed(config,version,tag,asset,seed,architecture=None):
     ET.SubElement(channel,'link').text='https://github.com/'+config['repository']+'/releases'
     item=ET.SubElement(channel,'item');ET.SubElement(item,'title').text='교무톡 '+version
     ET.SubElement(item,'description').text='새 버전의 변경 내용은 GitHub 릴리즈 페이지에서 확인하세요.'
-    ET.SubElement(item,'{'+SPARKLE+'}minimumSystemVersion').text='15.0' if product=='mac' else '10.0'
+    # The Windows installer enforces the minimum OS. Older builds lack a
+    # compatibility manifest, so WinSparkle's Windows version check rejects them.
+    if product=='mac':
+        ET.SubElement(item,'{'+SPARKLE+'}minimumSystemVersion').text='15.0'
     ET.SubElement(item,'enclosure',{'url':'https://github.com/'+config['repository']+'/releases/download/'+quote(tag,safe='')+'/'+name,'length':str(len(data)),'type':'application/octet-stream','{'+SPARKLE+'}version':build,'{'+SPARKLE+'}shortVersionString':version,'{'+SPARKLE+'}edSignature':signature,'{'+SPARKLE+'}os':'macos' if product=='mac' else 'windows'})
     ET.indent(root)
     return ET.tostring(root,encoding='utf-8',xml_declaration=True),hashlib.sha256(data).hexdigest()
