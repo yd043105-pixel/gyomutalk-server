@@ -201,6 +201,6 @@ public sealed partial class LocalServerWindow
         {
             var path=File.Exists(Path.Combine(root,"서버 설치 안내.txt"))?Path.Combine(root,"서버 설치 안내.txt"):Path.Combine(root,"docs","server-installer.md");
             var open=new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"System32","notepad.exe")){UseShellExecute=false};open.ArgumentList.Add(path);Process.Start(open);
-        }catch(Exception e){MessageBox.Show(this,e.Message,"운영 안내");}
+        }catch(Exception e){Notice.Show(this,e.Message,"운영 안내");}
     }
 }

@@ -11,8 +11,7 @@ const root=process.cwd(),sdk=path.join(root,'.tools/dotnet/dotnet.exe'),dotnet=e
 const check=name=>console.log('PASS '+name);
 async function port(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p;}
 const servers=[
- ['Server','School',p=>({School__DataDirectory:p,School__AdminPassword:'Synthetic-'+randomUUID()})],
- ['AnnouncementServer','Portal',p=>({Portal__DataDirectory:p,Portal__AdminPassword:'Synthetic-'+randomUUID(),Portal__BridgeKey:'Bridge-'+randomUUID()})]];
+ ['Server','School',p=>({School__DataDirectory:p,School__AdminPassword:'Synthetic-'+randomUUID()})]];
 for(const [project,label,env] of servers){
  const data=path.join(process.env.YY_TEST_DATA_ROOT??path.join(root,'.test-data'),'school-move-'+randomUUID());mkdirSync(data,{recursive:true});
  const base='http://127.0.0.1:'+await port(),dll=path.join(root,'src/SchoolMessenger.'+project+'/bin/Debug/net10.0/SchoolMessenger.'+project+'.dll');

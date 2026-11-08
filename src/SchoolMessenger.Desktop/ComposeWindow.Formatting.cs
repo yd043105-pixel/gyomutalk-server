@@ -17,7 +17,7 @@ public partial class ComposeWindow
         FontChoice.SelectedItem = "Malgun Gothic";
         SizeChoice.ItemsSource = new double[] { 8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72 }; SizeChoice.SelectedItem = 12d;
         ColorChoice.DisplayMemberPath = HighlightChoice.DisplayMemberPath = "Label";
-        ColorChoice.ItemsSource = new[] { new InkChoice("글자 색", "#203048"), new InkChoice("빨강", "#BA3434"), new InkChoice("파랑", "#245BC6"), new InkChoice("초록", "#17745D"), new InkChoice("보라", "#7050B0") };
+        ColorChoice.ItemsSource = new[] { new InkChoice("글자 색", "#0F1B2D"), new InkChoice("빨강", "#BA3434"), new InkChoice("파랑", "#245BC6"), new InkChoice("초록", "#17745D"), new InkChoice("보라", "#7050B0") };
         HighlightChoice.ItemsSource = new[] { new InkChoice("강조 없음", null), new InkChoice("노랑", "#FFF09A"), new InkChoice("연두", "#D8F1C1"), new InkChoice("분홍", "#FFD9E3"), new InkChoice("하늘", "#D7EAFE") };
         ColorChoice.SelectedIndex = HighlightChoice.SelectedIndex = 0;
         updatingFormat = false;

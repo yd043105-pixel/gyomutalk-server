@@ -24,6 +24,7 @@ public record ChatRoom(string Id, string Name, bool Direct, int Unread, Person[]
     [System.Text.Json.Serialization.JsonIgnore] public System.Windows.Media.Brush AvatarBack => Avatar.Back(Direct ? First : Display);
     [System.Text.Json.Serialization.JsonIgnore] public System.Windows.Media.Brush AvatarInk => Avatar.Ink(Direct ? First : Display);
     [System.Text.Json.Serialization.JsonIgnore] public bool Group => !Direct && Second.Length > 0;
+    public override string ToString() => Display + (Unread > 0 ? $", 안 읽은 메시지 {Badge}개" : "");
     [System.Text.Json.Serialization.JsonIgnore] public string SecondInitial => Avatar.Initial(Second.Length > 0 ? Second : Display);
     [System.Text.Json.Serialization.JsonIgnore] public System.Windows.Media.Brush SecondBack => Avatar.Back(Second);
     [System.Text.Json.Serialization.JsonIgnore] public System.Windows.Media.Brush SecondInk => Avatar.Ink(Second);
@@ -34,6 +35,7 @@ public record ChatEntry(long Sequence, string Id, string SenderId, string Sender
     // The signed-in teacher; their own messages sit on the right like in other messengers.
     public static string? Me { get; set; }
     public bool Mine => SenderId == Me;
+    public override string ToString() => $"{Heading}: {Body}";
     [System.Text.Json.Serialization.JsonIgnore] public string Initial => Avatar.Initial(SenderName);
     [System.Text.Json.Serialization.JsonIgnore] public System.Windows.Media.Brush AvatarBack => Avatar.Back(SenderName);
     [System.Text.Json.Serialization.JsonIgnore] public System.Windows.Media.Brush AvatarInk => Avatar.Ink(SenderName);

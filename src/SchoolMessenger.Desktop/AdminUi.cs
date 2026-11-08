@@ -62,7 +62,7 @@ static class AdminUi
     public static StackPanel Empty(string title,string detail,Button? action=null)
     {
         var panel=new StackPanel{HorizontalAlignment=HorizontalAlignment.Center,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(24,48,24,48)};
-        panel.Children.Add(EmptyArt(title.Contains("대화")?"ChatIcon":title.Contains("설문")?"SurveyIcon":title.Contains("시간표")||title.Contains("수업")?"TimetableIcon":title.Contains("메시지")?"MailIcon":title.Contains("할 일")||title.Contains("제출")?"FileIcon":title.Contains("교직원")?"TreeIcon":title.Contains("특별실")||title.Contains("일정")?"CalendarIcon":"FolderIcon"));
+        panel.Children.Add(EmptyArt(title.Contains("대화")?"ChatIcon":title.Contains("설문")?"SurveyIcon":title.Contains("시간표")||title.Contains("수업")||title.Contains("교체")?"TimetableIcon":title.Contains("메시지")?"MailIcon":title.Contains("할 일")||title.Contains("제출")?"FileIcon":title.Contains("교직원")?"TreeIcon":title.Contains("특별실")||title.Contains("일정")?"CalendarIcon":"FolderIcon"));
         var heading=Heading(title);heading.TextAlignment=TextAlignment.Center;panel.Children.Add(heading);
         var text=Label(detail);text.TextAlignment=TextAlignment.Center;text.Margin=new Thickness(0,8,0,0);panel.Children.Add(text);
         if(action is not null){action.HorizontalAlignment=HorizontalAlignment.Center;action.Margin=new Thickness(0,16,0,0);panel.Children.Add(action);}
@@ -96,5 +96,32 @@ static class AdminUi
         var front=new Border{Width=62,Height=48,CornerRadius=new CornerRadius(14),BorderThickness=new Thickness(1.5),HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Bottom,Child=Icon(icon,24,"Blue")};
         front.SetResourceReference(Border.BackgroundProperty,"Surface");front.SetResourceReference(Border.BorderBrushProperty,"Blue");art.Children.Add(front);
         return art;
+    }
+    // Form buttons built from a label: finishing actions are primary, going back is a text link, undoing work is red.
+    public static Button Tone(Button button,string label)
+    {
+        var key=label.EndsWith("으로")||label.EndsWith("돌아가기")?"SubtleButton":System.Text.RegularExpressions.Regex.IsMatch(label,"취소|삭제|나가기|종료")?"DangerButton":label.EndsWith("저장")||label.EndsWith("제출")||label.EndsWith("접수")?"PrimaryButton":null;
+        if(key is not null)button.SetResourceReference(FrameworkElement.StyleProperty,key);
+        if(key=="SubtleButton")button.Content="‹  "+label;
+        return button;
+    }
+    // A person to tick in a picker: avatar, name and department; the accessible name and search text is the label.
+    public static CheckBox PersonCheck(Person person,bool selected)
+    {
+        var row=new StackPanel{Orientation=Orientation.Horizontal};var face=SchoolMessenger.Desktop.Avatar.Create(person.Name,28);face.Margin=new Thickness(0,0,10,0);row.Children.Add(face);
+        var words=new StackPanel{VerticalAlignment=VerticalAlignment.Center};words.Children.Add(new TextBlock{Text=person.Name,FontSize=13,FontWeight=FontWeights.SemiBold});
+        var role=string.Join(" · ",new[]{person.Position,person.Department}.Where(t=>t.Length>0).Distinct());if(role.Length>0)words.Children.Add(Label(role,"Faint",11));row.Children.Add(words);
+        var check=new CheckBox{Content=row,IsChecked=selected,Margin=new Thickness(2,5,2,5),ToolTip=person.Label};System.Windows.Automation.AutomationProperties.SetName(check,person.Label);return check;
+    }
+    // A search box with the magnifier and a hint that disappears once something is typed.
+    public static Grid SearchField(TextBox box,string hint)
+    {
+        box.Padding=new Thickness(32,8,8,8);box.SetResourceReference(Control.BackgroundProperty,"Soft");box.SetResourceReference(Control.BorderBrushProperty,"Soft");
+        System.Windows.Automation.AutomationProperties.SetName(box,hint);
+        var host=new Grid{Margin=box.Margin};box.Margin=new Thickness(0);host.Children.Add(box);
+        var icon=Icon("SearchIcon",16,"Faint");icon.HorizontalAlignment=HorizontalAlignment.Left;icon.Margin=new Thickness(11,0,0,0);icon.IsHitTestVisible=false;host.Children.Add(icon);
+        var label=Label(hint,"Faint",12);label.Margin=new Thickness(34,0,0,0);label.VerticalAlignment=VerticalAlignment.Center;label.IsHitTestVisible=false;host.Children.Add(label);
+        box.TextChanged+=(_,_)=>label.Visibility=box.Text.Length==0?Visibility.Visible:Visibility.Collapsed;
+        return host;
     }
 }

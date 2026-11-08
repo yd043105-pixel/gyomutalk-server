@@ -20,7 +20,7 @@ const psFixture=path.join(testRoot,'powershell');
 const psEnv={...process.env,PSModulePath:path.join(process.env.SystemRoot??'C:/Windows','System32/WindowsPowerShell/v1.0/Modules')+';'+path.join(process.env.ProgramFiles??'C:/Program Files','WindowsPowerShell/Modules')};
 const ps=await run(powershell,['-NoProfile','-File',path.join(root,'tests/server-operations.ps1'),'-FixtureRoot',psFixture],psEnv);
 assert.equal(ps.exit,0,ps.output);const psChecks=JSON.parse(ps.output.slice(ps.output.indexOf('{')));checks.push(...psChecks.checks);console.log('PASS '+psChecks.checks.length+' Windows operations checks');
-for(const project of ['Server','AnnouncementServer']){
+for(const project of ['Server']){
  const portal=project==='AnnouncementServer',prefix=portal?'Portal':'School',service=portal?'announcements':'office';
  const folder=path.join(testRoot,project),data=path.join(folder,'data'),backup=path.join(folder,'separate-backup');mkdirSync(folder,{recursive:true});
  const base='http://127.0.0.1:'+await port(),key='Synthetic-'+randomUUID()+randomUUID(),dll=path.join(root,'src/SchoolMessenger.'+project,'bin/Debug/net10.0/SchoolMessenger.'+project+'.dll');

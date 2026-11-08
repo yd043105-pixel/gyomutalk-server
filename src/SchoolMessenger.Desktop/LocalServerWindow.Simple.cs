@@ -39,7 +39,7 @@ public sealed partial class LocalServerWindow
         var dialog=new OpenFileDialog{Title="학교장 승인(내부결재) 문서 선택",Filter="승인 문서 (*.pdf;*.hwp;*.hwpx;*.png;*.jpg)|*.pdf;*.hwp;*.hwpx;*.png;*.jpg|모든 파일 (*.*)|*.*",CheckFileExists=true};
         if(dialog.ShowDialog(this)!=true)return;
         try{var (path,hash)=SimpleOperation.KeepApproval(directory,c.Service,dialog.FileName);c.Approval.Text=path;c.ApprovalSha256=hash;c.ReviewedAt=DateTimeOffset.Now;SaveSettings();Refresh();}
-        catch(Exception e)when(e is IOException or UnauthorizedAccessException or InvalidOperationException){MessageBox.Show(this,e.Message,"승인 문서");}
+        catch(Exception e)when(e is IOException or UnauthorizedAccessException or InvalidOperationException){Notice.Show(this,e.Message,"승인 문서");}
     }
     void ActivateService(ServerCard c)
     {

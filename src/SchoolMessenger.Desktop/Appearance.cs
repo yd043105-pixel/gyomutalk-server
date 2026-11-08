@@ -51,7 +51,7 @@ public sealed class AppearanceWindow : Window
         ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Style = (Style)FindResource("SchoolWindow");
         var stack = new StackPanel { Margin = new Thickness(24) }; Content = new ScrollViewer{Content=stack};
-        stack.Children.Add(new TextBlock { Text = "나에게 편안한 교무실", FontSize = 21, FontWeight = FontWeights.Bold });
+        stack.Children.Add(new TextBlock { Text = "나에게 편안한 교무실", FontSize = 22, FontWeight = FontWeights.Bold });
         stack.Children.Add(new TextBlock { Text = "열려 있는 창에도 바로 적용됩니다.", Margin = new Thickness(0, 8, 0, 20) });
         var choices = new ComboBox { ItemsSource = Appearance.Palettes.Select(p => p.Name).ToArray(), SelectedIndex = Array.FindIndex(Appearance.Palettes, p => p.Id == Appearance.Selected) };
         AutomationProperties.SetName(choices, "메신저 색상 테마"); stack.Children.Add(choices);
@@ -70,7 +70,7 @@ public sealed class AppearanceWindow : Window
         AutomationProperties.SetName(away,"자동 자리비움 시간");stack.Children.Add(away);
         stack.Children.Add(new TextBlock{Text="키보드·마우스 입력 기준입니다. 입력하면 온라인으로 복귀하며 Windows를 잠그면 즉시 자리비움으로 표시합니다.",FontSize=11,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,8,0,16)});
         away.SelectionChanged+=(_,_)=>{if(away.SelectedIndex<0)return;main.SetAutomaticAway(minutes[away.SelectedIndex]);Change();};
-        void Change() { Appearance.Apply(Appearance.Palettes[choices.SelectedIndex].Id, glass.IsChecked == true); main.RefreshAppearance(); try { main.SavePreferences(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { System.Windows.MessageBox.Show(this, "화면은 변경했지만 설정을 저장하지 못했습니다. 저장 공간과 폴더 권한을 확인하세요.", "화면 설정"); } }
+        void Change() { Appearance.Apply(Appearance.Palettes[choices.SelectedIndex].Id, glass.IsChecked == true); main.RefreshAppearance(); try { main.SavePreferences(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Notice.Show(this, "화면은 변경했지만 설정을 저장하지 못했습니다. 저장 공간과 폴더 권한을 확인하세요.", "화면 설정"); } }
         choices.SelectionChanged += (_, _) => Change(); glass.Checked += (_, _) => Change(); glass.Unchecked += (_, _) => Change();
         var done = new Button { Content = "완료", Style = (Style)FindResource("PrimaryButton") }; done.Click += (_, _) => Close(); stack.Children.Add(done);
     }

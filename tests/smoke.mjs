@@ -207,8 +207,8 @@ try {
     assert.ok(existsSync('artifacts/update-notice-preview.png'));
     check('native update popup confirms once, preserves deferred notice, handles older/newer versions and manual history');
     assert.ok(existsSync('artifacts/tasks-preview.png') && existsSync('artifacts/submissions-preview.png'));
-    assert.ok((await admin.request('/api/todos')).some(t => t.title === 'Windows 업무 창에서 등록한 할 일'));
-    assert.ok((await admin.request('/api/submission-requests')).some(r => r.title === 'Windows 제출 요청 검증'));
+    assert.ok((await admin.request('/api/todos')).some(t => t.title === '학급 상담 기록 정리'));
+    assert.ok((await admin.request('/api/submission-requests')).some(r => r.title === '학급별 체험학습 인솔 명단 제출'));
     check('native WPF task registration and compose submission request with collector status screen');
     for (const name of ['chat-preview.png', 'survey-preview.png', 'survey-results-preview.png', 'remote-preview.png']) assert.ok(existsSync('artifacts/' + name));
     assert.ok((await admin.request('/api/surveys')).some(s => s.title === '교무회의 시간 조사' && s.responseCount === 1));

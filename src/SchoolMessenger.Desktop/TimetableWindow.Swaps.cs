@@ -31,7 +31,7 @@ public sealed partial class TimetableWindow
             button.Click += async (_, _) => await Run(action);
             tools.Children.Add(button);
         }
-        Add("수업 교체 신청", SwapEditor, hasTimetable ? "PrimaryButton" : "SubtleButton");
+        Add("수업 교체 신청", SwapEditor, hasTimetable ? "PrimaryButton" : null);
         Add("교체 신청 현황", SwapQueue, null);
         if (CanManageSchedule) Add("묶음수업 설정", BundleEditor);
         if (printDays.Any(day => day.PublishedAt > 0))
@@ -43,9 +43,9 @@ public sealed partial class TimetableWindow
     void SchedulePage(string title)
     {
         ResetBody();
+        Action("시간표로 돌아가기", Load);
         body.Children.Add(AdminUi.Heading(title, 22));
         body.Children.Add(feedback);
-        Action("시간표로 돌아가기", Load);
         pageScroll.ScrollToTop();
     }
 
@@ -85,8 +85,11 @@ public sealed partial class TimetableWindow
         var firstDate = new DatePicker { SelectedDate = selected, Width = 165 };
         var secondDate = new DatePicker { SelectedDate = selected, Width = 165 };
         var dateFields = new WrapPanel();
-        dateFields.Children.Add(firstDate);
-        dateFields.Children.Add(secondDate);
+        foreach (var (label, picker) in new[] { ("첫째 수업 날짜", firstDate), ("둘째 수업 날짜", secondDate) })
+        {
+            var field = new StackPanel { Margin = new Thickness(0, 6, 12, 0) }; field.Children.Add(AdminUi.Label(label, "Muted", 12)); picker.Margin = new Thickness(0, 4, 0, 0);
+            System.Windows.Automation.AutomationProperties.SetName(picker, label); field.Children.Add(picker); dateFields.Children.Add(field);
+        }
         body.Children.Add(dateFields);
         var include = new CheckBox { Content = "대기 중 신청을 가정해 찾기", Margin = new Thickness(0, 10, 0, 8) };
         body.Children.Add(include);
@@ -165,9 +168,9 @@ public sealed partial class TimetableWindow
                 : [];
         };
         body.Children.Add(Text("출발 날짜의 수업", 12));
-        body.Children.Add(first);
+        body.Children.Add(first); System.Windows.Automation.AutomationProperties.SetName(first, "출발 날짜의 수업");
         body.Children.Add(Text("같은 학급의 교환 수업", 12));
-        body.Children.Add(second);
+        body.Children.Add(second); System.Windows.Automation.AutomationProperties.SetName(second, "같은 학급의 교환 수업");
         Action("교환 쌍 추가", () =>
         {
             if (plan is null || first.SelectedItem is not ScheduleOption a || second.SelectedItem is not ScheduleOption b)
@@ -190,7 +193,7 @@ public sealed partial class TimetableWindow
         body.Children.Add(added);
         body.Children.Add(Text("신청 사유 (수업계와 본인에게 표시)", 12));
         reason.TextChanged += (_, _) => requestId = null;
-        body.Children.Add(reason);
+        body.Children.Add(reason); System.Windows.Automation.AutomationProperties.SetName(reason, "신청 사유");
         Action("교체 신청 제출", async () =>
         {
             if (plan is null || pairs.Count == 0) throw new InvalidOperationException("교환할 수업을 추가하세요.");
@@ -207,9 +210,13 @@ public sealed partial class TimetableWindow
         var rows = await api.Get<TimetableSwap[]>("api/timetable/swaps");
         var byId = rows.ToDictionary(s => s.Id);
         SchedulePage("교체 신청 현황");
-        Action("새로 고침", SwapQueue);
+        // Page tools sit on one line under the heading instead of stacking full-width rows.
+        var tools = new WrapPanel { Margin = new Thickness(0, 8, 0, 4) };
+        body.Children.Add(tools);
+        Button Tool(string label, Func<Task> action) { var b = AdminUi.Tone(new Button { Content = label, Margin = new Thickness(0, 0, 8, 8) }, label); if (label.Contains("승인")) b.SetResourceReference(StyleProperty, "PrimaryButton"); b.Click += async (_, _) => await Run(action); tools.Children.Add(b); return b; }
+        Tool("새로고침", SwapQueue);
         var selectedRequests = new Dictionary<string, CheckBox>();
-        if (CanManageSchedule && rows.Any(s => s.Status == "pending")) Action("선택 신청 승인·나이스 파일 선택", async () =>
+        if (CanManageSchedule && rows.Any(s => s.Status == "pending")) Tool("선택 신청 승인·나이스 파일 선택", async () =>
         {
             var ids = selectedRequests.Where(p => p.Value.IsChecked == true).Select(p => p.Key).ToArray();
             if (ids.Length == 0) throw new InvalidOperationException("파일에 반영한 신청을 선택하세요.");
@@ -218,14 +225,18 @@ public sealed partial class TimetableWindow
         foreach (var swap in rows)
         {
             var panel = new StackPanel();
-            var heading = $"{swap.OwnerName} · {StatusLabel(swap.Status)}";
+            var head = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
             if (CanManageSchedule && swap.Status == "pending")
             {
-                var pick = new CheckBox { Content = heading };
+                var pick = new CheckBox { Content = swap.OwnerName, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center };
                 selectedRequests.Add(swap.Id, pick);
-                panel.Children.Add(pick);
+                head.Children.Add(pick);
             }
-            else panel.Children.Add(AdminUi.Label(heading, "Ink", 14, true));
+            else head.Children.Add(AdminUi.Label(swap.OwnerName, "Ink", 14, true));
+            var badge = AdminUi.Badge(StatusLabel(swap.Status), swap.Status switch { "approved" => "Success", "rejected" => "Danger", "cancelled" => "", _ => "Warning" });
+            badge.Margin = new Thickness(10, 0, 0, 0); head.Children.Add(badge);
+            panel.Children.Add(head);
+            var decisions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
             foreach (var change in swap.Changes) panel.Children.Add(Text(SwapLine(change), 12));
             foreach (var dependency in swap.Dependencies)
             {
@@ -242,20 +253,22 @@ public sealed partial class TimetableWindow
             }
             void Decision(string label, string status)
             {
-                var button = new Button { Content = label, HorizontalAlignment = HorizontalAlignment.Left };
+                var button = new Button { Content = label, Margin = new Thickness(0, 0, 8, 0) };
+                button.SetResourceReference(StyleProperty, "DangerButton");
                 button.Click += async (_, _) => await Run(async () =>
                 {
-                    if (MessageBox.Show(this, $"{label}할까요?", "교체 신청", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+                    if (Notice.Show(this, $"{label}할까요?", "교체 신청", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
                     await api.Send<TimetableSwap>(HttpMethod.Post, $"api/timetable/swaps/{swap.Id}/decision", new TimetableSwapDecision(status));
                     await SwapQueue();
                 });
-                panel.Children.Add(button);
+                decisions.Children.Add(button);
             }
-            var card = AdminUi.Card(panel, 12);
+            if (decisions.Children.Count > 0) panel.Children.Add(decisions);
+            var card = AdminUi.Card(panel, 14);
             card.Margin = new Thickness(0, 6, 0, 6);
             body.Children.Add(card);
         }
-        if (rows.Length == 0) body.Children.Add(Text("아직 교체 신청이 없습니다."));
+        if (rows.Length == 0) body.Children.Add(AdminUi.Empty("아직 교체 신청이 없습니다", "수업 교체를 신청하면 승인 상태가 여기에 표시됩니다."));
     }
 
     async Task BundleEditor()
@@ -294,7 +307,7 @@ public sealed partial class TimetableWindow
             body.Children.Add(Text($"{bundle.Name} · {(bundle.Kind == "consecutive" ? "연강" : "동시 수업")}\n{list}", 12));
             Action(bundle.Name + " 삭제", async () =>
             {
-                if (MessageBox.Show(this, $"‘{bundle.Name}’ 묶음을 삭제할까요?", "묶음수업", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+                if (Notice.Show(this, $"‘{bundle.Name}’ 묶음을 삭제할까요?", "묶음수업", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
                 await api.Send<object>(HttpMethod.Delete, "api/timetable/bundles/" + bundle.Id);
                 await BundleEditor();
             });
@@ -335,7 +348,7 @@ public sealed partial class TimetableWindow
         }
         document.Blocks.Add(table);
         var preview = new Window { Owner = this, Title = "시간표 인쇄 미리보기", Width = 1040, Height = 720,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner };
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, Style=(Style)Application.Current.FindResource("SchoolWindow") };
         var layout = new DockPanel();
         var print = new Button { Content = "인쇄…", Margin = new Thickness(8), HorizontalAlignment = HorizontalAlignment.Right };
         DockPanel.SetDock(print, Dock.Bottom);
@@ -353,7 +366,7 @@ public sealed partial class TimetableWindow
                 paginator.PageSize = new Size(dialog.PrintableAreaWidth, dialog.PrintableAreaHeight);
                 dialog.PrintDocument(paginator, printTitle);
             }
-            catch (Exception error) { MessageBox.Show(preview, error.Message, "시간표 인쇄"); }
+            catch (Exception error) { Notice.Show(preview, error.Message, "시간표 인쇄"); }
         };
         preview.Content = layout;
         preview.ShowDialog();

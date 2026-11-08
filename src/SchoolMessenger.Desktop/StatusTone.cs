@@ -9,7 +9,7 @@ namespace SchoolMessenger.Desktop;
 static class StatusTone
 {
     // ponytail: wording heuristic shared by every status line; give a line its own brush if a message is misread.
-    static readonly Regex Problem=new("못했|못합니다|실패|오류|만료|거부|수 없|입력하세요|선택하세요|잘못|초과|권한이 없|찾지 못",RegexOptions.CultureInvariant);
+    static readonly Regex Problem=new("못했|못합니다|실패|오류|만료|거부|수 없|입력하세요|선택하세요|잘못|초과|권한이 없|찾지 못|확인하세요",RegexOptions.CultureInvariant);
     public static bool IsProblem(string text)=>Problem.IsMatch(text);
     public static void Watch(params TextBlock[] labels)
     {

@@ -84,7 +84,7 @@ public sealed partial class LocalServerWindow
                 ConfirmPolicy(data,Fields());c.ChecklistKey="";confirm.IsEnabled=false;
                 if(c.Host.Running){error.Text="서버를 다시 시작해 적용하는 중…";await c.Host.Stop();await Start(c);}
                 Refresh();
-                MessageBox.Show(window,c.Host.Running?"약관을 확정하고 서버에 적용했습니다. 이제 교직원 계정 신청과 활성화를 받습니다. 기존 계정과 신청은 그대로입니다.":"약관을 확정했습니다. 서버를 시작하면 회원가입을 받습니다.","약관·개인정보 확정");window.Close();
+                Notice.Show(window,c.Host.Running?"약관을 확정하고 서버에 적용했습니다. 이제 교직원 계정 신청과 활성화를 받습니다. 기존 계정과 신청은 그대로입니다.":"약관을 확정했습니다. 서버를 시작하면 회원가입을 받습니다.","약관·개인정보 확정");window.Close();
             }
             catch(Exception e)when(e is InvalidOperationException or IOException or UnauthorizedAccessException){error.Text=e.Message;confirm.IsEnabled=reviewed.IsChecked==true;}
         };

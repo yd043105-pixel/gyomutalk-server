@@ -41,11 +41,11 @@ public partial class RegistrationWindow : Window
             }
             SubmitButton.IsEnabled=policy.CanRegister;
         }
-        catch(Exception error){Feedback.Text="약관을 불러오지 못했습니다. 창을 다시 열어주세요. "+error.Message;}
+        catch(Exception error){Feedback.Text="약관을 불러오지 못했습니다. 창을 다시 열어주세요. "+Api.Explain(error);}
     }
     internal static void ShowDocument(Window owner,RegistrationPolicySet policy,RegistrationDocument document)
     {
-        new Window{Owner=owner,Title=document.Title,Width=520,Height=560,WindowStartupLocation=WindowStartupLocation.CenterOwner,
+        new Window{Owner=owner,Title=document.Title,Width=520,Height=560,WindowStartupLocation=WindowStartupLocation.CenterOwner,Style=(Style)Application.Current.FindResource("SchoolWindow"),
             Content=new TextBox{Text=policy.Message+"\n버전 · "+document.Version+"\n운영 · "+policy.Operator+"\n문의 · "+policy.Contact+"\n\n"+document.Body,IsReadOnly=true,TextWrapping=TextWrapping.Wrap,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Margin=new Thickness(18)}}.ShowDialog();
     }
     async void SubmitClick(object sender, RoutedEventArgs e)
@@ -62,7 +62,7 @@ public partial class RegistrationWindow : Window
             PasswordBox.Clear(); ConfirmBox.Clear(); Feedback.Text = response.GetProperty("message").GetString();
             SubmitButton.Content = "신청 완료 · 창을 닫고 승인 후 로그인하세요";
         }
-        catch (Exception error) { Feedback.Text = error.Message; SubmitButton.IsEnabled = true; }
+        catch (Exception error) { Feedback.Text = Api.Explain(error); SubmitButton.IsEnabled = true; }
         finally { sending = false; }
     }
 }

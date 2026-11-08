@@ -41,7 +41,7 @@ public sealed class StaffActivationWindow:Window
                         if(password.Password!=confirm.Password)throw new InvalidOperationException("비밀번호 확인이 일치하지 않습니다.");
                         if(policy.Documents.Any(d=>d.Required&&choices[d.Id].IsChecked!=true))throw new InvalidOperationException("필수 안내의 전문을 확인하고 체크하세요.");
                         await api.Send<JsonElement>(HttpMethod.Post,"api/activate",new StaffActivation(code.Text.Trim(),password.Password,new RegistrationAcceptance(policy.Revision,choices.Where(p=>p.Value.IsChecked==true).Select(p=>p.Key).ToArray())));
-                        MessageBox.Show(this,"설정 완료. 개인 비밀번호로 다시 로그인하세요.","계정 활성화");DialogResult=true;
+                        Notice.Show(this,"설정 완료. 개인 비밀번호로 다시 로그인하세요.","계정 활성화");DialogResult=true;
                     }
                     catch(Exception e){feedback.Text=e.Message;}finally{password.Clear();confirm.Clear();busy=false;save.IsEnabled=policy.CanRegister;}
                 };

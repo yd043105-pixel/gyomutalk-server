@@ -2,7 +2,7 @@
  <DockPanel Background="{DynamicResource Surface}">
   <StackPanel DockPanel.Dock="Top" Margin="18,14"><TextBlock x:Name="Heading" Text="원격 지원" FontSize="20" FontWeight="Bold"/><TextBlock x:Name="Status" TextWrapping="Wrap" Margin="0,8,0,0"/><TextBlock Text="주 모니터 공유 · 화면은 녹화·저장하지 않습니다." Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,8,0,0"/></StackPanel>
   <StackPanel DockPanel.Dock="Bottom" Margin="18,12">
-   <TextBlock x:Name="Feedback" Foreground="#AD573C" TextWrapping="Wrap"/>
+   <TextBlock x:Name="Feedback" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
    <TextBlock Text="잠금·UAC·관리자 권한 화면은 직접 조작하세요. 지원은 최대 30분입니다." TextWrapping="Wrap" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,0,10"/>
    <StackPanel Orientation="Horizontal"><CheckBox x:Name="AllowControl" Content="마우스·키보드 제어 허용" VerticalAlignment="Center" Margin="0,0,14,0" Checked="PermissionChanged" Unchecked="PermissionChanged"/><Button x:Name="AcceptButton" Content="수락" Style="{StaticResource PrimaryButton}" Click="Accept" Margin="0,0,8,0"/><Button x:Name="StopButton" Content="거절·종료" Click="Stop"/></StackPanel>
   </StackPanel>

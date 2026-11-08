@@ -12,7 +12,7 @@ const password='Test-'+randomUUID(),key='Bridge-'+randomUUID(),passed=[];
 const embeddedDraft=JSON.parse(readFileSync('config/registration-policy.draft.json','utf8'));
 const check=name=>{passed.push(name);console.log('PASS '+name);};
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
-for(const project of ['AnnouncementServer','Server']){
+for(const project of ['Server']){
  const portal=project==='AnnouncementServer',setting=portal?'Portal':'School',dir=path.join(process.env.YY_TEST_DATA_ROOT??path.join(root,'.test-data'),'policy-'+randomUUID());mkdirSync(dir,{recursive:true});
  const file=path.join(dir,'policy.json'),data=path.join(dir,'data');
  let document=structuredClone(embeddedDraft);

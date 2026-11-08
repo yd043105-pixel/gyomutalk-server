@@ -69,7 +69,7 @@ public sealed partial class LocalServerWindow:Window
         Style=(Style)FindResource("SchoolWindow");
         BuildDashboard();
         autoProgram.IsChecked=startup.Enabled;
-        autoProgram.Click+=(_,_)=>{try{startup.SetEnabled(autoProgram.IsChecked==true);}catch(Exception e){autoProgram.IsChecked=startup.Enabled;MessageBox.Show(this,e.Message,"자동 실행 설정 실패");}};
+        autoProgram.Click+=(_,_)=>{try{startup.SetEnabled(autoProgram.IsChecked==true);}catch(Exception e){autoProgram.IsChecked=startup.Enabled;Notice.Show(this,e.Message,"자동 실행 설정 실패");}};
         LoadSettings();
         Icon=System.Windows.Media.Imaging.BitmapFrame.Create(new Uri("pack://application:,,,/Assets/admin_mark.ico"));tray=new System.Windows.Forms.NotifyIcon{Icon=Branding.AdminTrayIcon,Text="교무톡 관리자",Visible=true};var menu=new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("관리자 프로그램 열기",null,(_,_)=>Dispatcher.Invoke(()=>{Show();WindowState=WindowState.Normal;Activate();}));menu.Items.Add("서버 중지 후 프로그램 종료",null,async(_,_)=>await Dispatcher.InvokeAsync(Exit).Task.Unwrap());tray.ContextMenuStrip=menu;tray.DoubleClick+=(_,_)=>Dispatcher.Invoke(()=>{Show();Activate();});
@@ -138,7 +138,7 @@ public sealed partial class LocalServerWindow:Window
     async Task Stop(ServerCard c)
     {
         if(c.Busy)return;
-        if(MessageBox.Show(this,"연결된 사용자의 서비스가 중단됩니다. 이 서버를 중지할까요?","서버 중지",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+        if(Notice.Show(this,"연결된 사용자의 서비스가 중단됩니다. 이 서버를 중지할까요?","서버 중지",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
         c.Busy=true;Refresh();try{await SignOutAdministrator(c.Service);await c.Host.Stop();}catch(Exception e){c.Host.WriteOutput(e.Message);}finally{c.Busy=false;Refresh();}
     }
     void OpenAdmin(ServerCard c)
@@ -148,15 +148,15 @@ public sealed partial class LocalServerWindow:Window
     async Task Exit()
     {
         if(cards.Any(c=>c.Busy))return;
-        if(cards.Any(c=>c.Host.Running)&&MessageBox.Show(this,"가동 중인 서버를 정상 중지한 뒤 관리 프로그램을 종료할까요?","프로그램 종료",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+        if(cards.Any(c=>c.Host.Running)&&Notice.Show(this,"가동 중인 서버를 정상 중지한 뒤 관리 프로그램을 종료할까요?","프로그램 종료",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
         try{await SignOutAdministrators();foreach(var c in cards){c.Busy=true;Refresh();await c.Host.Stop();}SaveSettings();quitting=true;Close();Application.Current.Shutdown();}
-        catch(Exception e){MessageBox.Show(this,e.Message,"종료 대기");}finally{foreach(var c in cards)c.Busy=false;Refresh();}
+        catch(Exception e){Notice.Show(this,e.Message,"종료 대기");}finally{foreach(var c in cards)c.Busy=false;Refresh();}
     }
     void SaveSettings()
     {
         if(loadingSettings)return;
         try{var path=Path.Combine(directory,"manager.json");var temp=path+".tmp";File.WriteAllText(temp,JsonSerializer.Serialize(cards.Select(c=>new Settings(c.Service,c.Mode.SelectedIndex==0,c.Data.Text,c.Config.Text,c.Auto.IsChecked==true,c.Mode.SelectedIndex,c.School.Text.Trim(),c.AdminUsername.Text.Trim(),c.SimpleData.Text,c.Backup.Text,c.Approval.Text,c.ApprovalSha256,c.ReviewedAt,c.SchoolId,c.Activated,c.Ups.IsChecked==true,c.SchoolPick?.Selected?.Address??""))));File.Move(temp,path,true);}
-        catch(Exception e)when(e is IOException or UnauthorizedAccessException){MessageBox.Show(this,"서버 관리 설정을 저장하지 못했습니다. 저장 공간과 폴더 권한을 확인하세요.\n"+e.Message,"설정 저장 실패");}
+        catch(Exception e)when(e is IOException or UnauthorizedAccessException){Notice.Show(this,"서버 관리 설정을 저장하지 못했습니다. 저장 공간과 폴더 권한을 확인하세요.\n"+e.Message,"설정 저장 실패");}
     }
     void LoadSettings()
     {
@@ -166,7 +166,7 @@ public sealed partial class LocalServerWindow:Window
             var path=Path.Combine(directory,"manager.json");if(!File.Exists(path))return;var values=JsonSerializer.Deserialize<Settings[]>(File.ReadAllText(path));
             foreach(var s in values??[]){var c=cards.FirstOrDefault(c=>c.Service==s.Service);if(c is null)continue;c.Data.Text=s.Data;c.Config.Text=s.Config;c.Mode.SelectedIndex=s.Mode is >=0 and <=2?s.Mode:s.Trial?0:1;c.Auto.IsChecked=s.Auto;
                 if(c.SchoolPick is {} pick)pick.Set(s.School,s.SchoolAddress);else c.School.Text=s.School;c.AdminUsername.Text=s.AdminUsername;if(s.SimpleData.Length>0)c.SimpleData.Text=s.SimpleData;if(s.Backup.Length>0)c.Backup.Text=s.Backup;c.Approval.Text=s.Approval;c.ApprovalSha256=s.ApprovalSha256;c.ReviewedAt=s.ReviewedAt;c.SchoolId=s.SchoolId;c.Activated=s.Activated;c.Ups.IsChecked=s.Ups;}
-        }catch(Exception e)when(e is IOException or JsonException){MessageBox.Show(this,"서버 관리 설정을 읽지 못했습니다. 데이터·운영 설정 경로를 다시 확인하세요.");}
+        }catch(Exception e)when(e is IOException or JsonException){Notice.Show(this,"서버 관리 설정을 읽지 못했습니다. 데이터·운영 설정 경로를 다시 확인하세요.");}
         finally{loadingSettings=false;}
     }
 }

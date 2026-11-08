@@ -63,7 +63,7 @@ public partial class ChatWindow : Window
     {
         menuRoom = (ItemsControl.ContainerFromElement(Rooms, (DependencyObject)e.OriginalSource) as ListBoxItem)?.DataContext as ChatRoom;
         if (menuRoom is null) { e.Handled = true; return; }
-        MuteItem.Header = menuRoom.Muted ? "이 방 알림 켜기" : "이 방 알림 끄기"; LeaveItem.Header = menuRoom.Direct ? "목록에서 지우기" : "대화방 나가기";
+        MuteItem.Header = menuRoom.Muted ? "이 방 알림 켜기" : "이 방 알림 끄기"; MuteGlyph.Data = (Geometry)FindResource(menuRoom.Muted ? "BellOn" : "BellOff"); LeaveItem.Header = menuRoom.Direct ? "목록에서 지우기" : "대화방 나가기";
     }
     async void RenameRoom(object sender, RoutedEventArgs e)
     {
@@ -93,7 +93,7 @@ public partial class ChatWindow : Window
     {
         if (menuRoom is not { } room) return;
         var warning = room.Direct ? $"{room.Display} 대화를 내 목록에서 지울까요?\n상대방의 대화는 그대로이고, 상대방이 새 메시지를 보내면 다시 나타납니다." : $"{room.Display} 대화방에서 나갈까요?\n나간 뒤에는 이 대화방을 다시 볼 수 없습니다.";
-        if (MessageBox.Show(this, warning, room.Direct ? "목록에서 지우기" : "대화방 나가기", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+        if (Notice.Show(this, warning, room.Direct ? "목록에서 지우기" : "대화방 나가기", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
         await Run(async () => { await main.Api!.Send<JsonElement>(HttpMethod.Post, $"api/chats/{room.Id}/leave"); if (!room.Direct) main.Archive.DropRoom(room.Id); main.MutedRooms.Remove(room.Id); main.SavePreferences(); await ReloadRooms(); });
     }
     async void SelectRoom(object sender, SelectionChangedEventArgs e)

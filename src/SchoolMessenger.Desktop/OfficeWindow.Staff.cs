@@ -21,14 +21,14 @@ public sealed partial class OfficeWindow
     // Reissues every pending activation code and saves them as one CSV the administrator hands out.
     async Task DownloadActivationCodes()
     {
-        if(MessageBox.Show(InteractionOwner,"아직 활성화하지 않은 교직원의 활성화 번호를 모두 새로 발급해 CSV 파일로 저장합니다.\n\n이전에 전달한 번호는 더 이상 쓸 수 없습니다. 파일에는 개인별 활성화 번호가 들어 있으니 배부한 뒤 삭제하세요.","활성화 번호 일괄 받기",MessageBoxButton.OKCancel)!=MessageBoxResult.OK)return;
+        if(Notice.Show(InteractionOwner,"아직 활성화하지 않은 교직원의 활성화 번호를 모두 새로 발급해 CSV 파일로 저장합니다.\n\n이전에 전달한 번호는 더 이상 쓸 수 없습니다. 파일에는 개인별 활성화 번호가 들어 있으니 배부한 뒤 삭제하세요.","활성화 번호 일괄 받기",MessageBoxButton.OKCancel)!=MessageBoxResult.OK)return;
         var picker=new Microsoft.Win32.SaveFileDialog{Filter="CSV 파일|*.csv",FileName="교직원-활성화번호-"+DateTime.Now.ToString("yyyyMMdd")+".csv"};if(picker.ShowDialog(InteractionOwner)!=true)return;
         var list=await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff/activation-codes",new{});
         static string Cell(string value){if(value.Length>0&&"=+-@".Contains(value.TrimStart().FirstOrDefault()))value="'"+value;return "\""+value.Replace("\"","\"\"")+"\"";}
         var lines=new List<string>{"이름,부서,직책,로그인 아이디,활성화 번호,유효 기한"};
         foreach(var p in list.EnumerateArray())lines.Add(string.Join(",",new[]{Value(p,"name"),Value(p,"department"),Value(p,"position"),Value(p,"loginName"),Value(p,"activationCode"),DateTimeOffset.FromUnixTimeMilliseconds(p.GetProperty("expiresAt").GetInt64()).ToLocalTime().ToString("yyyy-MM-dd HH:mm")}.Select(Cell)));
         System.IO.File.WriteAllText(picker.FileName,string.Join("\r\n",lines)+"\r\n",new System.Text.UTF8Encoding(true));
-        MessageBox.Show(InteractionOwner,list.GetArrayLength()+"명의 활성화 번호를 저장했습니다. 유효 기간은 7일입니다.\n교직원은 처음 비밀번호로 로그인한 뒤 이 번호를 입력합니다.","활성화 번호 일괄 받기");
+        Notice.Show(InteractionOwner,list.GetArrayLength()+"명의 활성화 번호를 저장했습니다. 유효 기간은 7일입니다.\n교직원은 처음 비밀번호로 로그인한 뒤 이 번호를 입력합니다.","활성화 번호 일괄 받기");
     }
     async Task StaffList()
     {
@@ -165,16 +165,16 @@ public sealed partial class OfficeWindow
             });
             toggleActive.Click+=async(_,_)=>await Run(async()=>
             {
-                if(s.Active&&MessageBox.Show(InteractionOwner,s.Name+" 님의 계정을 중지할까요?\n모든 기기에서 바로 로그아웃되고, 다시 사용으로 되돌릴 수 있습니다.","계정 사용 중지",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+                if(s.Active&&Notice.Show(InteractionOwner,s.Name+" 님의 계정을 중지할까요?\n모든 기기에서 바로 로그아웃되고, 다시 사용으로 되돌릴 수 있습니다.","계정 사용 중지",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
                 await api.Send<JsonElement>(HttpMethod.Patch,"api/admin/users/"+s.Id,new{name=s.Name,department=s.Department,position=s.Position,password="",isAdmin=s.Admin,canBroadcast=s.Broadcast,active=!s.Active});await api.RefreshSession();await StaffList();
             });
             reset.Click+=async(_,_)=>await Run(async()=>
             {
-                if(MessageBox.Show(InteractionOwner,s.Name+" 님의 계정을 초기화할까요?\n\n아이디 "+s.Username+"와 초기 비밀번호 12345678로 바뀌고, 모든 기기에서 로그아웃됩니다. 새 활성화 번호로 다시 시작해야 합니다."+(s.Active?"":"\n\n지금 사용 중지 상태인 계정이며, 초기화하면 다시 사용할 수 있게 됩니다."),"교직원 계정 초기화",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+                if(Notice.Show(InteractionOwner,s.Name+" 님의 계정을 초기화할까요?\n\n아이디 "+s.Username+"와 초기 비밀번호 12345678로 바뀌고, 모든 기기에서 로그아웃됩니다. 새 활성화 번호로 다시 시작해야 합니다."+(s.Active?"":"\n\n지금 사용 중지 상태인 계정이며, 초기화하면 다시 사용할 수 있게 됩니다."),"교직원 계정 초기화",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
                 var result=await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff/"+s.Id+"/reset",new StaffAccountRequest(s.Username,s.Name,s.Department,null,"12345678",UseSharedPassword:true));
                 // New sign-in details are for handing to this person, so a stopped account comes back with them.
                 if(!s.Active)await api.Send<JsonElement>(HttpMethod.Patch,"api/admin/users/"+s.Id,new{name=s.Name,department=s.Department,position=s.Position,password="",isAdmin=s.Admin,canBroadcast=s.Broadcast,active=true});
-                MessageBox.Show(InteractionOwner,"개별 전달할 활성화 번호:\n"+result.GetProperty("activationCode").GetString()+"\n유효 기간: 7일. 번호는 이 화면에서만 표시됩니다.","계정 초기화");await StaffList();
+                Notice.Show(InteractionOwner,"개별 전달할 활성화 번호:\n"+result.GetProperty("activationCode").GetString()+"\n유효 기간: 7일. 번호는 이 화면에서만 표시됩니다.","계정 초기화");await StaffList();
             });
         }
         if(staff.All(s=>s.Id!=selectedStaff))selectedStaff=staff.FirstOrDefault()?.Id;
@@ -233,7 +233,7 @@ public sealed partial class OfficeWindow
         register.Click+=async(_,_)=>await Run(async()=>
         {
             var value=await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff",new StaffAccountRequest(login.Text.Trim(),name.Text,department.Text,ip.Text,"12345678",position.Text,true));
-            MessageBox.Show(InteractionOwner,"개별 전달할 활성화 번호:\n"+value.GetProperty("activationCode").GetString()+"\n유효 기간: 7일. 번호는 이 화면에서만 표시됩니다.","교직원 등록");var added=name.Text.Trim();await Administration();error.Text=added+" 님을 등록했습니다.";
+            Notice.Show(InteractionOwner,"개별 전달할 활성화 번호:\n"+value.GetProperty("activationCode").GetString()+"\n유효 기간: 7일. 번호는 이 화면에서만 표시됩니다.","교직원 등록");var added=name.Text.Trim();await Administration();error.Text=added+" 님을 등록했습니다.";
         });
         var formCard=AdminUi.Card(form);formCard.VerticalAlignment=VerticalAlignment.Top;content.Children.Add(formCard);
         // Sign-up requests waiting for approval.
@@ -244,7 +244,7 @@ public sealed partial class OfficeWindow
             var approve=new Button{Content="승인",Margin=new Thickness(6,0,0,0)};approve.SetResourceReference(StyleProperty,"PrimaryButton");AutomationProperties.SetName(approve,who+" 신청 승인");
             var reject=new Button{Content="반려",Margin=new Thickness(6,0,0,0)};AutomationProperties.SetName(reject,who+" 신청 반려");
             approve.Click+=async(_,_)=>await Run(async()=>{await api.Send<JsonElement>(HttpMethod.Post,"api/admin/registrations/"+id+"/approve");await Administration();error.Text=who+" 님의 가입을 승인했습니다.";});
-            reject.Click+=async(_,_)=>await Run(async()=>{if(MessageBox.Show(InteractionOwner,who+" 님의 가입 신청을 반려할까요?","가입 신청 반려",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;await api.Send<JsonElement>(HttpMethod.Post,"api/admin/registrations/"+id+"/reject");await Administration();});
+            reject.Click+=async(_,_)=>await Run(async()=>{if(Notice.Show(InteractionOwner,who+" 님의 가입 신청을 반려할까요?","가입 신청 반려",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;await api.Send<JsonElement>(HttpMethod.Post,"api/admin/registrations/"+id+"/reject");await Administration();});
             foreach(var b in new[]{reject,approve}){DockPanel.SetDock(b,Dock.Right);row.Children.Add(b);}
             row.Children.Add(AdminUi.Avatar(who));var text=new StackPanel{Margin=new Thickness(10,0,8,0),VerticalAlignment=VerticalAlignment.Center};text.Children.Add(AdminUi.Label(who,"Ink",14,true));
             var created=request.TryGetProperty("createdAt",out var at)&&at.ValueKind==JsonValueKind.Number?DateTimeOffset.FromUnixTimeMilliseconds(at.GetInt64()).ToOffset(TimeSpan.FromHours(9)).ToString("M월 d일 신청"):"";

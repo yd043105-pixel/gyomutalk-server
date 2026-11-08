@@ -26,11 +26,11 @@ public sealed class FeedbackWindow:Window
         var view=new ScrollViewer{Content=body,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};AdminUi.Page(this,view);var initialized=false;view.Loaded+=async(_,_)=>{if(initialized)return;initialized=true;await Run(administration?()=>List(true):Home);};
     }
     void Text(string text)=>body.Children.Add(new TextBlock{Text=text,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,5,0,5)});
-    void Button(string label,Func<Task> action){var button=new Button{Content=label,Margin=new Thickness(0,6,0,0),Padding=new Thickness(8)};button.Click+=async(_,_)=>await Run(action);body.Children.Add(button);}
+    void Button(string label,Func<Task> action){var button=AdminUi.Tone(new Button{Content=label,Margin=new Thickness(0,6,0,0),Padding=new Thickness(8)},label);button.Click+=async(_,_)=>await Run(action);body.Children.Add(button);}
     async Task Run(Func<Task> action){if(busy)return;busy=true;body.IsEnabled=false;result.Text="";try{await action();}catch(Exception error){result.Text=error.Message;}finally{busy=false;body.IsEnabled=true;}}
     async Task Home()
     {
-        body.Children.Clear();Text(privacy?"개인정보 열람·정정·삭제·처리정지 요청":"오류 신고 · 개선 의견");body.Children.Add(result);
+        body.Children.Clear();body.Children.Add(AdminUi.Heading(privacy?"개인정보 요청":"오류 신고 · 개선 의견",22));Text(privacy?"열람·정정·삭제·처리정지를 요청할 수 있습니다.":"불편한 점이나 바라는 점을 학교에 알려 주세요.");body.Children.Add(result);
         if(privacy){var policy=await api.Get<RegistrationPolicySet>("api/registration/policy");Text("처리 주체: "+policy.Operator+"\n문의: "+policy.Contact);}
         Text(privacy?"학교가 로그인 계정과 요청 내용을 확인하여 처리하고 이 화면에 회신합니다. 요청만으로 계정이나 자료가 즉시 삭제되지는 않습니다. 비밀번호·주민등록번호·증명서 사진을 적거나 첨부하지 마세요. 로그인할 수 없거나 다른 방식의 도움이 필요하면 위 학교 문의처로 연락하세요.":"이름·학번·연락처·비밀번호·메시지 본문은 넣지 마세요. 신고는 학교 서버에 보관되며 자동으로 GitHub에 공개되지 않습니다.");
         var kind=new ComboBox{ItemsSource=privacy?new[]{"개인정보 열람","개인정보 정정","개인정보 삭제·탈퇴·동의 철회","개인정보 처리정지"}:new[]{"오류 신고","개선 의견"},SelectedIndex=0};body.Children.Add(kind);

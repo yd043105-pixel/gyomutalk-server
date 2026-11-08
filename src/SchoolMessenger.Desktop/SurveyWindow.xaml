@@ -5,7 +5,7 @@
     <DockPanel><Button DockPanel.Dock="Right" Content="새 설문" Click="NewSurvey" Style="{StaticResource PrimaryButton}"/><TextBlock Text="설문" FontSize="22" FontWeight="Bold" VerticalAlignment="Center"/></DockPanel>
     <StackPanel Orientation="Horizontal" Margin="-4,4,0,0"><Button x:Name="ReceivedTab" Style="{StaticResource TabButton}" Content="받은 설문" Uid="received" Click="ChangeBox"/><Button x:Name="SentTab" Style="{StaticResource TabButton}" Content="보낸 설문" Uid="sent" Click="ChangeBox"/></StackPanel>
    </StackPanel></Border>
-   <TextBlock x:Name="Feedback" DockPanel.Dock="Bottom" Foreground="#AD573C" TextWrapping="Wrap" Margin="24,8"><TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed"/></Trigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+   <TextBlock x:Name="Feedback" DockPanel.Dock="Bottom" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Padding="24,10" Background="{DynamicResource Subtle}"><TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers><Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed"/></Trigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
    <Grid>
    <ContentControl x:Name="EmptyHost" Visibility="Collapsed" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
    <Grid x:Name="BrowseBody"><Grid.ColumnDefinitions><ColumnDefinition Width="300"/><ColumnDefinition/></Grid.ColumnDefinitions>
@@ -27,7 +27,7 @@
      </StackPanel></ScrollViewer></TabItem>
      <TabItem x:Name="ResultsTab"><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="24,20">
       <DockPanel>
-       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top"><Button x:Name="CloseButton" Content="설문 종료" Click="CloseSurvey" Style="{StaticResource SubtleButton}" Margin="8,0,8,0"/><Button Content="CSV 저장" Click="ExportResults"/></StackPanel>
+       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top"><Button x:Name="CloseButton" Content="설문 종료" Click="CloseSurvey" Style="{StaticResource DangerButton}" Margin="8,0,8,0"/><Button Content="CSV 저장" Click="ExportResults"/></StackPanel>
        <WrapPanel VerticalAlignment="Center"><TextBlock x:Name="ResultTitle" FontSize="15" FontWeight="Bold" TextWrapping="Wrap" VerticalAlignment="Center" Margin="0,0,8,0"/><Border x:Name="ResultTag" Background="{DynamicResource Pale}" CornerRadius="10" Padding="9,2" VerticalAlignment="Center" Visibility="Collapsed"><TextBlock Text="익명" FontSize="12" FontWeight="SemiBold" Foreground="{DynamicResource Blue}"/></Border></WrapPanel>
       </DockPanel>
       <TextBlock x:Name="ResultSummary" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,8,0,12"/>
@@ -41,7 +41,7 @@
   <DockPanel x:Name="CreatePane" Visibility="Collapsed">
    <Border DockPanel.Dock="Bottom" Background="{DynamicResource Subtle}" BorderBrush="{DynamicResource Line}" BorderThickness="0,1,0,0" Padding="24,12"><DockPanel>
     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"><Button Content="취소" Click="CancelCreate" Style="{StaticResource SubtleButton}" Margin="0,0,8,0"/><Button x:Name="CreateButton" Content="게시" Click="CreateClick" Style="{StaticResource PrimaryButton}"/></StackPanel>
-    <TextBlock x:Name="CreateFeedback" Foreground="#AD573C" TextWrapping="Wrap" VerticalAlignment="Center"/>
+    <TextBlock x:Name="CreateFeedback" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" VerticalAlignment="Center"/>
    </DockPanel></Border>
    <ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel Margin="24,20">
     <TextBlock Text="새 설문" FontSize="22" FontWeight="Bold"/>

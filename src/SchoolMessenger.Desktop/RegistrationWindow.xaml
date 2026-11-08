@@ -8,5 +8,5 @@
   <TextBlock Text="비밀번호 · 12~128자" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,12,0,6"/><PasswordBox x:Name="PasswordBox" MaxLength="128"/>
   <TextBlock Text="비밀번호 확인" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,12,0,6"/><PasswordBox x:Name="ConfirmBox" MaxLength="128"/>
  <StackPanel x:Name="PolicyPanel" Margin="0,14,0,0"/>
- </StackPanel></ScrollViewer><StackPanel Grid.Row="1"><TextBlock x:Name="Feedback" Foreground="{DynamicResource Blue}" FontSize="11" TextWrapping="Wrap" Margin="0,12,0,12"/><Button x:Name="SubmitButton" IsEnabled="False" Content="관리자에게 계정 신청" Style="{StaticResource PrimaryButton}" Click="SubmitClick"/><TextBlock Text="승인 전에는 메시지와 교직원 목록에 접근할 수 없습니다." Foreground="{DynamicResource Muted}" FontSize="10" TextWrapping="Wrap" Margin="0,12,0,0"/></StackPanel></Grid>
+ </StackPanel></ScrollViewer><StackPanel Grid.Row="1"><TextBlock x:Name="Feedback" Foreground="{DynamicResource Blue}" FontSize="11" TextWrapping="Wrap" Margin="0,12,0,12"/><Button x:Name="SubmitButton" IsEnabled="False" Content="관리자에게 계정 신청" Style="{StaticResource PrimaryButton}" Click="SubmitClick"/><TextBlock Text="승인 전에는 메시지와 교직원 목록에 접근할 수 없습니다." Foreground="{DynamicResource Muted}" FontSize="11" TextWrapping="Wrap" Margin="0,12,0,0"/></StackPanel></Grid>
 </Window>

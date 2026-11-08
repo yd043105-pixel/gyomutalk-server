@@ -65,7 +65,7 @@ public sealed class RemoteClient(MainWindow main, Api? connectionApi = null) : I
     public async Task Request(string target, bool shareMine)
     {
         if (Offer is not null) throw new InvalidOperationException("현재 원격 지원을 먼저 종료하세요.");
-        if (shareMine && MessageBox.Show(main, "상대가 수락하면 내 주 모니터 화면과 마우스·키보드를 공유합니다. 요청하시겠습니까?", "원격 지원 받기", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+        if (shareMine && Notice.Show(main, "상대가 수락하면 내 주 모니터 화면과 마우스·키보드를 공유합니다. 요청하시겠습니까?", "원격 지원 받기", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
         await Connect(); IsTarget = false; LastFailure = null;
         var offer = await hub!.InvokeAsync<RemoteOffer>("Request", target, shareMine, true);
         if (endedOffers.Contains(offer.Id)) throw new InvalidOperationException("상대방이 요청을 종료했습니다.");

@@ -44,6 +44,7 @@ public partial class ComposeWindow
         Self(true);if(!people.Where(p=>p.Selected).Select(p=>p.Id).Order().SequenceEqual(others.Append(me).Order()))throw new InvalidOperationException("나에게도 보내기가 기존 수신자를 지웠습니다");
         Self(false);if(!people.Where(p=>p.Selected).Select(p=>p.Id).Order().SequenceEqual(others.Order()))throw new InvalidOperationException("나에게도 보내기 해제 실패");
         foreach(var person in people)person.Selected=person.Id==me;RefreshRecipients();if(SelfBox.IsChecked!=true)throw new InvalidOperationException("나에게도 보내기 표시 실패");
+        if(RecipientChips.Children.Count!=1)throw new InvalidOperationException("수신자 칩이 두 번 그려졌습니다");
         var chip=(Border)RecipientChips.Children[0];((StackPanel)chip.Child).Children.OfType<Button>().Single().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         if(people.Any(p=>p.Selected)||SelfBox.IsChecked!=false)throw new InvalidOperationException("수신자 삭제 검증 실패");
         foreach(var person in people)person.Selected=original.Contains(person.Id);RefreshRecipients();

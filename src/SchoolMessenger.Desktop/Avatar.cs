@@ -15,20 +15,20 @@ static class Avatar
     ];
     static Color Hex(string value) => (Color)ColorConverter.ConvertFromString(value);
     // Stable across runs (string.GetHashCode is randomized per process).
-    static int Slot(string seed) { var sum = 0; foreach (var c in seed) sum = sum * 31 + c; return (int)((uint)sum % (uint)Tints.Length); }
+    static int Slot(string? seed) { var sum = 0; foreach (var c in seed ?? "") sum = sum * 31 + c; return (int)((uint)sum % (uint)Tints.Length); }
 
     // For data templates: the same tint pair as Create.
-    public static Brush Back(string seed) => SystemParameters.HighContrast ? SystemColors.WindowBrush : new SolidColorBrush(Tints[Slot(seed)].Back);
-    public static Brush Ink(string seed) => SystemParameters.HighContrast ? SystemColors.WindowTextBrush : new SolidColorBrush(Tints[Slot(seed)].Ink);
-    public static string Initial(string name) => name.Trim().Length > 0 ? name.Trim()[..1] : "?";
+    public static Brush Back(string? seed) => SystemParameters.HighContrast ? SystemColors.WindowBrush : new SolidColorBrush(Tints[Slot(seed)].Back);
+    public static Brush Ink(string? seed) => SystemParameters.HighContrast ? SystemColors.WindowTextBrush : new SolidColorBrush(Tints[Slot(seed)].Ink);
+    public static string Initial(string? name) => (name ?? "").Trim() is { Length: > 0 } text ? text[..1] : "?";
 
-    public static Border Create(string name, double size, string? seed = null)
+    public static Border Create(string? name, double size, string? seed = null)
     {
         var tint = Tints[Slot(string.IsNullOrWhiteSpace(seed) ? name : seed)];
         var high = SystemParameters.HighContrast;
         var letter = new TextBlock
         {
-            Text = name.Trim().Length > 0 ? name.Trim()[..1] : "?", FontSize = Math.Round(size * .4), FontWeight = FontWeights.SemiBold,
+            Text = Initial(name), FontSize = Math.Round(size * .4), FontWeight = FontWeights.SemiBold,
             Foreground = high ? SystemColors.WindowTextBrush : new SolidColorBrush(tint.Ink), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
         };
         return new Border
@@ -47,7 +47,7 @@ static class Avatar
     }
 
     // Avatar with a presence dot in the lower right corner; the tooltip and accessible name carry the state.
-    public static Grid WithPresence(string name, double size, string? seed, bool online, bool away, bool mobile, string label)
+    public static Grid WithPresence(string? name, double size, string? seed, bool online, bool away, bool mobile, string label)
     {
         var mark = new Grid { Width = size, Height = size, VerticalAlignment = VerticalAlignment.Center, ToolTip = label };
         mark.Children.Add(Create(name, size, seed)); mark.Children.Add(Dot(online, away, mobile));

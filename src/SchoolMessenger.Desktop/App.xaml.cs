@@ -4,9 +4,9 @@ public partial class App : System.Windows.Application
 {
     static bool AdministratorMode=>Environment.GetCommandLineArgs().Contains("--server-manager")||(new DirectoryInfo(AppContext.BaseDirectory).Name.Equals("admin",StringComparison.OrdinalIgnoreCase)&&File.Exists(Path.Combine(AppContext.BaseDirectory,"..","VERSION.txt"))&&File.Exists(Path.Combine(AppContext.BaseDirectory,"..","docs","server-installer.md")));
     readonly System.Threading.Mutex running = new(false, AdministratorMode?@"Local\YeoyangMessengerServerManager.Running":@"Local\YeoyangSchoolMessenger.Running");
-    System.Threading.Mutex? serverExclusive;
+    System.Threading.Mutex? serverExclusive,teacherExclusive;
     bool ownsServer;
-    protected override void OnExit(ExitEventArgs e) { DesktopUpdater.Cleanup();if(ownsServer)serverExclusive?.ReleaseMutex();serverExclusive?.Dispose();running.Dispose();base.OnExit(e); }
+    protected override void OnExit(ExitEventArgs e) { DesktopUpdater.Cleanup();teacherExclusive?.Dispose();if(ownsServer)serverExclusive?.ReleaseMutex();serverExclusive?.Dispose();running.Dispose();base.OnExit(e); }
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -23,9 +23,18 @@ public partial class App : System.Windows.Application
                 }
                 new WindowsStartup(entryName:entry,command:manager?LocalServerWindow.StartupCommand:WindowsStartup.Command).SetEnabled(e.Args.Contains("enable"));Shutdown();
             }
-            catch(Exception error){MessageBox.Show(error.Message,"자동 실행 설정 실패");Shutdown(1);}
+            catch(Exception error){Notice.Show(error.Message,"자동 실행 설정 실패");Shutdown(1);}
             return;
         }
+        // A stray UI exception should not silently close the messenger: keep running, leave a local trace.
+        DispatcherUnhandledException+=(_,error)=>
+        {
+            try{var log=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"SchoolMessenger","error.log");Directory.CreateDirectory(Path.GetDirectoryName(log)!);
+                File.AppendAllText(log,$"{DateTimeOffset.Now:O} {error.Exception}{Environment.NewLine}{Environment.NewLine}");}catch(IOException){}catch(UnauthorizedAccessException){}
+            if(e.Args.Any(a=>a.StartsWith("--verify",StringComparison.Ordinal)))return;
+            error.Handled=true;
+            if(MainWindow is MainWindow main)main.StatusLabel.Text="처리하지 못한 오류가 있었습니다. 같은 문제가 계속되면 오류 신고로 알려 주세요.";
+        };
         WindowCorners.Register();
         Appearance.Apply(Appearance.Selected, Appearance.Glass);
         SystemParameters.StaticPropertyChanged += (_, args) =>
@@ -43,11 +52,22 @@ public partial class App : System.Windows.Application
         else if(AdministratorMode)
         {
             serverExclusive=new System.Threading.Mutex(true,@"Local\YeoyangMessengerServerManager.Exclusive",out ownsServer);
-            if(!ownsServer){MessageBox.Show("관리자 프로그램이 이미 실행 중입니다. 알림 영역에서 ‘교무톡 관리자’를 여세요.");Shutdown();return;}
+            if(!ownsServer){Notice.Show("관리자 프로그램이 이미 실행 중입니다. 알림 영역에서 ‘교무톡 관리자’를 여세요.");Shutdown();return;}
             MainWindow=new LocalServerWindow();MainWindow.Show();
         }
-        else{MainWindow=new MainWindow();MainWindow.Show();}
-        if(MainWindow is not null&&!e.Args.Any(a=>a.StartsWith("--verify",StringComparison.Ordinal)))DesktopUpdater.Start(MainWindow,AdministratorMode);
+        else
+        {
+            // One teacher program per data folder: a second launch (shortcut while the login-time copy runs) brings the first window forward.
+            var folder=Environment.GetEnvironmentVariable("SCHOOL_UI_LOCALDIR")??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"SchoolMessenger");
+            var key=Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(folder).ToUpperInvariant())))[..16];
+            var show=new System.Threading.EventWaitHandle(false,System.Threading.EventResetMode.AutoReset,@"Local\YeoyangSchoolMessenger.Show."+key);
+            teacherExclusive=new System.Threading.Mutex(true,@"Local\YeoyangSchoolMessenger.Exclusive."+key,out var first);
+            if(!first&&!e.Args.Any(a=>a.StartsWith("--verify",StringComparison.Ordinal))){if(!e.Args.Contains("--startup"))show.Set();show.Dispose();Shutdown();return;}
+            var main=new MainWindow();MainWindow=main;main.Show();
+            new System.Threading.Thread(()=>{while(show.WaitOne())Dispatcher.Invoke(main.ShowWindow);}){IsBackground=true}.Start();
+        }
+        // Test runs point SCHOOL_UI_LOCALDIR at a throwaway folder; they must not pop the real update check on the desktop.
+        if(MainWindow is not null&&!e.Args.Any(a=>a.StartsWith("--verify",StringComparison.Ordinal))&&Environment.GetEnvironmentVariable("SCHOOL_UI_LOCALDIR") is null)DesktopUpdater.Start(MainWindow,AdministratorMode);
     }
     void MinimizeWindow(object sender, RoutedEventArgs e) => SystemCommands.MinimizeWindow(Window.GetWindow((DependencyObject)sender));
     void MaximizeWindow(object sender, RoutedEventArgs e)

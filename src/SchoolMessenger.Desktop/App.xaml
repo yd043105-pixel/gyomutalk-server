@@ -4,18 +4,18 @@
  <ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="Theme.xaml"/></ResourceDictionary.MergedDictionaries>
   <DrawingImage x:Key="ProductMark"><DrawingImage.Drawing><DrawingGroup>
    <!-- Same artwork as Shared/Branding/brand_mark.svg -->
-   <GeometryDrawing Brush="#245BC6"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,128,128" RadiusX="29" RadiusY="29"/></GeometryDrawing.Geometry></GeometryDrawing>
+   <GeometryDrawing Brush="#2463EB"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,128,128" RadiusX="29" RadiusY="29"/></GeometryDrawing.Geometry></GeometryDrawing>
    <GeometryDrawing Brush="#A9D9EC" Geometry="M57 25h32c11 0 18 7 18 18v16c0 10-6 17-16 18l-12 10V75H57c-11 0-18-7-18-18V43c0-11 7-18 18-18Z"/>
    <GeometryDrawing Brush="White" Geometry="M38 44h34c11 0 19 8 19 19v17c0 11-8 19-19 19H53l-18 13V98c-10-1-16-8-16-18V63c0-11 8-19 19-19Z"/>
-   <GeometryDrawing Geometry="M38 64h33M38 78h21"><GeometryDrawing.Pen><Pen Brush="#245BC6" Thickness="7" StartLineCap="Round" EndLineCap="Round"/></GeometryDrawing.Pen></GeometryDrawing>
+   <GeometryDrawing Geometry="M38 64h33M38 78h21"><GeometryDrawing.Pen><Pen Brush="#2463EB" Thickness="7" StartLineCap="Round" EndLineCap="Round"/></GeometryDrawing.Pen></GeometryDrawing>
   </DrawingGroup></DrawingImage.Drawing></DrawingImage>
   <Style x:Key="SchoolWindow" TargetType="Window">
    <Setter Property="Icon" Value="/Assets/brand_mark.ico"/>
-   <Setter Property="FontFamily" Value="Malgun Gothic"/><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="{DynamicResource Ink}"/><Setter Property="Background" Value="{DynamicResource Canvas}"/>
+   <Setter Property="FontFamily" Value="Malgun Gothic"/><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="{DynamicResource Ink}"/><Setter Property="Background" Value="{DynamicResource Surface}"/>
    <Setter Property="WindowStyle" Value="None"/><Setter Property="UseLayoutRounding" Value="True"/>
    <Setter Property="shell:WindowChrome.WindowChrome"><Setter.Value><shell:WindowChrome CaptionHeight="38" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/></Setter.Value></Setter>
    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Window">
-    <Border x:Name="Frame" Background="{DynamicResource Canvas}">
+    <Border x:Name="Frame" Background="{TemplateBinding Background}">
      <Grid><Grid.RowDefinitions><RowDefinition Height="38"/><RowDefinition/></Grid.RowDefinitions>
       <Border Background="{DynamicResource Glass}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1">
        <Grid Margin="13,0,6,0"><Grid.ColumnDefinitions><ColumnDefinition Width="35"/><ColumnDefinition/><ColumnDefinition Width="96"/></Grid.ColumnDefinitions>
@@ -31,6 +31,7 @@
       <AdornerDecorator Grid.Row="1"><ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"/></AdornerDecorator>
      </Grid>
     </Border>
+   <ControlTemplate.Triggers><Trigger Property="ResizeMode" Value="NoResize"><Setter TargetName="MinimizeAction" Property="Visibility" Value="Collapsed"/><Setter TargetName="MaximizeAction" Property="Visibility" Value="Collapsed"/></Trigger></ControlTemplate.Triggers>
    </ControlTemplate></Setter.Value></Setter>
   </Style>
  </ResourceDictionary>

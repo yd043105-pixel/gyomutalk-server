@@ -31,7 +31,7 @@ public sealed partial class OfficeWindow:Window
         if(card){surface.SetResourceReference(Border.BackgroundProperty,"Surface");surface.SetResourceReference(Border.BorderBrushProperty,"Line");}else surface.Background=null;
     }
     static TextBlock Text(string text,int size=14)=>new(){Text=text,FontSize=size,FontWeight=size>=20?FontWeights.Bold:FontWeights.Normal,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,8,0,6)};
-    void Button(string label,Func<Task> action){var b=new Button{Content=label,Margin=new Thickness(0,4,0,8),HorizontalAlignment=HorizontalAlignment.Left};b.Click+=async(_,_)=>await Run(action);body.Children.Add(b);}
+    void Button(string label,Func<Task> action){var b=AdminUi.Tone(new Button{Content=label,Margin=new Thickness(0,4,0,8),HorizontalAlignment=HorizontalAlignment.Left},label);b.Click+=async(_,_)=>await Run(action);body.Children.Add(b);}
     TextBox Field(string label,string value=""){body.Children.Add(Text(label));var box=new TextBox{Text=value};body.Children.Add(box);return box;}
     async Task Run(Func<Task> action){if(busy)return;busy=true;body.IsEnabled=false;error.Text="";try{await action();}catch(Exception e){error.Text=e.Message;}finally{busy=false;body.IsEnabled=true;}}
     static string Date(JsonElement row,string key)=>DateTimeOffset.FromUnixTimeMilliseconds(row.GetProperty(key).GetInt64()).ToOffset(TimeSpan.FromHours(9)).ToString("M/d HH:mm");
@@ -39,7 +39,7 @@ public sealed partial class OfficeWindow:Window
     async Task Load(bool bookings)
     {
         setup=await api.Get<JsonElement>("api/office/setup");Page(false);body.Margin=new Thickness(Embedded?0:24,Embedded?0:16,Embedded?0:24,Embedded?0:16);
-        var head=new DockPanel();var canAdd=bookings||setup.GetProperty("calendarManager").GetBoolean();
+        var head=new DockPanel();var canAdd=bookings?setup.GetProperty("rooms").EnumerateArray().Any(r=>r.GetProperty("active").GetBoolean()):setup.GetProperty("calendarManager").GetBoolean();
         if(canAdd){var add=new Button{Content=bookings?"특별실 예약하기":"학교 일정 등록"};add.SetResourceReference(StyleProperty,"PrimaryButton");add.Click+=async(_,_)=>await Run(()=>Editor(bookings,null));DockPanel.SetDock(add,Dock.Right);head.Children.Add(add);}
         if(bookings&&setup.GetProperty("roomManager").GetBoolean()){var rooms=new Button{Content="특별실 관리",Margin=new Thickness(0,0,8,0)};rooms.Click+=async(_,_)=>await Run(Rooms);DockPanel.SetDock(rooms,Dock.Right);head.Children.Add(rooms);}
         head.Children.Add(AdminUi.Heading("학사일정 · 특별실",22));body.Children.Add(head);

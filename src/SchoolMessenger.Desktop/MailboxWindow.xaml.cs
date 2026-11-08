@@ -13,6 +13,9 @@ public partial class MailboxWindow : Window
     string box;
     Detail? detail;
     bool refreshing, rendering;
+    // A background refresh (a push from the server) must not wipe a notice the teacher just caused.
+    DateTime noticeUntil;
+    void Notify(string text) { StatusLabel.Text = text; noticeUntil = DateTime.UtcNow.AddSeconds(10); }
     int detailsOpening;
     public MailboxWindow(MainWindow main, string box = "received", Person? person = null)
     {
@@ -54,7 +57,7 @@ public partial class MailboxWindow : Window
             if (selected is not null && messages.Any(m=>m.Id==selected)) await OpenDetail(selected, markRead: false);
             else if(!more){detail=null;ResetTaskPrompt();DetailBody.Text="";DetailTitle.Text="";FileList.ItemsSource=null;ReceiptList.ItemsSource=null;DetailPanel.Visibility=Visibility.Collapsed;EmptyHint.Visibility=Visibility.Visible;}
             ConnectionLabel.Text = "이 PC에 저장된 메시지만 보입니다 · 첨부파일은 업로드 후 30일간 보관됩니다.";
-            StatusLabel.Text = "";
+            if (DateTime.UtcNow > noticeUntil) StatusLabel.Text = "";
         }
         finally { refreshing = false; rendering = false; }
     }
@@ -186,8 +189,8 @@ public partial class MailboxWindow : Window
         var id=detail.Message.Id;
         var prompt="메시지를 회수할까요? 읽은 사람을 포함한 전체 수신자의 메시지함과 첨부 접근에서 제거됩니다. 이미 저장한 사본은 회수할 수 없습니다.";
         if(detail.SubmissionRequest)prompt+="\n연결된 파일 제출 요청도 종료됩니다.";
-        if(MessageBox.Show(this,prompt,"메시지 회수",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
-        await Run(async()=>{await Api.Send<JsonElement>(HttpMethod.Post,$"api/messages/{id}/recall");main.Archive.Remove(id);detail=null;DetailBody.Text="";DetailPanel.Visibility=Visibility.Collapsed;EmptyHint.Visibility=Visibility.Visible;await Refresh();StatusLabel.Text="메시지를 회수했습니다.";});
+        if(Notice.Show(this,prompt,"메시지 회수",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+        await Run(async()=>{await Api.Send<JsonElement>(HttpMethod.Post,$"api/messages/{id}/recall");main.Archive.Remove(id);detail=null;DetailBody.Text="";DetailPanel.Visibility=Visibility.Collapsed;EmptyHint.Visibility=Visibility.Visible;await Refresh();Notify("메시지를 회수했습니다.");});
     }
     internal async Task VerifyRecallState()
     {
@@ -206,7 +209,7 @@ public partial class MailboxWindow : Window
     {
         if (Api is null || ((System.Windows.Controls.Button)sender).Tag is not Attachment file) return;
         var dialog = new Microsoft.Win32.SaveFileDialog { FileName = file.Name };
-        if (dialog.ShowDialog(this) == true) await Run(async () => { if(await AttachmentTransferWindow.Save(this,Api,file.Id,dialog.FileName))StatusLabel.Text = "파일을 저장했습니다."; });
+        if (dialog.ShowDialog(this) == true) await Run(async () => { if(await AttachmentTransferWindow.Save(this,Api,file.Id,dialog.FileName))Notify("파일을 저장했습니다."); });
     }
 
 }

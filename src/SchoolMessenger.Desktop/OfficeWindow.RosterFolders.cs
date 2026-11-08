@@ -26,7 +26,7 @@ public sealed partial class OfficeWindow
         Heading("조직도 폴더 관리", "학교 아래 두 단계까지 폴더를 만들 수 있습니다. 폴더를 선택한 뒤 들어갈 교직원을 체크하세요.", save,
             ("교직원 목록", async () =>
             {
-                if (!save.IsEnabled || MessageBox.Show(InteractionOwner, "저장하지 않은 조직도 변경을 취소할까요?", "조직도",
+                if (!save.IsEnabled || Notice.Show(InteractionOwner, "저장하지 않은 조직도 변경을 취소할까요?", "조직도",
                     MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes) await StaffList();
             }));
         var columns = new Grid { ColumnDefinitions =
@@ -139,7 +139,7 @@ public sealed partial class OfficeWindow
         delete.Click += (_, _) =>
         {
             if (Current() is not { } folder) return;
-            if (MessageBox.Show(InteractionOwner, $"‘{folder.Name}’ 폴더와 그 아래 폴더를 삭제할까요? 교직원 계정은 그대로 유지됩니다.",
+            if (Notice.Show(InteractionOwner, $"‘{folder.Name}’ 폴더와 그 아래 폴더를 삭제할까요? 교직원 계정은 그대로 유지됩니다.",
                 "조직도 폴더 삭제", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
             foreach (var id in folders.Values.Where(item => item.ParentId == folder.Id).Select(item => item.Id).ToArray())
                 folders.Remove(id);

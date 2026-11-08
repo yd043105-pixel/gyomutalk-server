@@ -78,7 +78,7 @@ public partial class SurveyWindow : Window
             var question = current.Questions[i]; var value = current.Answers?.ElementAtOrDefault(i) ?? "";
             AnswerPanel.Children.Add(new TextBlock { Text = $"{i + 1}. {question.Text}" + (question.Required ? " *" : ""), FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 16, 0, 8) });
             Control field;
-            if (question.Kind == "choice") { var combo = new ComboBox { ItemsSource = new[] { "" }.Concat(question.Options).ToArray(), SelectedItem = value }; field = combo; }
+            if (question.Kind == "choice") { var choices = new StackPanel(); var group = "q" + i; foreach (var option in question.Options) choices.Children.Add(new RadioButton { Content = option, GroupName = group, IsChecked = option == value, Margin = new Thickness(0, 4, 0, 4) }); field = new ContentControl { Content = choices, Focusable = false, IsTabStop = false }; }
             else field = new TextBox { Text = value, MaxLength = 2000, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 70 };
             field.IsEnabled = current.CanAnswer && !current.Closed; answers.Add(field); AnswerPanel.Children.Add(field);
         }
@@ -111,7 +111,7 @@ public partial class SurveyWindow : Window
     {
         if (busy) return;
         if (!TimeSpan.TryParseExact(DeadlineTime.Text.Trim(), @"hh\:mm", null, out var time) || DeadlineDate.SelectedDate is not DateTime date) { CreateFeedback.Text = "마감일과 시간을 확인하세요. 예: 17:00"; return; }
-        if (SendAll.IsChecked == true && MessageBox.Show(this, "전체 교직원에게 설문을 보내시겠습니까?", "전체 발송", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+        if (SendAll.IsChecked == true && Notice.Show(this, "전체 교직원에게 설문을 보내시겠습니까?", "전체 발송", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
         var qs = questions.Select(q => new SurveyQuestion(q.Text.Text.Trim(), q.Kind.SelectedIndex == 0 ? "choice" : "text", q.Required.IsChecked == true,
             q.Kind.SelectedIndex == 0 ? q.Options.Text.Split('\n').Select(o => o.Trim()).Where(o => o.Length > 0).ToArray() : [])).ToArray();
         busy = true; CreateButton.IsEnabled = false;
@@ -131,7 +131,7 @@ public partial class SurveyWindow : Window
         if (current is null || busy) return; busy = true; AnswerButton.IsEnabled = false;
         try
         {
-            var values = supplied ?? answers.Select(a => a is TextBox text ? text.Text : ((ComboBox)a).SelectedItem?.ToString() ?? "").ToArray();
+            var values = supplied ?? answers.Select(a => a is TextBox text ? text.Text : ((StackPanel)((ContentControl)a).Content).Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Content as string ?? "").ToArray();
             await main.Api!.Send<JsonElement>(HttpMethod.Post, $"api/surveys/{current.Id}/answers", new { answers = values });
             var nameless = current.Anonymous; await ShowSurvey(current.Id); await Reload(); Feedback.Text = nameless ? "익명으로 제출했습니다." : "응답을 저장했습니다. 마감 전에는 수정할 수 있습니다.";
         }
@@ -174,7 +174,7 @@ public partial class SurveyWindow : Window
     }
     async void CloseSurvey(object sender, RoutedEventArgs e)
     {
-        if (current is null || MessageBox.Show(this, "설문을 종료하면 응답을 받거나 수정할 수 없습니다. 종료하시겠습니까?", "설문 종료", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+        if (current is null || Notice.Show(this, "설문을 종료하면 응답을 받거나 수정할 수 없습니다. 종료하시겠습니까?", "설문 종료", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
         await Run(async () => { await main.Api!.Send<JsonElement>(HttpMethod.Post, $"api/surveys/{current.Id}/close"); await ShowSurvey(current.Id); await Reload(); });
     }
     public static string Csv(SurveyResults results)

@@ -22,7 +22,7 @@ public sealed class WorkWindow : Window
     readonly StackPanel detail = new() { Margin = new Thickness(24,16,24,16) };
     readonly TextBlock feedback = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(16, 8, 16, 10) };
     readonly Dictionary<string, SubmissionPacket> pending = new();
-    WrapPanel? targetsPanel;
+    System.Windows.Controls.Primitives.UniformGrid? targetsPanel;
     string view = "todos";
     int offset;
     bool busy, rendering;
@@ -50,7 +50,7 @@ public sealed class WorkWindow : Window
         list.Margin=new Thickness(12);
         ScrollViewer.SetHorizontalScrollBarVisibility(list,ScrollBarVisibility.Disabled);list.HorizontalContentAlignment=HorizontalAlignment.Stretch;
         var row=new FrameworkElementFactory(typeof(DockPanel));row.SetBinding(ToolTipService.ToolTipProperty,new Binding("Label"));
-        var doneBox=new FrameworkElementFactory(typeof(CheckBox));doneBox.SetValue(DockPanel.DockProperty,Dock.Left);doneBox.SetValue(MarginProperty,new Thickness(0,0,12,0));doneBox.SetValue(VerticalAlignmentProperty,VerticalAlignment.Center);doneBox.SetBinding(VisibilityProperty,new Binding("CanComplete"){Converter=new BooleanToVisibilityConverter()});doneBox.SetBinding(TagProperty,new Binding());doneBox.SetValue(ToolTipProperty,"완료로 표시");doneBox.AddHandler(System.Windows.Controls.Primitives.ButtonBase.ClickEvent,new RoutedEventHandler(CompleteTodo));row.AppendChild(doneBox);
+        var doneBox=new FrameworkElementFactory(typeof(CheckBox));doneBox.SetValue(DockPanel.DockProperty,Dock.Left);doneBox.SetValue(MarginProperty,new Thickness(0,0,12,0));doneBox.SetValue(VerticalAlignmentProperty,VerticalAlignment.Center);doneBox.SetBinding(VisibilityProperty,new Binding("CanComplete"){Converter=new KeepPlace()});doneBox.SetBinding(TagProperty,new Binding());doneBox.SetValue(ToolTipProperty,"완료로 표시");doneBox.AddHandler(System.Windows.Controls.Primitives.ButtonBase.ClickEvent,new RoutedEventHandler(CompleteTodo));row.AppendChild(doneBox);
         var badgeText=new FrameworkElementFactory(typeof(TextBlock));badgeText.SetBinding(TextBlock.TextProperty,new Binding("Badge"));badgeText.SetValue(TextBlock.FontSizeProperty,11d);badgeText.SetValue(TextBlock.FontWeightProperty,FontWeights.SemiBold);badgeText.SetBinding(TextBlock.ForegroundProperty,new Binding("BadgeFore"));
         var badge=new FrameworkElementFactory(typeof(Border));badge.SetValue(DockPanel.DockProperty,Dock.Right);badge.SetValue(Border.CornerRadiusProperty,new CornerRadius(10));badge.SetValue(Border.PaddingProperty,new Thickness(8,2,8,2));badge.SetValue(MarginProperty,new Thickness(8,0,0,0));badge.SetValue(VerticalAlignmentProperty,VerticalAlignment.Center);badge.SetBinding(Border.BackgroundProperty,new Binding("BadgeBack"));badge.SetBinding(VisibilityProperty,new Binding("HasBadge"){Converter=new BooleanToVisibilityConverter()});badge.AppendChild(badgeText);row.AppendChild(badge);
         var words=new FrameworkElementFactory(typeof(StackPanel));
@@ -148,7 +148,13 @@ public sealed class WorkWindow : Window
             if (String(original, "evidence") is { Length: > 0 } evidence) detail.Children.Add(Text(evidence, 12));
             var counter=Text(Deadline(String(original,"dueDate"),String(original,"status"),KoreanToday),14);counter.Tag="deadline-counter";detail.Children.Add(counter);
             if (String(original, "sourceId") is { Length: > 0 } source)
-                detail.Children.Add(Action("원본 메시지 보기", async () => { var originalMessage = main.Archive.Merge(await api.Get<Detail>($"api/messages/{source}")); if (originalMessage.Message.Purged) { MessageBox.Show(this, "메시지는 받은 PC에만 저장됩니다. 이 PC에는 사본이 없어 내용을 볼 수 없습니다.", "원본 메시지"); return; } var window = new Window { Owner = this, Title = originalMessage.Message.Title, Width = 550, Height = 450, Style=(Style)FindResource("SchoolWindow"), Content = new ScrollViewer { Content = Text(originalMessage.Message.Body), Margin = new Thickness(20) } }; window.Show(); }));
+                detail.Children.Add(Action("원본 메시지 보기", async () => { var originalMessage = main.Archive.Merge(await api.Get<Detail>($"api/messages/{source}")); if (originalMessage.Message.Purged) { Notice.Show(this, "메시지는 받은 PC에만 저장됩니다. 이 PC에는 사본이 없어 내용을 볼 수 없습니다.", "원본 메시지"); return; } var original = originalMessage.Message; var page = new StackPanel { Margin = new Thickness(24, 20, 24, 20) };
+                    page.Children.Add(AdminUi.Heading(original.Title, 18));
+                    var meta = new DockPanel { Margin = new Thickness(0, 12, 0, 14) }; var face = Avatar.Create(original.SenderName, 30); face.Margin = new Thickness(0, 0, 10, 0); meta.Children.Add(face);
+                    meta.Children.Add(AdminUi.Label($"{original.SenderName}   ·   {DateTimeOffset.FromUnixTimeMilliseconds(original.CreatedAt).ToLocalTime():yyyy.MM.dd HH:mm}" + (originalMessage.Attachments.Length > 0 ? $"   ·   첨부 {originalMessage.Attachments.Length}개" : ""), "Muted", 12)); page.Children.Add(meta);
+                    var rule = new Border { Height = 1, Margin = new Thickness(0, 0, 0, 14) }; rule.SetResourceReference(Border.BackgroundProperty, "Line"); page.Children.Add(rule);
+                    page.Children.Add(Text(original.Body));
+                    var window = new Window { Owner = this, Title = "원본 메시지", Width = 560, Height = 460, Style=(Style)FindResource("SchoolWindow"), Content = new ScrollViewer { Content = page, VerticalScrollBarVisibility = ScrollBarVisibility.Auto } }; window.Show(); }));
         }
         var title = new TextBox { MaxLength = 200, Text = item is { } t ? String(t, "title") : "", Margin = new Thickness(0, 0, 0, 12) };
         var due = new DatePicker { Margin = new Thickness(0, 0, 0, 12) };
@@ -185,19 +191,21 @@ public sealed class WorkWindow : Window
             var actions=new WrapPanel();actions.Children.Add(Action("파일 일괄 다운로드 (ZIP)", async () => { var dialog = new Microsoft.Win32.SaveFileDialog { FileName = "제출파일.zip", Filter = "ZIP 파일|*.zip" }; if (dialog.ShowDialog(this) == true) await api.DownloadPath($"api/submission-requests/{id}/zip", dialog.FileName); },true));
             var waiting=targets.Where(t=>!t.GetProperty("exempt").GetBoolean()&&t.GetProperty("submittedAt").ValueKind==JsonValueKind.Null).Select(t=>String(t,"id")).ToArray();
             if (!closed && waiting.Length>0) actions.Children.Add(Action($"미제출자 {waiting.Length}명에게 알림", async () => { var title=String(request,"title");var due=DateTimeOffset.FromUnixTimeMilliseconds(request.GetProperty("deadline").GetInt64()).ToOffset(TimeSpan.FromHours(9)).ToString("M월 d일 HH:mm"); await main.WriteMessage(title: "제출 안내: "+title, recipients: waiting, body: $"‘{title}’ 제출 마감은 {due}입니다. 아직 제출하지 않으셨다면 교무톡의 ‘할 일과 파일 제출’에서 제출해 주세요."); }));
-            if (!closed) actions.Children.Add(Action("요청 종료", async () => { if (System.Windows.MessageBox.Show(this, "새 제출과 자동 알림을 종료할까요?", "제출 요청 종료", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return; await api.Send<JsonElement>(HttpMethod.Post, $"api/submission-requests/{id}/close"); await Submission(id); }));detail.Children.Add(actions);
+            if (!closed) actions.Children.Add(Action("요청 종료", async () => { if (Notice.Show(this, "새 제출과 자동 알림을 종료할까요?", "제출 요청 종료", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return; await api.Send<JsonElement>(HttpMethod.Post, $"api/submission-requests/{id}/close"); await Submission(id); }));detail.Children.Add(actions);
         }
-        var targetGrid=new WrapPanel{ItemWidth=126,HorizontalAlignment=HorizontalAlignment.Stretch,Tag="submission-targets"};targetsPanel=targetGrid;
-        targetGrid.SizeChanged+=(_,e)=>{if(e.NewSize.Width<=0)return;var columns=mine?Math.Clamp((int)(e.NewSize.Width/126),1,4):1;targetGrid.ItemWidth=Math.Floor(e.NewSize.Width/columns);};
+        var targetGrid=new System.Windows.Controls.Primitives.UniformGrid{Columns=1,HorizontalAlignment=HorizontalAlignment.Stretch,Tag="submission-targets"};targetsPanel=targetGrid;
+        // Cells follow the panel width, so a narrower window narrows the cards instead of pushing them past the edge.
+        targetGrid.SizeChanged+=(_,e)=>{if(e.NewSize.Width<=0)return;var columns=mine?Math.Clamp((int)(e.NewSize.Width/126),1,4):1;if(targetGrid.Columns!=columns)targetGrid.Columns=columns;};
         detail.Children.Add(targetGrid);
         foreach (var target in targets)
         {
             var exempt = target.GetProperty("exempt").GetBoolean(); var submitted = target.GetProperty("submittedAt").ValueKind != JsonValueKind.Null;
             var name=String(target,"name");var state=exempt?"면제":submitted?target.GetProperty("late").GetBoolean()?"지각 제출":"제출 완료":"미제출";
-            var targetDetails=new StackPanel();var header=new Grid{ColumnDefinitions={new(){Width=new GridLength(12)},new(),new(){Width=GridLength.Auto}}};
-            var indicator=new System.Windows.Shapes.Ellipse{Width=6,Height=6,HorizontalAlignment=HorizontalAlignment.Left,VerticalAlignment=VerticalAlignment.Center};indicator.SetResourceReference(System.Windows.Shapes.Shape.FillProperty,exempt?"Muted":submitted?"Blue":"Line");header.Children.Add(indicator);
+            var targetDetails=new StackPanel();var header=new Grid{ColumnDefinitions={new(){Width=new GridLength(30)},new(),new(){Width=GridLength.Auto}}};
+            var indicator=Avatar.Create(name,22);indicator.HorizontalAlignment=HorizontalAlignment.Left;header.Children.Add(indicator);
             var label=Text(name,12);label.SetResourceReference(TextBlock.ForegroundProperty,"Ink");label.FontWeight=FontWeights.SemiBold;label.TextWrapping=TextWrapping.NoWrap;label.TextTrimming=TextTrimming.CharacterEllipsis;label.Margin=new Thickness(0);label.VerticalAlignment=VerticalAlignment.Center;Grid.SetColumn(label,1);header.Children.Add(label);targetDetails.Children.Add(header);
-            if(String(target,"department") is {Length:>0} department){var unit=Text(department,10);unit.Margin=new Thickness(12,2,0,0);unit.TextTrimming=TextTrimming.CharacterEllipsis;unit.TextWrapping=TextWrapping.NoWrap;targetDetails.Children.Add(unit);}
+            {var unit=new TextBlock{FontSize=11,Margin=new Thickness(30,2,0,0),TextTrimming=TextTrimming.CharacterEllipsis,TextWrapping=TextWrapping.NoWrap};if(String(target,"department") is {Length:>0} department){var place=new System.Windows.Documents.Run(department+" · ");place.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty,"Faint");unit.Inlines.Add(place);}
+                var status=new System.Windows.Documents.Run(state){FontWeight=FontWeights.SemiBold};status.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty,exempt?"Muted":submitted?"Success":"Warning");unit.Inlines.Add(status);targetDetails.Children.Add(unit);}
             foreach (var file in target.GetProperty("files").EnumerateArray())
             {
                 var attachment = file.Deserialize<Attachment>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
@@ -229,7 +237,7 @@ public sealed class WorkWindow : Window
                 var submissionId=String(targets[0],"submissionId");
                 detail.Children.Add(Action("제출 회수",async()=>
                 {
-                    if(System.Windows.MessageBox.Show(this,"제출 파일을 회수하고 미제출 상태로 바꿀까요? 이미 다운로드한 사본은 회수할 수 없습니다.","제출 회수",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+                    if(Notice.Show(this,"제출 파일을 회수하고 미제출 상태로 바꿀까요? 이미 다운로드한 사본은 회수할 수 없습니다.","제출 회수",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
                     await api.Send<JsonElement>(HttpMethod.Post,$"api/submission-requests/{id}/withdraw",new{submissionId});pending.Remove(id);await Reload();await Submission(id);
                 }));
             }
@@ -248,7 +256,7 @@ public sealed class WorkWindow : Window
         }
         detail.Children.Add(Text("업로드한 파일은 30일 보관됩니다.",11));
     }
-    sealed record WorkRow(JsonElement Value, string Title,string Summary,string Badge="",Brush? BadgeBack=null,Brush? BadgeFore=null,bool CanComplete=false){public string Label=>Title+"\n"+Summary;public bool HasBadge=>Badge.Length>0;}
+    sealed record WorkRow(JsonElement Value, string Title,string Summary,string Badge="",Brush? BadgeBack=null,Brush? BadgeFore=null,bool CanComplete=false){public string Label=>Title+"\n"+Summary;public bool HasBadge=>Badge.Length>0;public override string ToString()=>Title+(Badge.Length>0?", "+Badge:"")+", "+Summary;}
     internal async Task VerifySubmissionLayout(Action<Window,string> capture,string directory)
     {
         var checks=new List<string>();void Check(bool ok,string message){if(!ok)throw new InvalidOperationException(message);checks.Add(message);}
@@ -301,4 +309,10 @@ public sealed class WorkWindow : Window
         Todo(saved);
     }
     sealed record SubmissionPacket(string ClientId, string[] AttachmentIds);
+}
+// Hidden rather than collapsed, so rows without a checkbox keep their titles aligned with the others.
+sealed class KeepPlace:IValueConverter
+{
+    public object Convert(object value,Type type,object parameter,System.Globalization.CultureInfo culture)=>value is true?Visibility.Visible:Visibility.Hidden;
+    public object ConvertBack(object value,Type type,object parameter,System.Globalization.CultureInfo culture)=>throw new NotSupportedException();
 }

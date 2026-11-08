@@ -10,14 +10,14 @@
     <StackPanel Orientation="Horizontal">
      <Button x:Name="DraftButton" Content="임시저장" Click="SaveDraftClick" Style="{StaticResource SubtleButton}"/>
      <Button x:Name="DraftListButton" Content="임시저장 목록" Click="ShowDrafts" Style="{StaticResource SubtleButton}" Margin="4,0,0,0"/>
-     <Button Content="삭제" Click="DiscardDraft" Style="{StaticResource SubtleButton}" Margin="4,0,0,0"/>
+     <Button Content="삭제" Click="DiscardDraft" Style="{StaticResource SubtleButton}" Foreground="{DynamicResource Danger}" Margin="4,0,0,0"/>
      <Button Content="예약 목록" Click="ShowScheduled" Style="{StaticResource SubtleButton}" Margin="4,0,0,0"/>
     </StackPanel>
    </DockPanel>
   </Border>
 
   <Grid Margin="24,16,24,12">
-   <Grid.ColumnDefinitions><ColumnDefinition Width="64"/><ColumnDefinition/></Grid.ColumnDefinitions>
+   <Grid.ColumnDefinitions><ColumnDefinition Width="92"/><ColumnDefinition/></Grid.ColumnDefinitions>
    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 
    <TextBlock x:Name="RecipientCount" Text="받는 사람" Foreground="{DynamicResource Muted}" FontSize="12" TextWrapping="Wrap" Margin="0,8,8,0"/>
@@ -26,7 +26,7 @@
      <Button x:Name="RecipientsButton" DockPanel.Dock="Right" Click="ChooseRecipients" Margin="12,0,0,0" VerticalAlignment="Top" AutomationProperties.Name="수신자 추가"><StackPanel Orientation="Horizontal"><Path Data="{StaticResource TreeIcon}" Style="{StaticResource Glyph}" Width="15" Height="15"/><TextBlock Text="조직도에서 선택" Margin="6,0,0,0"/></StackPanel></Button>
      <Border BorderBrush="{DynamicResource LineStrong}" BorderThickness="1" CornerRadius="8" Padding="6,3" MinHeight="36"><ScrollViewer x:Name="RecipientScroller" MaxHeight="72" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><WrapPanel x:Name="RecipientChips"/></ScrollViewer></Border>
     </DockPanel>
-    <CheckBox x:Name="SelfBox" Content="나에게도 보내기" Click="SendToSelf" Margin="0,8,0,0" HorizontalAlignment="Left"/>
+    <CheckBox x:Name="SelfBox" Content="나에게도 보내기" Checked="SendToSelf" Unchecked="SendToSelf" Margin="0,8,0,0" HorizontalAlignment="Left"/>
    </StackPanel>
 
    <TextBlock Grid.Row="1" Text="제목" Foreground="{DynamicResource Muted}" FontSize="12" VerticalAlignment="Top" Margin="0,8,0,0"/>
@@ -64,7 +64,7 @@
    </WrapPanel>
 
    <WrapPanel x:Name="DeliveryOptions" Grid.Row="4" Grid.ColumnSpan="2" Margin="0,4,0,0">
-    <StackPanel Orientation="Horizontal" Margin="0,0,24,4"><CheckBox x:Name="CollectFiles" Content="파일 제출 받기 · 마감" VerticalAlignment="Center" Margin="0,0,8,0"/><DatePicker x:Name="SubmissionDate" Width="128" ToolTip="제출 마감 · 한국 시간 해당일 23:59까지"/></StackPanel>
+    <StackPanel Orientation="Horizontal" Margin="0,0,24,4"><CheckBox x:Name="CollectFiles" Content="파일 제출 받기 · 마감" Checked="CollectChanged" Unchecked="CollectChanged" VerticalAlignment="Center" Margin="0,0,8,0"/><DatePicker x:Name="SubmissionDate" Width="128" IsEnabled="False" ToolTip="제출 마감 · 한국 시간 해당일 23:59까지"/></StackPanel>
     <StackPanel Orientation="Horizontal" Margin="0,0,0,4"><CheckBox x:Name="ScheduleSend" Content="예약 전송" VerticalAlignment="Center" Margin="0,0,8,0" Checked="ScheduleChanged" Unchecked="ScheduleChanged"/><DatePicker x:Name="ScheduleDate" Width="128" IsEnabled="False"/><TextBox x:Name="ScheduleTime" Text="09:00" Width="60" MaxLength="5" Margin="6,0,0,0" IsEnabled="False" ToolTip="한국 시간 · HH:mm"/></StackPanel>
    </WrapPanel>
 

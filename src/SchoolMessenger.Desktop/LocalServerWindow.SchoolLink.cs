@@ -61,7 +61,7 @@ public sealed partial class LocalServerWindow
             {
                 var move=MoveFrom(target.Text,DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
                 if(Uri.TryCreate(server.Text.Trim(),UriKind.Absolute,out var own)&&own.GetLeftPart(UriPartial.Authority)==new Uri(move.Address).GetLeftPart(UriPartial.Authority))throw new InvalidOperationException("지금 서버와 같은 주소입니다. 새 서버의 링크를 붙여 넣으세요.");
-                if(MessageBox.Show(window,"7일 동안 이 서버는 새 주소만 알려 주고 메시지·로그인 등 다른 요청은 받지 않습니다.\n\n새 서버가 이미 실행 중인지 확인했나요?","서버 이전",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+                if(Notice.Show(window,"7일 동안 이 서버는 새 주소만 알려 주고 메시지·로그인 등 다른 요청은 받지 않습니다.\n\n새 서버가 이미 실행 중인지 확인했나요?","서버 이전",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
                 SchoolAppSettings.Write(data,SchoolAppSettings.Read(data)with{Moving=move});moveError.Text="";target.Clear();ShowMove();
             }
             catch(Exception e)when(e is InvalidOperationException or IOException or UnauthorizedAccessException){moveError.Text=e.Message;}

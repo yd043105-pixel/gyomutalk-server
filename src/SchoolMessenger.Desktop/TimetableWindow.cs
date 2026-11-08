@@ -39,7 +39,7 @@ public sealed partial class TimetableWindow:Window
     record Choice(string Id,string Name){public override string ToString()=>Name;}
     static string TeacherLabel(JsonElement value)=>value.GetProperty("name").GetString()+" · "+value.GetProperty("department").GetString()+" · "+value.GetProperty("username").GetString();
     static TextBlock Text(string value,int size=14)=>new(){Text=value,FontSize=size,FontWeight=size>=20?FontWeights.Bold:FontWeights.Normal,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,0,0,10)};
-    void Action(string label,Func<Task> action){var b=new Button{Content=label,Margin=new Thickness(0,0,8,10),HorizontalAlignment=HorizontalAlignment.Left};b.Click+=async(_,_)=>await Run(action);body.Children.Add(b);}
+    void Action(string label,Func<Task> action){var b=AdminUi.Tone(new Button{Content=label,Margin=new Thickness(0,0,8,10),HorizontalAlignment=HorizontalAlignment.Left},label);b.Click+=async(_,_)=>await Run(action);body.Children.Add(b);}
     async Task Run(Func<Task> action){if(busy)return;busy=true;body.IsEnabled=scheduleFooter.IsEnabled=false;feedback.Text="";try{await action();}catch(Exception e){feedback.Text=e.Message;}finally{busy=false;body.IsEnabled=scheduleFooter.IsEnabled=true;}}
     void ResetBody(){body.Children.Clear();scheduleFooter.Visibility=Visibility.Collapsed;scheduleFooter.Child=null;}
     DateTime selected=DateTime.UtcNow.AddHours(9).Date;bool weekly=true;StackPanel view=new();
@@ -276,7 +276,7 @@ public sealed partial class TimetableWindow:Window
     async Task History()
     {
         var rows=await api.Get<JsonElement[]>("api/timetable/history");ResetBody();body.Children.Add(Text("시간표 게시 이력",24));body.Children.Add(feedback);Action("조회 화면으로",Load);
-        foreach(var r in rows){body.Children.Add(Text($"#{r.GetProperty("revision")} {r.GetProperty("fileName").GetString()}\n{r.GetProperty("start").GetString()} ~ {r.GetProperty("end").GetString()}"));if(r.TryGetProperty("approvedSwapCount",out var approvals)&&approvals.GetInt32()>0)body.Children.Add(Text($"교체 신청 {approvals.GetInt32()}건 승인·게시",12));else if(!r.GetProperty("withdrawn").GetBoolean())Action("이 게시본 취소",async()=>{if(MessageBox.Show(this,"일자별 표 취소 시 기초시간표로 돌아갑니다. 취소할까요?","시간표 취소",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/"+r.GetProperty("id").GetString()+"/cancel",new TimetableCommit("",Guid.NewGuid().ToString("N")));await History();});}
+        foreach(var r in rows){body.Children.Add(Text($"#{r.GetProperty("revision")} {r.GetProperty("fileName").GetString()}\n{r.GetProperty("start").GetString()} ~ {r.GetProperty("end").GetString()}"));if(r.TryGetProperty("approvedSwapCount",out var approvals)&&approvals.GetInt32()>0)body.Children.Add(Text($"교체 신청 {approvals.GetInt32()}건 승인·게시",12));else if(!r.GetProperty("withdrawn").GetBoolean())Action("이 게시본 취소",async()=>{if(Notice.Show(this,"일자별 표 취소 시 기초시간표로 돌아갑니다. 취소할까요?","시간표 취소",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/"+r.GetProperty("id").GetString()+"/cancel",new TimetableCommit("",Guid.NewGuid().ToString("N")));await History();});}
     }
     async Task Administration()
     {

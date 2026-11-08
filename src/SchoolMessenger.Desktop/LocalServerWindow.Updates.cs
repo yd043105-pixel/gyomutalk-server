@@ -8,7 +8,7 @@ public sealed partial class LocalServerWindow
     internal async Task<bool> PrepareForUpdate()
     {
         if(cards.Any(c=>c.Busy)||OwnedWindows.Cast<Window>().Any(w=>w.IsVisible))return false;
-        if(MessageBox.Show(this,"서버를 정상 중지하고 전체 백업을 완료한 뒤 업데이트합니다. 연결된 사용자의 서비스가 잠시 중단됩니다. 진행할까요?","서버 업데이트",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return false;
+        if(Notice.Show(this,"서버를 정상 중지하고 전체 백업을 완료한 뒤 업데이트합니다. 연결된 사용자의 서비스가 잠시 중단됩니다. 진행할까요?","서버 업데이트",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return false;
         updateRestart.Clear();updateRestart.AddRange(cards.Where(c=>c.Host.Running));
         foreach(var card in cards)card.Busy=true;Refresh();
         try
@@ -25,7 +25,7 @@ public sealed partial class LocalServerWindow
             File.WriteAllText(Path.Combine(directory,"update-resume.json"),System.Text.Json.JsonSerializer.Serialize(updateRestart.Select(c=>c.Service)));
             return true;
         }
-        catch(Exception error){await CancelUpdate();MessageBox.Show(this,"백업·정상 중지가 완료되지 않아 업데이트를 중단했습니다.\n"+error.Message,"서버 업데이트 중단");return false;}
+        catch(Exception error){await CancelUpdate();Notice.Show(this,"백업·정상 중지가 완료되지 않아 업데이트를 중단했습니다.\n"+error.Message,"서버 업데이트 중단");return false;}
     }
     async Task BackupBeforeUpdate(ServerCard card)
     {
@@ -66,6 +66,6 @@ public sealed partial class LocalServerWindow
         var resume=Path.Combine(directory,"update-resume.json");
         if(!File.Exists(resume)){await StartSelected();return;}
         try{var services=System.Text.Json.JsonSerializer.Deserialize<string[]>(File.ReadAllText(resume))??[];File.Delete(resume);foreach(var card in cards.Where(c=>services.Contains(c.Service)))await Start(card);}
-        catch(Exception e){MessageBox.Show(this,e.Message,"업데이트 후 서버 가동 확인");}
+        catch(Exception e){Notice.Show(this,e.Message,"업데이트 후 서버 가동 확인");}
     }
 }

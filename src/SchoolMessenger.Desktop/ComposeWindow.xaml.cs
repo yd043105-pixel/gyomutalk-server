@@ -109,7 +109,7 @@ public partial class ComposeWindow : Window
     }
     void Unfreeze()
     {
-        CollectFiles.IsEnabled = true; SubmissionDate.IsEnabled = true;
+        CollectFiles.IsEnabled = true; SubmissionDate.IsEnabled = CollectFiles.IsChecked == true;
         FormattingToolbar.IsEnabled = DraftListButton.IsEnabled = true;
         RecipientsButton.IsEnabled=SelfBox.IsEnabled=ScheduleSend.IsEnabled=DraftButton.IsEnabled=true;ScheduleChanged(this,new RoutedEventArgs());RefreshRecipients();
         TitleBox.IsEnabled = true; BodyBox.IsEnabled = true; PeopleList.IsEnabled = true; PeopleSearch.IsEnabled = true;
@@ -123,7 +123,7 @@ public partial class ComposeWindow : Window
         if (pending is null && (string.IsNullOrWhiteSpace(BodyBox.Text) ||
             (!people.Any(p => p.Selected) && Department.SelectedIndex <= 0 && SendAll.IsChecked != true)))
         { Feedback.Text = "본문과 받는 사람을 확인하세요."; return; }
-        if (pending is null && SendAll.IsChecked == true && System.Windows.MessageBox.Show(this, $"전체 교직원 {people.Length}명에게 보내시겠습니까?", "전체 발송 확인", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+        if (pending is null && SendAll.IsChecked == true && Notice.Show(this, $"전체 교직원 {people.Length}명에게 보내시겠습니까?", "전체 발송 확인", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
         long? schedule=null;try{if(pending is null)schedule=ScheduledAt();}catch(Exception error){Feedback.Text=error.Message;return;}
         if (pending is null)
         {
@@ -206,7 +206,7 @@ public partial class ComposeWindow : Window
     {
         if (sending) return;
         var text = pending is null ? "임시 저장한 메시지를 삭제하시겠습니까?" : "이미 서버에 저장됐을 수 있습니다. 보낸 메시지에서 확인했습니까? 임시 저장을 삭제하면 새 메시지를 작성합니다.";
-        if (System.Windows.MessageBox.Show(this, text, "임시 저장 삭제", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+        if (Notice.Show(this, text, "임시 저장 삭제", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
         pending = null; uploaded.Clear(); files.Clear(); TitleBox.Clear(); BodyBox.Clear();
         foreach (var person in people) person.Selected = false;
         Department.SelectedIndex = 0; SendAll.IsChecked = false; CollectFiles.IsChecked = false;ScheduleSend.IsChecked=false; Unfreeze();
@@ -221,7 +221,7 @@ record SourceFile(string Path,bool IsFolder=false)
     public string Description => System.IO.Path.GetFileName(System.IO.Path.TrimEndingDirectorySeparator(Path));
     [System.Text.Json.Serialization.JsonIgnore] public bool Exists=>IsFolder?Directory.Exists(Path):File.Exists(Path);
     [System.Text.Json.Serialization.JsonIgnore] public long KnownSize=>!IsFolder&&new FileInfo(Path) is {Exists:true} info?info.Length:0;
-    public string SizeLabel => IsFolder?"폴더 · ZIP":KnownSize<1_048_576?Math.Max(1,KnownSize/1024)+"KB":(KnownSize/1_048_576.0).ToString("0.#")+"MB";
+    public string SizeLabel => IsFolder?"폴더 · ZIP":Attachment.SizeText(KnownSize);
 }
 record Pending(string ClientId, string Title, string Body, string[] RecipientIds, string[] AttachmentIds, bool All, string? Department, long? SubmissionDeadline = null,long? ScheduledAt=null,[property: System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] MessageFormat? Format=null);
 record Draft(string Server, string Title, string Body, string[] RecipientIds, string? Department, bool All, SourceFile[] Files, Attachment?[] Uploaded, Pending? Pending, long? SubmissionDeadline = null,long? ScheduledAt=null,bool ReserveRequested=false,string? ReserveDate=null,string? ReserveTime=null,bool CollectRequested=false,string? CollectionDate=null,MessageFormat? Format=null,long SavedAt=0);

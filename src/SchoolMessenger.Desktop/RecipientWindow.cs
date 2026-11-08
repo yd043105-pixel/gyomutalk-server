@@ -16,15 +16,15 @@ public sealed class RecipientWindow : Window
         var root = new DockPanel { Margin = new Thickness(20) }; Content = root;
         var top = new StackPanel(); DockPanel.SetDock(top, Dock.Top); root.Children.Add(top);
         if (roomName) { top.Children.Add(new TextBlock { Text = "방 이름 · 두 명 대화는 비워 두면 1:1 채팅", TextWrapping = TextWrapping.Wrap }); top.Children.Add(name); }
-        var search = new TextBox { Margin = new Thickness(0, 0, 0, 10), ToolTip = "이름·부서 검색" }; top.Children.Add(search);
+        var search = new TextBox { Margin = new Thickness(0, 0, 0, 10), ToolTip = "이름·부서 검색" }; top.Children.Add(AdminUi.SearchField(search, "이름 · 부서 검색"));
         var department = new ComboBox { ItemsSource = new[] { "부서 전체 선택" }.Concat(people.Select(p => p.Department).Distinct().Order()).ToArray(), SelectedIndex = 0, Margin = new Thickness(0, 0, 0, 12) }; top.Children.Add(department);
         var bottom = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 14, 0, 0) }; DockPanel.SetDock(bottom, Dock.Bottom); root.Children.Add(bottom);
         var cancel = new Button { Content = "취소", Margin = new Thickness(0, 0, 8, 0) }; cancel.Click += (_, _) => Close(); bottom.Children.Add(cancel);
-        var apply = new Button { Content = "선택 완료", Style = (Style)main.FindResource("PrimaryButton") }; apply.Click += (_, _) => { if (SelectedIds.Length == 0) { MessageBox.Show(this, "교직원을 선택하세요."); return; } DialogResult = true; }; bottom.Children.Add(apply);
+        var apply = new Button { Content = "선택 완료", Style = (Style)main.FindResource("PrimaryButton") }; apply.Click += (_, _) => { if (SelectedIds.Length == 0) { Notice.Show(this, "교직원을 선택하세요."); return; } DialogResult = true; }; bottom.Children.Add(apply);
         var list = new StackPanel(); root.Children.Add(new ScrollViewer { Content = list, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
-        choices = people.OrderBy(p => p.Department).ThenBy(p => p.Name).Select(p => new CheckBox { Content = p.Label, Tag = p.Id, IsChecked = selected?.Contains(p.Id) == true, Margin = new Thickness(2, 7, 2, 7) }).ToArray();
+        choices = people.OrderBy(p => p.Department).ThenBy(p => p.Name).Select(p => { var check = AdminUi.PersonCheck(p, selected?.Contains(p.Id) == true); check.Tag = p.Id; return check; }).ToArray();
         foreach (var choice in choices) list.Children.Add(choice);
         department.SelectionChanged += (_, _) => { if (department.SelectedIndex <= 0) return; var group = department.SelectedItem.ToString(); var ids = people.Where(p => p.Department == group).Select(p => p.Id).ToHashSet(); foreach (var choice in choices.Where(c => ids.Contains((string)c.Tag))) choice.IsChecked = true; department.SelectedIndex = 0; };
-        search.TextChanged += (_, _) => { foreach (var choice in choices) choice.Visibility = choice.Content.ToString()!.Contains(search.Text.Trim(), StringComparison.OrdinalIgnoreCase) ? Visibility.Visible : Visibility.Collapsed; };
+        search.TextChanged += (_, _) => { foreach (var choice in choices) choice.Visibility = ((string)choice.ToolTip).Contains(search.Text.Trim(), StringComparison.OrdinalIgnoreCase) ? Visibility.Visible : Visibility.Collapsed; };
     }
 }

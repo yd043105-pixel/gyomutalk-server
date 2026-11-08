@@ -50,7 +50,7 @@ internal static class DesktopUpdater
                 try
                 {
                     using var outcome=JsonDocument.Parse(File.ReadAllText(result));var success=outcome.RootElement.GetProperty("success").GetBoolean();File.Delete(result);
-                    Application.Current.Dispatcher.BeginInvoke(new Action(()=>MessageBox.Show(window,success?"프로그램 업데이트 설치를 완료했습니다. 서버관리자는 두 서버의 가동 상태를 확인하세요.":"업데이트 설치가 완료되지 않았습니다. 기존 프로그램으로 돌아왔습니다. 공식 릴리즈 설치파일과 Windows 권한을 확인하세요.","프로그램 업데이트")));
+                    Application.Current.Dispatcher.BeginInvoke(new Action(()=>Notice.Show(window,success?"프로그램 업데이트 설치를 완료했습니다. 서버관리자는 두 서버의 가동 상태를 확인하세요.":"업데이트 설치가 완료되지 않았습니다. 기존 프로그램으로 돌아왔습니다. 공식 릴리즈 설치파일과 Windows 권한을 확인하세요.","프로그램 업데이트")));
                 }
                 catch(Exception e)when(e is IOException or JsonException or InvalidOperationException or KeyNotFoundException) { }
             }
@@ -59,12 +59,12 @@ internal static class DesktopUpdater
     }
     internal static void Settings(Window window)
     {
-        if(!initialized){MessageBox.Show(window,"업데이트 확인을 시작할 수 없습니다.\n"+error,"프로그램 업데이트");return;}
-        var dialog=new Window{Title="프로그램 업데이트",Owner=window,Width=420,SizeToContent=SizeToContent.Height,ResizeMode=ResizeMode.NoResize,WindowStartupLocation=WindowStartupLocation.CenterOwner};
+        if(!initialized){Notice.Show(window,"업데이트 확인을 시작할 수 없습니다.\n"+error,"프로그램 업데이트");return;}
+        var dialog=new Window{Title="프로그램 업데이트",Owner=window,Width=420,SizeToContent=SizeToContent.Height,ResizeMode=ResizeMode.NoResize,WindowStartupLocation=WindowStartupLocation.CenterOwner,Style=(Style)Application.Current.FindResource("SchoolWindow")};
         var panel=new StackPanel{Margin=new Thickness(24)};
         panel.Children.Add(new TextBlock{Text="GitHub의 정식 공개 릴리즈를 확인합니다. 설치파일은 게시자 서명을 검증한 뒤 실행합니다.",TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,0,0,16)});
         var automatic=new CheckBox{Content="하루에 한 번 새 버전 자동 확인",IsChecked=enabled};
-        automatic.Click+=(_,_)=>{try{Directory.CreateDirectory(Path.GetDirectoryName(setting)!);File.WriteAllText(setting,automatic.IsChecked==true?"true":"false");enabled=automatic.IsChecked==true;Native.win_sparkle_set_automatic_check_for_updates(enabled?1:0);}catch(IOException e){automatic.IsChecked=enabled;MessageBox.Show(dialog,e.Message,"설정 저장 실패");}};panel.Children.Add(automatic);
+        automatic.Click+=(_,_)=>{try{Directory.CreateDirectory(Path.GetDirectoryName(setting)!);File.WriteAllText(setting,automatic.IsChecked==true?"true":"false");enabled=automatic.IsChecked==true;Native.win_sparkle_set_automatic_check_for_updates(enabled?1:0);}catch(IOException e){automatic.IsChecked=enabled;Notice.Show(dialog,e.Message,"설정 저장 실패");}};panel.Children.Add(automatic);
         panel.Children.Add(new TextBlock{Text="첫 공개 릴리즈 전에는 새 버전이 제공되지 않습니다. 학교 네트워크에서 GitHub 연결을 허용해야 합니다.",TextWrapping=TextWrapping.Wrap,FontSize=12,Margin=new Thickness(0,16,0,16)});
         var check=new Button{Content="지금 업데이트 확인",Padding=new Thickness(14,9,14,9)};check.Click+=(_,_)=>{dialog.Close();Native.win_sparkle_check_update_with_ui();};panel.Children.Add(check);dialog.Content=panel;dialog.ShowDialog();
     }
@@ -78,7 +78,7 @@ internal static class DesktopUpdater
         if(owner is LocalServerWindow manager)return prepared=await manager.PrepareForUpdate();
         if(owner is null)return false;
         if(owner is MainWindow messenger ? messenger.HasOpenWork : owner.OwnedWindows.Cast<Window>().Any(w=>w.IsVisible))
-        {MessageBox.Show(owner,"작성 중인 메시지와 다른 업무 창을 저장하고 닫은 뒤 업데이트를 다시 실행하세요.","업데이트 대기");preparation=null;return false;}
+        {Notice.Show(owner,"작성 중인 메시지와 다른 업무 창을 저장하고 닫은 뒤 업데이트를 다시 실행하세요.","업데이트 대기");preparation=null;return false;}
         return prepared=true;
     }
     static int Install(string verifiedFile)
@@ -99,7 +99,7 @@ internal static class DesktopUpdater
         }
         catch(Exception e)
         {
-            Application.Current.Dispatcher.BeginInvoke(new Action(async()=>{if(owner is LocalServerWindow manager)await manager.CancelUpdate();preparation=null;prepared=false;MessageBox.Show(owner,e.Message,"업데이트 시작 실패");}));return -1;
+            Application.Current.Dispatcher.BeginInvoke(new Action(async()=>{if(owner is LocalServerWindow manager)await manager.CancelUpdate();preparation=null;prepared=false;Notice.Show(owner,e.Message,"업데이트 시작 실패");}));return -1;
         }
     }
     static void Quit()=>Application.Current.Dispatcher.BeginInvoke(new Action(()=>{if(owner is LocalServerWindow manager)manager.CompleteUpdateShutdown();else Application.Current.Shutdown();}));

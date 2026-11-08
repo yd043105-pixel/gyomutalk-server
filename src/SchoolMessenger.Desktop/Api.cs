@@ -11,6 +11,15 @@ namespace SchoolMessenger.Desktop;
 
 public sealed class Api : IDisposable
 {
+    // Network failures in words a teacher can act on; everything else already carries a Korean message from the server or the app.
+    public static string Explain(Exception error) => error switch
+    {
+        HttpRequestException { InnerException: System.Security.Authentication.AuthenticationException } => "학교 서버의 보안 인증서를 확인하지 못했습니다. 관리자에게 연결 확인 코드를 문의하세요.",
+        HttpRequestException => "학교 서버에 연결하지 못했습니다. 서버 주소가 맞는지, 서버 PC가 켜져 있는지 확인하세요.",
+        TaskCanceledException or TimeoutException => "학교 서버가 응답하지 않습니다. 잠시 후 다시 시도하세요.",
+        _ => error.Message
+    };
+
     public CookieContainer Cookies { get; } = new();
     public Uri Address { get; }
     public HttpClient Http { get; }
@@ -154,16 +163,22 @@ public record MessageItem(string Id, string Title, string Preview, long CreatedA
     [System.Text.Json.Serialization.JsonIgnore] public bool HasFiles => AttachmentCount > 0;
     [System.Text.Json.Serialization.JsonIgnore] public string PreviewLine => string.IsNullOrWhiteSpace(Title) ? "" : SchoolMessenger.Shared.MessageText.Excerpt(Preview, 120);
     [System.Text.Json.Serialization.JsonIgnore] public string SentLabel => IsSent ? ReadLabel : "";
+    // Screen readers and UI Automation read list rows through ToString.
+    public override string ToString() => $"{SenderName}, {DisplayTitle}, {Date}{(IsUnread ? ", 안 읽음" : "")}";
 }
 public record MessageContent(string Id, string SenderId, string SenderName, string Title, string Body, long CreatedAt, SchoolMessenger.Contracts.MessageFormat? Format = null, bool Purged = false);
 public record Attachment(string Id, string Name, long Size, long ExpiresAt = 0, bool Expired = false)
 {
     public bool Available => !Expired;
-    public string Description => Expired ? $"{Name} · 보관 기간 만료" : $"{Name} · {Size / 1024d:N0}KB";
+    public string Description => Expired ? $"{Name} · 보관 기간 만료" : $"{Name} · {SizeText(Size)}";
+    // Rounded up so a small file never reads as 0KB; the same wording as the compose window.
+    public static string SizeText(long bytes) => bytes < 1_048_576 ? Math.Max(1, (bytes + 1023) / 1024) + "KB" : (bytes / 1_048_576.0).ToString("0.#") + "MB";
+    public override string ToString() => Description;
     public string Expiry => ExpiresAt > 0 ? $"{DateTimeOffset.FromUnixTimeMilliseconds(ExpiresAt).ToLocalTime():yyyy.MM.dd HH:mm}까지 다운로드" : "";
 }
 public record Receipt(string Id, string Name, string Department, long? ReadAt)
 {
     public string Label => $"{Name} · {Department}   {(ReadAt is null ? "미확인" : DateTimeOffset.FromUnixTimeMilliseconds(ReadAt.Value).ToLocalTime().ToString("MM.dd HH:mm 확인"))}";
+    public override string ToString() => Label;
 }
 public record Detail(MessageContent Message, Attachment[] Attachments, Receipt[] Recipients, bool SubmissionRequest = false, string? SubmissionRequestId = null);

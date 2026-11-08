@@ -118,7 +118,7 @@ public partial class ComposeWindow
             {
                 if (list.SelectedItem is not SavedDraftRow row) return;
                 var warning = row.Value.Pending is null ? "선택한 임시저장을 삭제할까요?" : "서버에 이미 전송됐을 수 있습니다. 보낸 메시지를 확인한 뒤 임시저장을 삭제하세요. 삭제할까요?";
-                if (MessageBox.Show(window, warning, "임시저장 삭제", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+                if (Notice.Show(window, warning, "임시저장 삭제", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
                 try { DeleteSavedDraft(row.Path); Refresh(); } catch (Exception error) { note.Text = error.Message; }
             };
             Refresh(); window.ShowDialog();

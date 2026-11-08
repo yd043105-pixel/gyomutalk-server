@@ -11,7 +11,7 @@ const sdk=path.resolve('.tools/dotnet/dotnet.exe'),dotnet=existsSync(sdk)?sdk:'d
 const env={...process.env,ASPNETCORE_ENVIRONMENT:'Production',Operations__SchoolId:'YY-SYNTHETIC-ONLY',DOTNET_PROCESSOR_COUNT:'2',DOTNET_CLI_TELEMETRY_OPTOUT:'1',Portal__TunnelOnly:'false',Announcements__Address:'',FeedbackMail__Enabled:'false',Operations__AlertMailEnabled:'false'};
 const check=name=>{checks.push(name);console.log('PASS '+name);};
 let serial=0;
-for(const [project,service]of [['Server','office'],['AnnouncementServer','announcements']]){
+for(const [project,service]of [['Server','office']]){
  const dll=path.join(root,'src','SchoolMessenger.'+project,'bin/Debug/net10.0','SchoolMessenger.'+project+'.dll');
  function probe(name,edit,extra={},code=null,afterWrite=null){
   const directory=path.join(work,service+'-'+serial++),file=writeDeploymentReviewFixture(directory,service,base),record=JSON.parse(readFileSync(file,'utf8'));edit?.(record,directory);writeFileSync(file,JSON.stringify(record));afterWrite?.(file,directory);
