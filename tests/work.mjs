@@ -24,6 +24,16 @@ export async function workChecks({Client,admin,password,address,data,check,start
  check('tasks are registered only after explicit confirmation; owner authorization and revision conflicts remain enforced');
  await recipient.request('/api/todos','POST',{title:'<img src=x onerror=alert(1)>',dueDate:null,status:'open',revision:0});
  await recipient.request('/api/todos','POST',{title:'Invalid date',dueDate:'2026-02-30',status:'open',revision:0},400);
+ for(const bad of [{dueDate:tomorrow,dueTime:'25:00'},{dueDate:tomorrow,dueTime:'9:00'},{dueDate:null,dueTime:'12:00'}])await recipient.request('/api/todos','POST',{title:'Invalid time',status:'open',revision:0,...bad},400);
+ const noon=await recipient.request('/api/todos','POST',{title:'Timed',dueDate:tomorrow,dueTime:'12:00',status:'open',revision:0});
+ const untimed=await recipient.request('/api/todos','POST',{title:'Untimed',dueDate:tomorrow,status:'open',revision:0});
+ const morning=await recipient.request('/api/todos','POST',{title:'Morning',dueDate:tomorrow,dueTime:'09:30',status:'open',revision:0});
+ let timed=(await recipient.request('/api/todos')).filter(t=>[noon.id,untimed.id,morning.id].includes(t.id));
+ assert.deepEqual(timed.map(t=>[t.title,t.dueDate,t.dueTime]),[['Morning',tomorrow,'09:30'],['Timed',tomorrow,'12:00'],['Untimed',tomorrow,null]]);
+ const timedRow=timed[1];await recipient.request('/api/todos/'+noon.id,'PATCH',{title:'Timed',dueDate:tomorrow,dueTime:'17:00',status:'open',revision:timedRow.revision});
+ assert.equal((await recipient.request('/api/todos')).find(t=>t.id===noon.id).dueTime,'17:00');
+ for(const id of [noon.id,untimed.id,morning.id]){const row=(await recipient.request('/api/todos')).find(t=>t.id===id);await recipient.request('/api/todos/'+id,'PATCH',{title:row.title,dueDate:row.dueDate,dueTime:row.dueTime,status:'dismissed',revision:row.revision});}
+ check('a due time sits beside the date, is validated as HH:mm on a dated task, and orders timed tasks before the end of that day');
  const earlier=new Date(now-2*86400000+9*3600000).toISOString().slice(0,10),later=new Date(now+30*86400000+9*3600000).toISOString().slice(0,10);
  const ordered=[];
  for(const [title,dueDate] of [['Past',earlier],['Today',today],['Tomorrow',tomorrow],['No date',null],['Completed',earlier]])ordered.push((await observer.request('/api/todos','POST',{title,dueDate,status:'open',revision:0})).id);

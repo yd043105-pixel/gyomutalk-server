@@ -93,6 +93,7 @@ public sealed class Store : IDisposable
         var chatColumns=Query("PRAGMA table_info(ChatMembers)",r=>r.GetString(1));
         if(!chatColumns.Contains("Alias"))Execute("ALTER TABLE ChatMembers ADD COLUMN Alias TEXT NOT NULL DEFAULT ''");
         if(!chatColumns.Contains("Hidden"))Execute("ALTER TABLE ChatMembers ADD COLUMN Hidden INTEGER NOT NULL DEFAULT 0");
+        if(!Query("PRAGMA table_info(Todos)",r=>r.GetString(1)).Contains("DueTime"))Execute("ALTER TABLE Todos ADD COLUMN DueTime TEXT");
         if(!Query("PRAGMA table_info(Surveys)",r=>r.GetString(1)).Contains("Anonymous"))Execute("ALTER TABLE Surveys ADD COLUMN Anonymous INTEGER NOT NULL DEFAULT 0");
         // Suggestions are made on PCs now. What the server drew from message text before goes away; tasks people added stay.
         Execute("DELETE FROM Todos WHERE Status IN ('suggested','dismissed')");

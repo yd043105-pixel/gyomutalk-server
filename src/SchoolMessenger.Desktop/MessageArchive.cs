@@ -95,11 +95,11 @@ public sealed class MessageArchive(string root,Api api)
     {
         var me=api.Session!.User!.Id;var m=value.Message;var book=Book();
         if(m.Purged||m.SenderId==me||m.CreatedAt<SuggestionsFrom||book.ContainsKey(m.Id)||value.Recipients.All(r=>r.Id!=me)||m.Body.StartsWith("[시스템 자동 알림]",StringComparison.Ordinal))return;
-        book[m.Id]=TaskCandidates.Candidates(m.Body,m.CreatedAt).Select(c=>new Suggestion(Guid.NewGuid().ToString("N"),m.Id,c.Title,c.Evidence,c.DueDate,m.CreatedAt)).ToArray();
+        book[m.Id]=TaskCandidates.Candidates(m.Body,m.CreatedAt).Select(c=>new Suggestion(Guid.NewGuid().ToString("N"),m.Id,c.Title,c.Evidence,c.DueDate,m.CreatedAt,c.DueTime)).ToArray();
         Write(SuggestionsPath,book);
     }
     public Suggestion[] Suggestions(string message)=>Book().GetValueOrDefault(message)??[];
-    public Suggestion[] AllSuggestions()=>Book().Values.SelectMany(s=>s).OrderBy(s=>s.DueDate is null).ThenBy(s=>s.DueDate,StringComparer.Ordinal).ToArray();
+    public Suggestion[] AllSuggestions()=>Book().Values.SelectMany(s=>s).OrderBy(s=>s.DueDate is null).ThenBy(s=>s.DueDate,StringComparer.Ordinal).ThenBy(s=>s.DueTime is null).ThenBy(s=>s.DueTime,StringComparer.Ordinal).ToArray();
     public void Decide(string message,string suggestion)
     {
         var book=Book();if(!book.TryGetValue(message,out var rows))return;

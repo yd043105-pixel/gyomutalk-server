@@ -40,7 +40,7 @@ public record ChatEntry(long Sequence, string Id, string SenderId, string Sender
     [System.Text.Json.Serialization.JsonIgnore] public System.Windows.Media.Brush AvatarBack => Avatar.Back(SenderName);
     [System.Text.Json.Serialization.JsonIgnore] public System.Windows.Media.Brush AvatarInk => Avatar.Ink(SenderName);
 }
-public record Suggestion(string Id, string MessageId, string Title, string Evidence, string? DueDate, long CreatedAt);
+public record Suggestion(string Id, string MessageId, string Title, string Evidence, string? DueDate, long CreatedAt, string? DueTime = null);
 public record ChatPending(string Server, string RoomId, string ClientId, string Body, string[] AttachmentIds);
 public record SurveyQuestion(string Text, string Kind, bool Required, string[] Options);
 public record SurveyItem(string Id, string OwnerId, string Title, string OwnerName, long Deadline, bool Closed, int TargetCount, int ResponseCount, bool Answered, bool Anonymous = false, bool Target = false)

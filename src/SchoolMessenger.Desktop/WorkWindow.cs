@@ -103,7 +103,7 @@ public sealed class WorkWindow : Window
     async void CompleteTodo(object sender,RoutedEventArgs e)
     {
         if(sender is not CheckBox{Tag:WorkRow row})return;
-        await Run(async()=>{await api.Send<JsonElement>(HttpMethod.Patch,"api/todos/"+String(row.Value,"id"),new{title=String(row.Value,"title"),dueDate=String(row.Value,"dueDate") is{Length:>0} d?d:null,status="done",revision=row.Value.GetProperty("revision").GetInt32()});detail.Children.Clear();await Reload();});
+        await Run(async()=>{await api.Send<JsonElement>(HttpMethod.Patch,"api/todos/"+String(row.Value,"id"),new{title=String(row.Value,"title"),dueDate=String(row.Value,"dueDate") is{Length:>0} d?d:null,dueTime=DueTime(row.Value),status="done",revision=row.Value.GetProperty("revision").GetInt32()});detail.Children.Clear();await Reload();});
     }
     public async Task Reload()
     {
@@ -114,12 +114,12 @@ public sealed class WorkWindow : Window
         if (currentView != view) return;
         feedback.Text="";more.Visibility=rows.Length==100?Visibility.Visible:Visibility.Collapsed;
         // Suggestions come from this PC's copies; they sit after the tasks in progress, as they always have.
-        if(currentView=="todos"&&offset==0)rows=rows.TakeWhile(r=>String(r,"status")=="open").Concat(main.Archive.AllSuggestions().Select(s=>JsonSerializer.SerializeToElement(new{id=s.Id,title=s.Title,dueDate=s.DueDate,status="suggested",revision=0,sourceId=s.MessageId,evidence=s.Evidence,updatedAt=s.CreatedAt}))).Concat(rows.SkipWhile(r=>String(r,"status")=="open")).ToArray();
+        if(currentView=="todos"&&offset==0)rows=rows.TakeWhile(r=>String(r,"status")=="open").Concat(main.Archive.AllSuggestions().Select(s=>JsonSerializer.SerializeToElement(new{id=s.Id,title=s.Title,dueDate=s.DueDate,dueTime=s.DueTime,status="suggested",revision=0,sourceId=s.MessageId,evidence=s.Evidence,updatedAt=s.CreatedAt}))).Concat(rows.SkipWhile(r=>String(r,"status")=="open")).ToArray();
         rendering = true;
-        try { displayedDay=KoreanToday;list.ItemsSource = rows.Select(v => (currentView == "todos" ? Status(v.GetProperty("status").GetString()!) + (String(v,"dueDate") is {Length:>0} due ? " · " + due : "") : v.GetProperty("ownerName").GetString() + " · " + v.GetProperty("submittedCount").GetInt32() + "/" + v.GetProperty("targetCount").GetInt32() + "명 제출") is var summary && currentView == "todos" ? WithBadge(v, summary) : new WorkRow(v, v.GetProperty("title").GetString()!.ReplaceLineEndings(" "), summary)).ToArray(); list.SelectedItem = list.Items.Cast<WorkRow>().FirstOrDefault(r => r.Value.GetProperty("id").GetString() == previous); }
+        try { displayedDay=KoreanToday;list.ItemsSource = rows.Select(v => (currentView == "todos" ? Status(v.GetProperty("status").GetString()!) + (String(v,"dueDate") is {Length:>0} due ? " · " + due + (DueTime(v) is { } at ? " " + at : "") : "") : v.GetProperty("ownerName").GetString() + " · " + v.GetProperty("submittedCount").GetInt32() + "/" + v.GetProperty("targetCount").GetInt32() + "명 제출") is var summary && currentView == "todos" ? WithBadge(v, summary) : new WorkRow(v, v.GetProperty("title").GetString()!.ReplaceLineEndings(" "), summary)).ToArray(); list.SelectedItem = list.Items.Cast<WorkRow>().FirstOrDefault(r => r.Value.GetProperty("id").GetString() == previous); }
         finally { rendering = false; }
         if(currentView=="todos"&&list.SelectedItem is WorkRow selected&&detail.Children.OfType<TextBlock>().FirstOrDefault(t=>Equals(t.Tag,"deadline-counter")) is{} counter)
-            counter.Text=Deadline(String(selected.Value,"dueDate"),String(selected.Value,"status"),displayedDay);
+            counter.Text=Deadline(String(selected.Value,"dueDate"),String(selected.Value,"status"),displayedDay,DueTime(selected.Value));
         UpdatePanes();
     }
     WorkRow WithBadge(JsonElement v,string summary)
@@ -132,10 +132,12 @@ public sealed class WorkWindow : Window
     Task Show(JsonElement value) { if (view == "todos") { Todo(value); return Task.CompletedTask; } return Submission(value.GetProperty("id").GetString()!); }
     static string String(JsonElement value, string field) => value.TryGetProperty(field, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString()! : "";
     static string Status(string status) => status switch { "suggested" => "추천 · 확인 필요", "open" => "진행 중", "done" => "완료", _ => "제외" };
-    static string Deadline(string value,string status,DateOnly today)
+    // The server keeps the hour beside the date; a PC that predates it simply shows the date.
+    static string? DueTime(JsonElement value) => TimeOnly.TryParseExact(String(value, "dueTime"), "HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out _) ? String(value, "dueTime") : null;
+    static string Deadline(string value,string status,DateOnly today,string? time=null)
     {
         if(!DateOnly.TryParseExact(value,"yyyy-MM-dd",CultureInfo.InvariantCulture,DateTimeStyles.None,out var due))return "기한 없음";
-        var date=due.ToString("yyyy.MM.dd",CultureInfo.InvariantCulture);
+        var date=due.ToString("yyyy.MM.dd",CultureInfo.InvariantCulture)+(time is null?"":" "+time);
         if(status is "done" or "dismissed")return date;
         var days=due.DayNumber-today.DayNumber;
         return date+" · "+(days>0?"D-"+days:days==0?"D-Day":"기한 지남 "+(-days)+"일");
@@ -146,7 +148,7 @@ public sealed class WorkWindow : Window
         if (item is { } original)
         {
             if (String(original, "evidence") is { Length: > 0 } evidence) detail.Children.Add(Text(evidence, 12));
-            var counter=Text(Deadline(String(original,"dueDate"),String(original,"status"),KoreanToday),14);counter.Tag="deadline-counter";detail.Children.Add(counter);
+            var counter=Text(Deadline(String(original,"dueDate"),String(original,"status"),KoreanToday,DueTime(original)),14);counter.Tag="deadline-counter";detail.Children.Add(counter);
             if (String(original, "sourceId") is { Length: > 0 } source)
                 detail.Children.Add(Action("원본 메시지 보기", async () => { var originalMessage = main.Archive.Merge(await api.Get<Detail>($"api/messages/{source}")); if (originalMessage.Message.Purged) { Notice.Show(this, "메시지는 받은 PC에만 저장됩니다. 이 PC에는 사본이 없어 내용을 볼 수 없습니다.", "원본 메시지"); return; } var original = originalMessage.Message; var page = new StackPanel { Margin = new Thickness(24, 20, 24, 20) };
                     page.Children.Add(AdminUi.Heading(original.Title, 18));
@@ -159,20 +161,26 @@ public sealed class WorkWindow : Window
         var title = new TextBox { MaxLength = 200, Text = item is { } t ? String(t, "title") : "", Margin = new Thickness(0, 0, 0, 12) };
         var due = new DatePicker { Margin = new Thickness(0, 0, 0, 12) };
         if (item is { } d && DateTime.TryParse(String(d, "dueDate"), out var day)) due.SelectedDate = day;
+        // Half-hour choices through the school day ("오전까지" is 12:00, "퇴근 전" 17:00); a saved time outside them stays selectable.
+        var savedTime = item is { } timed ? DueTime(timed) : null;
+        var times = new[] { "시각 없음" }.Concat(Enumerable.Range(16, 21).Select(h => $"{h / 2:00}:{h % 2 * 30:00}")).Append(savedTime ?? "").Where(x => x.Length > 0).Distinct().OrderBy(x => x == "시각 없음" ? "" : x, StringComparer.Ordinal).ToArray();
+        var at = new ComboBox { ItemsSource = times, SelectedItem = savedTime ?? "시각 없음", Margin = new Thickness(0, 0, 0, 12) };
+        System.Windows.Automation.AutomationProperties.SetName(at, "기한 시각");
+        string? Time() { if (at.SelectedItem is not string chosen || chosen == "시각 없음") return null; if (due.SelectedDate is null) throw new InvalidOperationException("시각은 기한 날짜와 함께 정하세요."); return chosen; }
         var statuses = new[] { "open", "done", "dismissed" };
         var status = new ComboBox { ItemsSource = statuses.Select(Status).ToArray(), SelectedIndex = 0, Margin = new Thickness(0, 0, 0, 14) };
         if (item is { } s && Array.IndexOf(statuses, String(s, "status")) is var index && index >= 0) status.SelectedIndex = index;
-        detail.Children.Add(Text("제목", 12)); detail.Children.Add(title); detail.Children.Add(Text("기한 (선택)", 12)); detail.Children.Add(due); if (item is not null) { detail.Children.Add(Text("상태", 12)); detail.Children.Add(status); }
+        detail.Children.Add(Text("제목", 12)); detail.Children.Add(title); detail.Children.Add(Text("기한 (선택)", 12)); detail.Children.Add(due); detail.Children.Add(Text("시각 (선택)", 12)); detail.Children.Add(at); if (item is not null) { detail.Children.Add(Text("상태", 12)); detail.Children.Add(status); }
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right }; var cancel = Action("취소", () => { detail.Children.Clear(); list.SelectedItem = null; return Task.CompletedTask; }); buttons.Children.Add(cancel); detail.Children.Add(buttons);
         buttons.Children.Add(Action(item is { } candidate && String(candidate, "status") == "suggested" ? "확인 후 등록" : "저장", async () =>
         {
             if (item is { } suggested && String(suggested, "status") == "suggested")
             {
-                if (statuses[status.SelectedIndex] != "dismissed") await api.Send<JsonElement>(HttpMethod.Post, "api/todos", new { title = title.Text, dueDate = due.SelectedDate?.ToString("yyyy-MM-dd"), status = "open", revision = 0, sourceId = String(suggested, "sourceId") });
+                if (statuses[status.SelectedIndex] != "dismissed") await api.Send<JsonElement>(HttpMethod.Post, "api/todos", new { title = title.Text, dueDate = due.SelectedDate?.ToString("yyyy-MM-dd"), dueTime = Time(), status = "open", revision = 0, sourceId = String(suggested, "sourceId") });
                 main.Archive.Decide(String(suggested, "sourceId"), String(suggested, "id"));
                 detail.Children.Clear(); await Reload(); feedback.Text = "저장했습니다."; return;
             }
-            await api.Send<JsonElement>(item is null ? HttpMethod.Post : HttpMethod.Patch, "api/todos" + (item is { } todo ? "/" + String(todo, "id") : ""), new { title = title.Text, dueDate = due.SelectedDate?.ToString("yyyy-MM-dd"), status = statuses[status.SelectedIndex], revision = item is { } old ? old.GetProperty("revision").GetInt32() : 0 });
+            await api.Send<JsonElement>(item is null ? HttpMethod.Post : HttpMethod.Patch, "api/todos" + (item is { } todo ? "/" + String(todo, "id") : ""), new { title = title.Text, dueDate = due.SelectedDate?.ToString("yyyy-MM-dd"), dueTime = Time(), status = statuses[status.SelectedIndex], revision = item is { } old ? old.GetProperty("revision").GetInt32() : 0 });
             detail.Children.Clear(); await Reload(); feedback.Text = "저장했습니다.";
         },true));
     }
@@ -296,7 +304,7 @@ public sealed class WorkWindow : Window
         var day=new DateOnly(2026,12,31);
         if(Deadline("2027-01-01","open",day)!="2027.01.01 · D-1"||Deadline("2026-12-31","open",day)!="2026.12.31 · D-Day"
            ||Deadline("2026-12-29","open",day)!="2026.12.29 · 기한 지남 2일"||Deadline("","open",day)!="기한 없음"
-           ||Deadline("2026-12-29","done",day)!="2026.12.29")throw new InvalidOperationException("기한별 D-Day 표시 검증 실패");
+           ||Deadline("2026-12-29","done",day)!="2026.12.29"||Deadline("2026-12-31","open",day,"12:00")!="2026.12.31 12:00 · D-Day")throw new InvalidOperationException("기한별 D-Day 표시 검증 실패");
         view="submission-requests";await Reload();directAdd.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         for(var i=0;i<100&&busy;i++)await Task.Delay(50);
         if(busy||view!="todos"||!detail.Children.OfType<TextBox>().Any())throw new InvalidOperationException("제출 탭에서 할 일 직접 추가 전환 실패");

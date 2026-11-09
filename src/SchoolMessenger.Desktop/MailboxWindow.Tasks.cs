@@ -29,7 +29,7 @@ public partial class MailboxWindow
         {
             var label = new StackPanel();
             label.Children.Add(new TextBlock { Text = row.Title, TextWrapping = TextWrapping.Wrap, FontSize = 12, FontWeight = FontWeights.SemiBold });
-            var date = new TextBlock { Text = row.DueDate is null ? "기한 없음 · 추가 후 설정" : "기한 " + row.DueDate, FontSize = 11, Margin = new Thickness(0, 3, 0, 0) };
+            var date = new TextBlock { Text = row.DueDate is null ? "기한 없음 · 추가 후 설정" : "기한 " + row.DueDate + (row.DueTime is { } time ? " " + time + "까지" : ""), FontSize = 11, Margin = new Thickness(0, 3, 0, 0) };
             date.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); label.Children.Add(date);
             var choice = new CheckBox { Content = label, IsChecked = true, Margin = new Thickness(0, 5, 0, 5), HorizontalContentAlignment = HorizontalAlignment.Stretch };
             choice.Checked += (_, _) => UpdateTaskAction(); choice.Unchecked += (_, _) => UpdateTaskAction();
@@ -53,7 +53,7 @@ public partial class MailboxWindow
         {
             foreach (var choice in choices)
             {
-                if (choice.Add) await Api.Send<JsonElement>(HttpMethod.Post, "api/todos", new { title = choice.Row.Title, dueDate = choice.Row.DueDate, status = "open", revision = 0, sourceId = messageId });
+                if (choice.Add) await Api.Send<JsonElement>(HttpMethod.Post, "api/todos", new { title = choice.Row.Title, dueDate = choice.Row.DueDate, dueTime = choice.Row.DueTime, status = "open", revision = 0, sourceId = messageId });
                 main.Archive.Decide(messageId, choice.Row.Id);
             }
             if (version != taskPromptVersion || detail?.Message.Id != messageId) return;

@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace SchoolMessenger.Desktop;
 
-public sealed record TaskCandidate(string Title, string Evidence, string? DueDate);
+public sealed record TaskCandidate(string Title, string Evidence, string? DueDate, string? DueTime = null);
 // Runs on the PC that holds the message, so the wording of a suggestion never reaches the server.
 public static class TaskCandidates
 {
@@ -13,7 +13,11 @@ public static class TaskCandidates
     static readonly Regex Ended = new(@"취소|철회|제출\s*완료|제출했|제출하셨|제출하지\s*마|참석하지\s*마|참고\s*(하시기|바랍|해\s*주)|양해", RegexOptions.NonBacktracking);
     static readonly Regex Dates = new(@"(?:(\d{4})\s*년\s*)?(\d{1,2})\s*월\s*(\d{1,2})\s*일|\d{4}-\d{2}-\d{2}|오늘|내일|모레|(?:다음|이번)\s*주(?:\s*[월화수목금토일]요일)?|[월화수목금토일]요일", RegexOptions.NonBacktracking);
     // The date goes together with its weekday, time and particle, wherever it sits ("11월 7일(금) 오후 3시까지 제출" -> "제출").
-    static readonly Regex DateWithSuffix = new($@"(?:{Dates})(?:\s*\([월화수목금토일]\))?(?:\s*(?:오전|오후)?\s*\d{{1,2}}\s*시(?:\s*\d{{1,2}}\s*분)?)?\s*(?:까지|에)?\s*", RegexOptions.NonBacktracking);
+    static readonly Regex DateWithSuffix = new($@"(?:{Dates})(?:\s*\([월화수목금토일]\))?(?:\s*(?:오전|오후)?\s*\d{{1,2}}\s*시(?:\s*\d{{1,2}}\s*분|\s*반)?)?\s*(?:까지|에)?\s*", RegexOptions.NonBacktracking);
+    // The hour a request is due by. "오전까지" means by noon and "퇴근 전" by the end of the school day at 17:00.
+    const string TimePattern = @"(?<ap>오전|오후)\s*(?<h>\d{1,2})\s*시(?:\s*(?<m>\d{1,2})\s*분|\s*(?<half>반))?|(?<h>\d{1,2})\s*시(?:\s*(?<m>\d{1,2})\s*분|\s*(?<half>반))?\s*(?:까지|에)|(?<noon>정오)|(?<part>오전|오후)\s*(?:중|까지)|(?<end>퇴근\s*(?:시간\s*)?전)";
+    static readonly Regex Times = new(TimePattern, RegexOptions.None, TimeSpan.FromSeconds(1));
+    static readonly Regex TimeWords = new($@"(?:{TimePattern})\s*(?:으로|까지|에)?\s*", RegexOptions.None, TimeSpan.FromSeconds(1));
     // "담임 선생님께서는 …" names who should act; the task already belongs to that person.
     static readonly Regex Addressee = new(@"^.{0,30}?(께서는|께서|께선|에서는|선생님들?은)\s+", RegexOptions.NonBacktracking);
     static readonly Regex ObjectAction = new($@"(을|를)\s*({Verbs})", RegexOptions.NonBacktracking);
@@ -43,11 +47,25 @@ public static class TaskCandidates
         }
         return null;
     }
+    static string? TimeOf(string sentence)
+    {
+        var t = Times.Match(sentence);
+        if (!t.Success) return null;
+        if (t.Groups["noon"].Success) return "12:00";
+        if (t.Groups["end"].Success) return "17:00";
+        if (t.Groups["part"].Success) return t.Groups["part"].Value == "오전" ? "12:00" : "17:00";
+        var hour = int.Parse(t.Groups["h"].Value, CultureInfo.InvariantCulture);
+        var minute = t.Groups["half"].Success ? 30 : t.Groups["m"].Success ? int.Parse(t.Groups["m"].Value, CultureInfo.InvariantCulture) : 0;
+        // A school request names afternoon hours without "오후": "4시까지" is 16:00, "10시까지" is 10:00.
+        if (t.Groups["ap"].Value == "오후" ? hour < 12 : t.Groups["ap"].Value == "" && hour is >= 1 and <= 6) hour += 12;
+        return hour <= 23 && minute <= 59 ? $"{hour:00}:{minute:00}" : null;
+    }
     public static List<TaskCandidate> Candidates(string body, long sentAt)
     {
         var today = KoreanDate(sentAt);
         var result = new List<TaskCandidate>();
         DateOnly? announced = null;
+        string? announcedTime = null;
         // ponytail: explicit request rules; a locally hosted language model can replace this if school hardware and policy permit.
         foreach (var line in Sentences.Split(body[..Math.Min(20_000, body.Length)]))
         {
@@ -55,15 +73,18 @@ public static class TaskCandidates
             if (sentence.Length == 0) continue;
             var matches = Dates.Matches(sentence);
             var due = matches.Count == 1 ? Parse(matches[0], today) : null;
-            // "내일 오후 3시 회의가 있습니다. 자료를 준비해 주세요." A request without a date takes the upcoming date announced before it.
-            if (matches.Count == 0) due = announced;
-            else if (due >= today) announced = due;
+            var time = TimeOf(sentence);
+            // "내일 오후 3시 회의가 있습니다. 자료를 준비해 주세요." A request without a date takes the upcoming date and time announced before it.
+            if (matches.Count == 0) { due = announced; time ??= announcedTime; }
+            else if (due >= today) { announced = due; announcedTime = time; }
+            // A time is only a deadline on a known day.
+            if (due is null) time = null;
             if (!Request.IsMatch(sentence) || Ended.IsMatch(sentence)) continue;
-            var title = RequestEnding.Replace(ObjectAction.Replace(DateWithSuffix.Replace(Addressee.Replace(sentence, ""), ""), " $2"), "").Trim(' ', '.', ',');
+            var title = RequestEnding.Replace(ObjectAction.Replace(TimeWords.Replace(DateWithSuffix.Replace(Addressee.Replace(sentence, ""), ""), ""), " $2"), "").Trim(' ', '.', ',');
             title = PlainVerb.Replace(title, v => Plain[v.Value]);
             if (title.Length == 0) title = sentence;
             if (title.Length > 120) title = title[..120];
-            result.Add(new(title, sentence[..Math.Min(sentence.Length, 2000)], due?.ToString("yyyy-MM-dd")));
+            result.Add(new(title, sentence[..Math.Min(sentence.Length, 2000)], due?.ToString("yyyy-MM-dd"), time));
             if (result.Count == 10) break;
         }
         return result.DistinctBy(c => c.Evidence).ToList();
