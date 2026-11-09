@@ -1,12 +1,23 @@
 """Build a product-specific Sparkle/WinSparkle feed; never print signing material."""
-import argparse,base64,hashlib,json,os,re,sys,xml.etree.ElementTree as ET
+import argparse,base64,hashlib,html,json,os,re,sys,xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import quote
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 SPARKLE='http://www.andymatuschak.org/xml-namespaces/sparkle'
 ET.register_namespace('sparkle',SPARKLE)
-def create_feed(config,version,tag,asset,seed,architecture=None):
+NOTES='https://gyomutalk-downloads.vercel.app/ns/update'
+ET.register_namespace('gyomutalk',NOTES)
+# Which bundled audiences each product's users see before installing.
+AUDIENCES={'server':['office','desktop'],'windows':['desktop'],'mac':['desktop']}
+STYLE=("body{margin:14px 16px;word-break:keep-all;font-family:'Malgun Gothic','Apple SD Gothic Neo',sans-serif;font-size:13px;line-height:1.6;color:#0f1b2d;background:#fff}"
+    "p{margin:0 0 10px;color:#5b6b80}h3{margin:14px 0 4px;font-size:13px;color:#2463eb}ul{margin:0;padding-left:18px}li{margin:2px 0}")
+def release_sections(notes,product):
+    return [(name,items) for audience in AUDIENCES[product] for name,items in notes['audiences'].get(audience,{}).items()]
+def describe(version,released,sections):
+    body=''.join('<h3>'+html.escape(name)+'</h3><ul>'+''.join('<li>'+html.escape(item)+'</li>' for item in items)+'</ul>' for name,items in sections)
+    return '<html><head><meta charset="utf-8"><style>'+STYLE+'</style></head><body><p>교무톡 '+html.escape(version)+' · '+html.escape(released)+'</p>'+body+'</body></html>'
+def create_feed(config,version,tag,asset,seed,architecture=None,notes=None):
     if not re.fullmatch(r'\d+\.\d+\.\d+',version) or tag not in [version,'v'+version]: raise ValueError('Release tag/version mismatch')
     product=config['product']
     if product not in ['server','windows','mac'] or config['repository']!='yd043105-pixel/gyomutalk-'+product: raise ValueError('Unexpected repository')
@@ -27,7 +38,10 @@ def create_feed(config,version,tag,asset,seed,architecture=None):
     ET.SubElement(channel,'title').text='교무톡 '+product
     ET.SubElement(channel,'link').text='https://github.com/'+config['repository']+'/releases'
     item=ET.SubElement(channel,'item');ET.SubElement(item,'title').text='교무톡 '+version
-    ET.SubElement(item,'description').text='새 버전의 변경 내용은 GitHub 릴리즈 페이지에서 확인하세요.'
+    sections=release_sections(notes,product) if notes else []
+    # Old WinSparkle/Sparkle clients render the HTML; the app's own dialog reads the JSON.
+    ET.SubElement(item,'description').text=describe(version,notes['releasedOn'],sections) if sections else '새 버전의 변경 내용은 GitHub 릴리즈 페이지에서 확인하세요.'
+    ET.SubElement(item,'{'+NOTES+'}notes').text=json.dumps(dict(sections),ensure_ascii=False)
     # The Windows installer enforces the minimum OS. Older builds lack a
     # compatibility manifest, so WinSparkle's Windows version check rejects them.
     if product=='mac':
@@ -42,7 +56,7 @@ def main():
     notes=json.loads(Path('src/SchoolMessenger.Shared/updates.json').read_text(encoding='utf-8-sig'))
     if version!=notes['version']: raise ValueError('Bundled release notes/version mismatch')
     seed=base64.b64decode(os.environ['UPDATER_ED25519_SEED'],validate=True)
-    content,digest=create_feed(config,version,options.tag,options.asset,seed,options.architecture)
+    content,digest=create_feed(config,version,options.tag,options.asset,seed,options.architecture,notes)
     options.output.parent.mkdir(parents=True,exist_ok=True);options.output.write_bytes(content)
     options.asset.with_suffix(options.asset.suffix+'.sha256').write_text(digest+'  '+options.asset.name+'\n',encoding='ascii')
     print('Signed update feed created for '+config['product']+' '+version)

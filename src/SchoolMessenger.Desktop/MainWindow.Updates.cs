@@ -91,4 +91,24 @@ public partial class MainWindow
         File.WriteAllText(path, notice.Sequence.ToString());
         File.WriteAllText("artifacts/update-notice-check.json", System.Text.Json.JsonSerializer.Serialize(new { confirmed = notice.Sequence, checks = 6 }));
     }
+
+    // The offer window reads the notes the release feed carries; a feed without them still offers the version.
+    void VerifyUpdateOffer()
+    {
+        using var stream = typeof(MainWindow).Assembly.GetManifestResourceStream("SchoolMessenger.UpdateNotes.json")!;
+        using var bundled = System.Text.Json.JsonDocument.Parse(stream);
+        var notes = System.Security.SecurityElement.Escape(bundled.RootElement.GetProperty("audiences").GetProperty("desktop").GetRawText());
+        string Feed(string version, string extra) => "<?xml version=\"1.0\"?><rss xmlns:sparkle=\"http://www.andymatuschak.org/xml-namespaces/sparkle\" xmlns:gyomutalk=\"https://gyomutalk-downloads.vercel.app/ns/update\"><channel><item><description>&lt;p&gt;html&lt;/p&gt;</description>"
+            + extra + "<enclosure url=\"https://example.invalid/x.exe\" sparkle:shortVersionString=\"" + version + "\" sparkle:version=\"" + version + "\"/></item></channel></rss>";
+        var offer = DesktopUpdater.UpdateOffer.Parse(Feed("0.0.10", "<gyomutalk:notes>" + notes + "</gyomutalk:notes>")) ?? throw new InvalidOperationException("업데이트 피드를 읽지 못했습니다.");
+        if (offer.Version != new Version(0, 0, 10) || offer.Sections.Count == 0 || offer.Sections[0].Items.Length == 0) throw new InvalidOperationException("업데이트 피드의 변경 내용 오류");
+        if (DesktopUpdater.UpdateOffer.Parse(Feed("0.0.9", "")) is not { Sections.Count: 0 }) throw new InvalidOperationException("변경 내용 없는 피드 처리 오류");
+        if (DesktopUpdater.UpdateOffer.Parse("<rss><channel/></rss>") is not null) throw new InvalidOperationException("빈 피드에서 새 버전을 찾았습니다.");
+        var choice = DesktopUpdater.ShowOffer(this, offer, "0.0.9", "교무톡", dialog => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            SavePreview(dialog, "artifacts/update-offer-preview.png");
+            ((DockPanel)((StackPanel)((DockPanel)dialog.Content).Children[1]).Children[1]).Children.OfType<Button>().Single(b => b.IsCancel).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        }), System.Windows.Threading.DispatcherPriority.ApplicationIdle));
+        if (choice != "later") throw new InvalidOperationException("업데이트 안내 '나중에' 처리 오류");
+    }
 }

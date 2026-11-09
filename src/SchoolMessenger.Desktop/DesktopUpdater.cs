@@ -1,13 +1,18 @@
 using System.Diagnostics;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
+using System.Xml;
+using System.Xml.Linq;
 
 namespace SchoolMessenger.Desktop;
 
-// WinSparkle verifies every payload with the embedded product-specific Ed25519 key.
+// WinSparkle downloads and verifies every payload with the embedded product-specific Ed25519 key.
+// The app reads the same feed itself only to offer the update in its own window.
 internal static class DesktopUpdater
 {
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int CanShutdown();
@@ -18,7 +23,9 @@ internal static class DesktopUpdater
     static readonly Shutdown failed=OnFailure;
     static readonly RunInstaller installer=Install;
     static Window? owner;
-    static string product="",setting="",error="";
+    static string product="",setting="",error="",appcast="";
+    static readonly HttpClient http=new(){Timeout=TimeSpan.FromSeconds(20)};
+    static bool checking;
     static bool initialized,prepared,enabled=true;
     static Task<bool>? preparation;
     static string? staged;
@@ -36,14 +43,17 @@ internal static class DesktopUpdater
             setting=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"GyomutalkUpdater",product,"enabled.txt");
             enabled=!File.Exists(setting)||File.ReadAllText(setting)!="false";
             Native.win_sparkle_set_app_details("Gyomutalk",manager?"교무톡 관리자":"교무톡",typeof(App).Assembly.GetName().Version!.ToString(3));
-            Native.win_sparkle_set_appcast_url("https://github.com/"+repository+"/releases/latest/download/appcast.xml");
+            appcast="https://github.com/"+repository+"/releases/latest/download/appcast.xml";Native.win_sparkle_set_appcast_url(appcast);
             if(Native.win_sparkle_set_eddsa_public_key(config.RootElement.GetProperty("publicKey").GetString()!)!=1)throw new InvalidOperationException("업데이트 서명 키를 확인하세요.");
             Native.win_sparkle_set_lang("ko");Native.win_sparkle_set_update_check_interval(86400);
-            Native.win_sparkle_set_automatic_check_for_updates(enabled?1:0);
+            // The app schedules its own checks so the offer appears in its own window, not WinSparkle's.
+            Native.win_sparkle_set_automatic_check_for_updates(0);
             Native.win_sparkle_set_can_shutdown_callback(canShutdown);Native.win_sparkle_set_shutdown_request_callback(shutdown);
             Native.win_sparkle_set_user_run_installer_callback(installer);
             Native.win_sparkle_set_error_callback(failed);
             Native.win_sparkle_init();initialized=true;
+            var timer=new DispatcherTimer{Interval=TimeSpan.FromSeconds(20)};
+            timer.Tick+=(_,_)=>{timer.Interval=TimeSpan.FromHours(1);if(enabled&&DateTimeOffset.UtcNow-LastCheck()>TimeSpan.FromDays(1))_=Check(owner,false);};timer.Start();
             var result=Path.Combine(Path.GetDirectoryName(setting)!,"last-result.json");
             if(File.Exists(result))
             {
@@ -64,9 +74,92 @@ internal static class DesktopUpdater
         var panel=new StackPanel{Margin=new Thickness(24)};
         panel.Children.Add(new TextBlock{Text="GitHub의 정식 공개 릴리즈를 확인합니다. 설치파일은 게시자 서명을 검증한 뒤 실행합니다.",TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,0,0,16)});
         var automatic=new CheckBox{Content="하루에 한 번 새 버전 자동 확인",IsChecked=enabled};
-        automatic.Click+=(_,_)=>{try{Directory.CreateDirectory(Path.GetDirectoryName(setting)!);File.WriteAllText(setting,automatic.IsChecked==true?"true":"false");enabled=automatic.IsChecked==true;Native.win_sparkle_set_automatic_check_for_updates(enabled?1:0);}catch(IOException e){automatic.IsChecked=enabled;Notice.Show(dialog,e.Message,"설정 저장 실패");}};panel.Children.Add(automatic);
-        panel.Children.Add(new TextBlock{Text="첫 공개 릴리즈 전에는 새 버전이 제공되지 않습니다. 학교 네트워크에서 GitHub 연결을 허용해야 합니다.",TextWrapping=TextWrapping.Wrap,FontSize=12,Margin=new Thickness(0,16,0,16)});
-        var check=new Button{Content="지금 업데이트 확인",Padding=new Thickness(14,9,14,9)};check.Click+=(_,_)=>{dialog.Close();Native.win_sparkle_check_update_with_ui();};panel.Children.Add(check);dialog.Content=panel;dialog.ShowDialog();
+        automatic.Click+=(_,_)=>{try{Directory.CreateDirectory(Path.GetDirectoryName(setting)!);File.WriteAllText(setting,automatic.IsChecked==true?"true":"false");enabled=automatic.IsChecked==true;}catch(IOException e){automatic.IsChecked=enabled;Notice.Show(dialog,e.Message,"설정 저장 실패");}};panel.Children.Add(automatic);
+        panel.Children.Add(new TextBlock{Text="학교 네트워크에서 GitHub 연결을 허용해야 합니다.",TextWrapping=TextWrapping.Wrap,FontSize=12,Margin=new Thickness(0,16,0,16)});
+        var check=new Button{Content="지금 업데이트 확인",Padding=new Thickness(14,9,14,9)};check.Click+=async(_,_)=>{check.IsEnabled=false;check.Content="확인하는 중…";await Check(dialog,true,dialog.Close);};panel.Children.Add(check);dialog.Content=panel;dialog.ShowDialog();
+    }
+    static string Folder=>Path.GetDirectoryName(setting)!;
+    static DateTimeOffset LastCheck(){try{return DateTimeOffset.FromUnixTimeSeconds(long.Parse(File.ReadAllText(Path.Combine(Folder,"last-check.txt"))));}catch(Exception e)when(e is IOException or FormatException or OverflowException or ArgumentException){return DateTimeOffset.MinValue;}}
+    static async Task Check(Window? from,bool manual,Action? before=null)
+    {
+        if(checking){before?.Invoke();return;}checking=true;
+        var current=typeof(App).Assembly.GetName().Version!.ToString(3);
+        try
+        {
+            var offer=UpdateOffer.Parse(await http.GetStringAsync(appcast));
+            try{Directory.CreateDirectory(Folder);File.WriteAllText(Path.Combine(Folder,"last-check.txt"),DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString());}catch(IOException){}
+            before?.Invoke();from=from is {IsVisible:true}?from:owner;
+            if(offer is null||offer.Version<=Version.Parse(current)){if(manual)Notice.Show(from,"최신 버전("+current+")을 사용하고 있습니다.","프로그램 업데이트");return;}
+            var skipped=Path.Combine(Folder,"skipped.txt");
+            if(!manual&&File.Exists(skipped)&&File.ReadAllText(skipped)==offer.Version.ToString())return;
+            switch(ShowOffer(from,offer,current,product=="server"?"교무톡 관리자":"교무톡"))
+            {
+                // WinSparkle fetches the same feed again, verifies the signature and shows download progress.
+                case "install":Native.win_sparkle_check_update_with_ui_and_install();break;
+                case "skip":try{File.WriteAllText(skipped,offer.Version.ToString());}catch(IOException){}break;
+            }
+        }
+        catch(Exception e)when(e is HttpRequestException or TaskCanceledException or XmlException or System.Text.Json.JsonException or FormatException or ArgumentException or OverflowException or IOException)
+        {before?.Invoke();if(manual)Notice.Show(from is {IsVisible:true}?from:owner,"새 버전을 확인하지 못했습니다. 학교 네트워크에서 GitHub 연결을 허용했는지 확인하세요.","프로그램 업데이트");}
+        finally{checking=false;}
+    }
+    internal sealed record UpdateOffer(Version Version,IReadOnlyList<(string Name,string[] Items)> Sections)
+    {
+        const string Sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle",Notes="https://gyomutalk-downloads.vercel.app/ns/update";
+        internal static UpdateOffer? Parse(string feed)
+        {
+            using var reader=XmlReader.Create(new StringReader(feed),new XmlReaderSettings{DtdProcessing=DtdProcessing.Prohibit,XmlResolver=null});
+            return XDocument.Load(reader).Descendants("item").Select(item=>
+            {
+                var version=item.Element("enclosure")?.Attribute(XName.Get("shortVersionString",Sparkle))?.Value;
+                if(version is null)return null;
+                var notes=item.Element(XName.Get("notes",Notes))?.Value;
+                var sections=new List<(string,string[])>();
+                if(!string.IsNullOrWhiteSpace(notes)){using var json=System.Text.Json.JsonDocument.Parse(notes);foreach(var section in json.RootElement.EnumerateObject())sections.Add((section.Name,section.Value.EnumerateArray().Select(n=>n.GetString()!).ToArray()));}
+                return new UpdateOffer(Version.Parse(version),sections);
+            }).Where(o=>o is not null).MaxBy(o=>o!.Version);
+        }
+    }
+    // Returns "install", "skip" or "later".
+    internal static string ShowOffer(Window? from,UpdateOffer offer,string current,string app,Action<Window>? shown=null)
+    {
+        var choice="later";
+        var dialog=new Window{Title="프로그램 업데이트",Width=460,SizeToContent=SizeToContent.Height,ResizeMode=ResizeMode.NoResize,ShowInTaskbar=from is null,
+            WindowStartupLocation=from is {IsLoaded:true}?WindowStartupLocation.CenterOwner:WindowStartupLocation.CenterScreen,Style=(Style)Application.Current.FindResource("SchoolWindow")};
+        if(from is {IsLoaded:true})dialog.Owner=from;
+        TextBlock Text(string text,double size,string brush,FontWeight weight)
+        {var block=new TextBlock{Text=text,FontSize=size,FontWeight=weight,TextWrapping=TextWrapping.Wrap};block.SetResourceReference(TextBlock.ForegroundProperty,brush);return block;}
+        var layout=new DockPanel{Margin=new Thickness(24,22,24,20)};
+        var header=new StackPanel{Margin=new Thickness(0,0,0,16)};DockPanel.SetDock(header,Dock.Top);
+        var badge=new Border{CornerRadius=new CornerRadius(10),Padding=new Thickness(9,2,9,3),HorizontalAlignment=HorizontalAlignment.Left,Child=Text("새 버전 "+offer.Version.ToString(3),12,"Blue",FontWeights.SemiBold)};
+        badge.SetResourceReference(Border.BackgroundProperty,"Pale");header.Children.Add(badge);
+        var title=Text(app+"을 업데이트할 수 있습니다",18,"Ink",FontWeights.SemiBold);title.Margin=new Thickness(0,10,0,3);header.Children.Add(title);
+        header.Children.Add(Text("지금 사용 중인 버전은 "+current+"입니다.",12.5,"Muted",FontWeights.Normal));
+        var footer=new StackPanel{Margin=new Thickness(0,14,0,0)};DockPanel.SetDock(footer,Dock.Bottom);
+        footer.Children.Add(Text("설치파일의 게시자 서명을 확인한 뒤 설치합니다. 설치하는 동안 프로그램이 잠시 닫힙니다.",12,"Muted",FontWeights.Normal));
+        var actions=new DockPanel{Margin=new Thickness(0,18,0,0),LastChildFill=false};footer.Children.Add(actions);
+        Button Action(string label,string value,string? style,Dock dock)
+        {var button=new Button{Content=label,MinWidth=76,Margin=new Thickness(dock==Dock.Right?8:0,0,0,0)};if(style is not null)button.SetResourceReference(FrameworkElement.StyleProperty,style);button.Click+=(_,_)=>{choice=value;dialog.Close();};DockPanel.SetDock(button,dock);actions.Children.Add(button);return button;}
+        Action("이 버전 건너뛰기","skip","SubtleButton",Dock.Left);
+        Action("업데이트 설치","install","PrimaryButton",Dock.Right).IsDefault=true;
+        Action("나중에","later",null,Dock.Right).IsCancel=true;
+        var notes=new StackPanel();
+        foreach(var (name,items) in offer.Sections)
+        {
+            var heading=Text(name,13,"Blue",FontWeights.SemiBold);heading.Margin=new Thickness(0,notes.Children.Count==0?0:12,0,4);notes.Children.Add(heading);
+            foreach(var item in items)
+            {
+                var row=new DockPanel{Margin=new Thickness(0,2,0,2)};var dot=Text("•",13,"Muted",FontWeights.Normal);dot.Width=14;DockPanel.SetDock(dot,Dock.Left);row.Children.Add(dot);
+                var line=Text(item,13,"Ink",FontWeights.Normal);line.LineHeight=20;row.Children.Add(line);notes.Children.Add(row);
+            }
+        }
+        if(notes.Children.Count==0)notes.Children.Add(Text("변경 내용은 GitHub 릴리즈 페이지에서 확인할 수 있습니다.",13,"Muted",FontWeights.Normal));
+        var card=new Border{CornerRadius=new CornerRadius(12),BorderThickness=new Thickness(1),Padding=new Thickness(16,14,16,14),
+            Child=new ScrollViewer{MaxHeight=Math.Min(320,SystemParameters.WorkArea.Height-320),VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Content=notes}};
+        card.SetResourceReference(Border.BackgroundProperty,"Canvas");card.SetResourceReference(Border.BorderBrushProperty,"Line");
+        layout.Children.Add(header);layout.Children.Add(footer);layout.Children.Add(card);dialog.Content=layout;
+        if(shown is not null)dialog.ContentRendered+=(_,_)=>shown(dialog);
+        dialog.ShowDialog();return choice;
     }
     static int Prepare()
     {
@@ -116,7 +209,7 @@ internal static class DesktopUpdater
         [DllImport(Library,CallingConvention=CallingConvention.Cdecl)]internal static extern void win_sparkle_set_lang([MarshalAs(UnmanagedType.LPUTF8Str)]string lang);
         [DllImport(Library,CallingConvention=CallingConvention.Cdecl)]internal static extern void win_sparkle_set_update_check_interval(int seconds);
         [DllImport(Library,CallingConvention=CallingConvention.Cdecl)]internal static extern void win_sparkle_set_automatic_check_for_updates(int enabled);
-        [DllImport(Library,CallingConvention=CallingConvention.Cdecl)]internal static extern void win_sparkle_check_update_with_ui();
+        [DllImport(Library,CallingConvention=CallingConvention.Cdecl)]internal static extern void win_sparkle_check_update_with_ui_and_install();
         [DllImport(Library,CallingConvention=CallingConvention.Cdecl)]internal static extern void win_sparkle_set_can_shutdown_callback(CanShutdown callback);
         [DllImport(Library,CallingConvention=CallingConvention.Cdecl)]internal static extern void win_sparkle_set_shutdown_request_callback(Shutdown callback);
         [DllImport(Library,CallingConvention=CallingConvention.Cdecl)]internal static extern void win_sparkle_set_user_run_installer_callback(RunInstaller callback);

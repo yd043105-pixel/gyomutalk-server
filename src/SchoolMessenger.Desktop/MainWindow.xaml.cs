@@ -514,6 +514,7 @@ public partial class MainWindow : Window
         try
         {
             VerifyUpdateNotice();
+            VerifyUpdateOffer();
             var loginPreview=Path.Combine(Path.GetDirectoryName(Path.GetFullPath(Environment.GetEnvironmentVariable("SCHOOL_UI_OUTPUT")??"artifacts/client-preview.png"))!,"school-login.png");
             Directory.CreateDirectory(Path.GetDirectoryName(loginPreview)!);SavePreview(this,loginPreview);
             try { startup.SetEnabled(true); if (!startup.Enabled || !WindowsStartup.Command.EndsWith(" --startup", StringComparison.Ordinal)) throw new InvalidOperationException("자동 실행 등록 실패"); }

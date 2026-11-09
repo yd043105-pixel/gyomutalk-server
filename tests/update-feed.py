@@ -1,4 +1,4 @@
-import base64,importlib.util,pathlib,subprocess,tempfile,xml.etree.ElementTree as ET
+import base64,importlib.util,json,pathlib,subprocess,tempfile,xml.etree.ElementTree as ET
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 spec=importlib.util.spec_from_file_location('feeds','scripts/Create-UpdateFeed.py');module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
@@ -8,8 +8,11 @@ with tempfile.TemporaryDirectory() as folder:
         arch='arm64' if product=='mac' else None
         asset=pathlib.Path(folder)/(f'gyomutalk-mac-1.0.1-macos-arm64.zip' if arch else f'gyomutalk-{product}-1.0.1-setup-win-x64.exe');asset.write_bytes(b'SYNTHETIC NONEXECUTABLE UPDATE PAYLOAD')
         config=dict(product=product,repository='yd043105-pixel/gyomutalk-'+product,publicKey=pub)
-        content,digest=module.create_feed(config,'1.0.1','v1.0.1',asset,seed,arch)
+        notes={'releasedOn':'2026-11-09','audiences':{'desktop':{'Tasks':['<b>due</b> time']},'office':{'Server':['update first']}}}
+        content,digest=module.create_feed(config,'1.0.1','v1.0.1',asset,seed,arch,notes)
         item=ET.fromstring(content).find('./channel/item')
+        shown=json.loads(item.findtext('{'+module.NOTES+'}notes'));assert list(shown)==(['Server','Tasks'] if product=='server' else ['Tasks']),shown
+        description=item.findtext('description');assert '<h3>Tasks</h3>' in description and '&lt;b&gt;due' in description and '<b>' not in description,description
         assert item.findtext('{'+module.SPARKLE+'}minimumSystemVersion')==('15.0' if arch else None)
         enclosure=item.find('enclosure');signature=enclosure.attrib['{'+module.SPARKLE+'}edSignature'];key.public_key().verify(base64.b64decode(signature),asset.read_bytes())
         assert enclosure.attrib['{'+module.SPARKLE+'}version']==('1000001' if arch else '1.0.1')

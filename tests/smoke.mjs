@@ -204,7 +204,7 @@ try {
     assert.equal(JSON.parse(readFileSync(path.join(data, 'client/preferences.json'), 'utf8')).AutoLogin, false);
     check('native registration, DPAPI automatic login, logout cleanup and startup settings');
     assert.equal(JSON.parse(readFileSync('artifacts/update-notice-check.json', 'utf8')).checks, 6);
-    assert.ok(existsSync('artifacts/update-notice-preview.png'));
+    assert.ok(existsSync('artifacts/update-notice-preview.png') && existsSync('artifacts/update-offer-preview.png'));
     check('native update popup confirms once, preserves deferred notice, handles older/newer versions and manual history');
     assert.ok(existsSync('artifacts/tasks-preview.png') && existsSync('artifacts/submissions-preview.png'));
     assert.ok((await admin.request('/api/todos')).some(t => t.title === '학급 상담 기록 정리'));
