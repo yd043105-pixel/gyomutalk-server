@@ -25,7 +25,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "$project 빌드 실패" }
     }
     if (-not $SkipTests) {
-        foreach ($test in @('chat-survey','message-storage','timetable-neis','staff-activation-codes','discovery-listener','file-scan')) {
+        foreach ($test in @('chat-survey','message-storage','timetable-neis','discovery-listener','file-scan')) {
             node "tests/$test.mjs"
             if ($LASTEXITCODE -ne 0) { throw "PC verification failed: $test" }
         }

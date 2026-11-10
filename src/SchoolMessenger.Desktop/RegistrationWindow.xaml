@@ -2,8 +2,8 @@
  Title="교무톡 · 계정 신청" Width="440" Height="780" MinWidth="380" MinHeight="610" Style="{StaticResource SchoolWindow}" WindowStartupLocation="CenterOwner">
  <Grid Margin="23,18"><Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions><ScrollViewer VerticalScrollBarVisibility="Auto"><StackPanel>
   <TextBlock Text="계정 신청" FontSize="22" FontWeight="Bold"/><TextBlock Text="관리자가 한 번 승인하면 로그인할 수 있습니다." Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,8,0,18" TextWrapping="Wrap"/>
-  <TextBlock Text="아이디 · 영문·숫자·._- 3~32자" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,0,0,6"/><TextBox x:Name="UsernameBox" MaxLength="32"/>
-  <TextBlock Text="이름" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,12,0,6"/><TextBox x:Name="NameBox" MaxLength="50"/>
+  <TextBlock Text="이름" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,0,0,6"/><TextBox x:Name="NameBox" MaxLength="50" AutomationProperties.Name="이름"/>
+  <TextBlock Text="로그인할 때도 이 이름을 씁니다. 같은 이름이 이미 있으면 홍길동.2처럼 뒤에 숫자를 붙이세요." FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"/>
   <TextBlock Text="부서" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,12,0,6"/><TextBox x:Name="DepartmentBox" MaxLength="50"/>
   <TextBlock Text="비밀번호 · 12~128자" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,12,0,6"/><PasswordBox x:Name="PasswordBox" MaxLength="128"/>
   <TextBlock Text="비밀번호 확인" FontSize="11" Foreground="{DynamicResource Muted}" Margin="0,12,0,6"/><PasswordBox x:Name="ConfirmBox" MaxLength="128"/>

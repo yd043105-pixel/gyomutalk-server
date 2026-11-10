@@ -82,7 +82,10 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
     {
         var user = c.HttpContext.RequestServices.GetRequiredService<Store>().GetUser(c.Principal!.FindFirstValue(ClaimTypes.NameIdentifier)!);
         using var sessionDb=c.HttpContext.RequestServices.GetRequiredService<Store>().Open();
-        if (user is not { Active: true } || user.SessionVersion.ToString() != c.Principal!.FindFirstValue("version") || !DeviceSessions.Valid(sessionDb,user.Id,c.Principal!.FindFirstValue("version"),c.Principal!.FindFirstValue("sid")))
+        // A saved sign-in from one computer stops working while the account is connected from another.
+        var elsewhere = user is not null && c.HttpContext.RequestServices.GetRequiredService<Presence>().Elsewhere(user.Id,
+            Presence.Computer(c.HttpContext, c.HttpContext.RequestServices.GetRequiredService<IHostEnvironment>().IsDevelopment()));
+        if (elsewhere || user is not { Active: true } || user.SessionVersion.ToString() != c.Principal!.FindFirstValue("version") || !DeviceSessions.Valid(sessionDb,user.Id,c.Principal!.FindFirstValue("version"),c.Principal!.FindFirstValue("sid")))
         {
             c.RejectPrincipal();
             await c.HttpContext.SignOutAsync();
@@ -214,7 +217,7 @@ app.Use(async (context, next) =>
     if(profile?.NeedsActivation==true &&
        (context.Request.Path.StartsWithSegments("/api")||context.Request.Path.StartsWithSegments("/hub")||context.Request.Path.StartsWithSegments("/remote")) &&
        context.Request.Path.Value is not("/api/session" or "/api/activate" or "/api/logout" or "/api/registration/policy"))
-    { context.Response.StatusCode=403;context.Response.Headers.CacheControl="no-store";await context.Response.WriteAsJsonAsync(new{error="관리자가 개별 전달한 활성화 번호로 최초 설정을 완료하세요.",activationRequired=true});return; }
+    { context.Response.StatusCode=403;context.Response.Headers.CacheControl="no-store";await context.Response.WriteAsJsonAsync(new{error="처음 로그인하면 약관 확인과 개인 비밀번호 설정을 먼저 마쳐야 합니다.",activationRequired=true});return; }
     if(profile is{SharedPassword:true,NeedsActivation:false}&&
        (context.Request.Path.StartsWithSegments("/api")||context.Request.Path.StartsWithSegments("/hub")||context.Request.Path.StartsWithSegments("/remote"))&&
        context.Request.Path.Value is not("/api/session" or "/api/password" or "/api/logout" or "/api/registration/policy"))
@@ -251,11 +254,13 @@ app.MapGet("/api/session", (HttpContext c, IAntiforgery antiforgery) => Results.
     user = c.User.Identity?.IsAuthenticated == true ? PublicUser(store.GetUser(UserId(c))!) : null
 }));
 // One wording for every failure, so the answer never tells whether an account exists or is locked.
-const string LoginFailed = "아이디 또는 비밀번호가 맞지 않습니다. 5회 이상 틀리면 15분간 잠깁니다. 비밀번호를 모르면 담당자에게 문의하세요.";
-app.MapPost("/api/login", async Task<IResult> (Login request, HttpContext c) =>
+const string LoginFailed = "이름 또는 비밀번호가 맞지 않습니다. 5회 이상 틀리면 15분간 잠깁니다. 비밀번호를 모르면 담당자에게 문의하세요.";
+app.MapPost("/api/login", async Task<IResult> (Login request, HttpContext c, Presence presence) =>
 {
     if (request.Username is not {Length:>=1 and <=50} || request.Password is null || request.Password.Length > 128) return Error(LoginFailed, 401);
     var user = store.FindUser(request.Username.Trim());
+    // People sign in with their name: an account whose login name differs is found by its name when only one has it.
+    if (user is null && store.Users().Where(u => u.Name == request.Username.Trim()).Take(2).ToArray() is [var named]) user = named;
     if (user is null && store.FindRegistration(request.Username.Trim()) is { } registration)
     {
         var pendingUser = new User(registration.Id, registration.Username, registration.Name, registration.Department, registration.PasswordHash, false, false, false, 1, 0, 0);
@@ -264,7 +269,7 @@ app.MapPost("/api/login", async Task<IResult> (Login request, HttpContext c) =>
     }
     if (user is null || user.LockedUntil > Maintenance.Now) return Error(LoginFailed, 401);
     var initialProfile=StaffAccounts.Get(store,user.Id);
-    if(user.Active&&initialProfile is{NeedsActivation:true}&&initialProfile.ExpiresAt<=Maintenance.Now)return Error("초기 계정의 활성화 기간이 만료되었습니다. 관리자에게 재발급을 요청하세요.",401);
+    if(user.Active&&initialProfile is{NeedsActivation:true}&&initialProfile.ExpiresAt<=Maintenance.Now)return Error("초기 비밀번호를 쓸 수 있는 기간이 지났습니다. 관리자에게 계정 초기화를 요청하세요.",401);
     var verified = hasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
     if (verified == PasswordVerificationResult.Failed)
     {
@@ -274,6 +279,9 @@ app.MapPost("/api/login", async Task<IResult> (Login request, HttpContext c) =>
     }
     // Only someone with the right password learns the account is stopped, so wrong guesses still look the same and count.
     if (!user.Active) return Error("사용 중지된 계정입니다. 관리자에게 ‘다시 사용’을 요청하세요.", 403);
+    // One computer at a time: while this account is connected from another computer, a second sign-in is refused.
+    if (presence.Elsewhere(user.Id, Presence.Computer(c, app.Environment.IsDevelopment())))
+        return Error("다른 컴퓨터에서 로그인 중입니다. 그 컴퓨터에서 로그아웃하거나 교무톡을 끈 뒤 다시 로그인하세요.", 409);
     // The shared first password must never open a session from outside, so first-time setup stays inside the school.
     if (verified == PasswordVerificationResult.SuccessRehashNeeded)
         store.Execute("UPDATE Users SET PasswordHash=$hash WHERE Id=$id AND PasswordHash=$old", ("$hash", hasher.HashPassword(user, request.Password)), ("$id", user.Id), ("$old", user.PasswordHash));
@@ -290,11 +298,13 @@ app.MapPost("/api/login", async Task<IResult> (Login request, HttpContext c) =>
 app.MapGet("/api/registration/policy",()=>registrationPolicy.Current).RequireRateLimiting("login");
 app.MapPost("/api/register", IResult (RegistrationRequest request) =>
 {
-    if (!ValidProfile(request.Username, request.Name, request.Department) || !ValidPassword(request.Password)) return Error("아이디는 영문·숫자·._- 3~32자, 이름·부서는 1~50자, 비밀번호는 12~128자입니다.");
+    // The name is the login name. Two people of one name are told apart by a trailing ".2", which is not shown as their name.
+    var username = (string.IsNullOrWhiteSpace(request.Username) ? request.Name : request.Username)?.Trim();
+    var displayName = string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim() == username ? Regex.Replace(username ?? "", @"\.\d+$", "") : request.Name.Trim();
+    if (!ValidProfile(username, displayName, request.Department) || !ValidPassword(request.Password)) return Error("이름은 띄어쓰기 없이 2~50자(한글·영문·숫자·._-), 부서는 1~50자, 비밀번호는 12~128자입니다.");
     if(registrationPolicy.Validate(request.Agreement) is{} policyError)return Error(policyError,registrationPolicy.Current.CanRegister?400:503);
-    var username = request.Username!.Trim();
-    if (store.FindUser(username) is not null) return Error("이미 사용 중인 아이디입니다.", 409);
-    var user = new User(Guid.NewGuid().ToString("N"), username, request.Name!.Trim(), request.Department!.Trim(), "", false, false, false, 1, 0, 0);
+    if (store.FindUser(username!) is not null) return Error("이미 사용 중인 이름입니다. 같은 이름이 있으면 이름 뒤에 .2처럼 숫자를 붙여 신청하세요.", 409);
+    var user = new User(Guid.NewGuid().ToString("N"), username!, displayName, request.Department!.Trim(), "", false, false, false, 1, 0, 0);
     using var registrationDatabase=store.Open();using var registrationTransaction=registrationDatabase.BeginTransaction();
     using var registrationCommand=Store.Command(registrationDatabase,"""
         INSERT INTO Registrations(Id,Username,Name,Department,PasswordHash,Status,CreatedAt) VALUES($id,$username,$name,$department,$hash,'pending',$now)
@@ -302,7 +312,7 @@ app.MapPost("/api/register", IResult (RegistrationRequest request) =>
         """,registrationTransaction, ("$id", user.Id), ("$username", username), ("$name", user.Name), ("$department", user.Department), ("$hash", hasher.HashPassword(user, request.Password!)), ("$now", Maintenance.Now));
     var saved=registrationCommand.ExecuteNonQuery();
     if(saved!=0){registrationPolicy.Record(registrationDatabase,registrationTransaction,user.Id,request.Agreement!);registrationTransaction.Commit();}
-    return saved == 0 ? Error("이미 신청한 아이디입니다. 관리자 승인 후 로그인하세요.", 409) : Results.Ok(new { status = "pending", message = "계정 신청 완료. 관리자 승인 후 로그인할 수 있습니다." });
+    return saved == 0 ? Error("이미 신청한 이름입니다. 관리자 승인 후 로그인하세요.", 409) : Results.Ok(new { status = "pending", message = "계정 신청 완료. 관리자 승인 후 로그인할 수 있습니다." });
 }).RequireRateLimiting("login");
 app.MapPost("/api/logout", async (HttpContext c, RemoteSessions sessions) =>
 {
@@ -659,11 +669,11 @@ adminApi.MapPut("/roster-folders", (RosterFolders request, HttpContext c) => ros
 adminApi.MapPost("/users", IResult (CreateUser request,HttpContext c) =>
 {
     if(request.IsAdmin&&!Root(c))return Error("관리자 권한 부여는 최고관리자만 할 수 있습니다.",403);
-    if (!ValidProfile(request.Username, request.Name, request.Department) || !ValidPassword(request.Password)) return Error("아이디는 영문·숫자·._- 3~32자, 이름·부서는 1~50자, 비밀번호는 12~128자입니다.");
-    if (store.FindUser(request.Username!) is not null) return Error("이미 사용 중인 아이디입니다.", 409);
+    if (!ValidProfile(request.Username, request.Name, request.Department) || !ValidPassword(request.Password)) return Error("로그인 이름은 띄어쓰기 없이 2~50자(한글·영문·숫자·._-), 이름·부서는 1~50자, 비밀번호는 12~128자입니다.");
+    if (store.FindUser(request.Username!) is not null) return Error("이미 사용 중인 로그인 이름입니다.", 409);
     var user = new User(Guid.NewGuid().ToString("N"), request.Username!, request.Name!.Trim(), request.Department!.Trim(), "", request.IsAdmin, request.CanBroadcast, true, 1, 0, 0);
     try { InsertUser(store, user, hasher.HashPassword(user, request.Password!)); }
-    catch (SqliteException e) when (e.SqliteErrorCode == 19) { return Error("이미 사용 중인 아이디입니다.", 409); }
+    catch (SqliteException e) when (e.SqliteErrorCode == 19) { return Error("이미 사용 중인 로그인 이름입니다.", 409); }
     return Results.Ok(PublicUser(user));
 });
 adminApi.MapPatch("/users/{id}", IResult (string id, UpdateUser request, HttpContext c) =>
@@ -673,7 +683,7 @@ adminApi.MapPatch("/users/{id}", IResult (string id, UpdateUser request, HttpCon
     if(!Root(c)&&(user.IsAdmin||request.IsAdmin!=user.IsAdmin))return Error("관리자 계정 변경은 최고관리자만 할 수 있습니다.",403);
     if(request.IsAdmin&&StaffAccounts.Get(store,id)?.SharedPassword==true)return Error("초기 비밀번호 상태인 계정에는 관리자 권한을 부여할 수 없습니다. 별도의 관리자 계정을 사용하세요.");
     if(store.Query("SELECT 1 FROM BackendRoot WHERE UserId=$id",r=>r.GetInt32(0),("$id",id)).Count==1&&(!request.Active||!request.IsAdmin))return Error("최고관리자 계정을 비활성화하거나 권한을 해제할 수 없습니다.",403);
-    if(!string.IsNullOrEmpty(request.Password)&&StaffAccounts.Get(store,id) is not null)return Error("사전 등록된 교사는 계정 초기화에서 임시 비밀번호와 새 활성화 번호를 발급하세요.");
+    if(!string.IsNullOrEmpty(request.Password)&&StaffAccounts.Get(store,id) is not null)return Error("사전 등록된 교사는 계정 초기화로 비밀번호를 되돌리세요.");
     if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Length > 50 || string.IsNullOrWhiteSpace(request.Department) || request.Department.Length > 50 ||
         (request.Position is not null&&!StaffAccounts.Position(request.Position))||(!string.IsNullOrEmpty(request.Password) && !ValidPassword(request.Password))) return Error("이름·부서·직책·비밀번호 형식을 확인하세요.");
     if (id == UserId(c) && (!request.Active || !request.IsAdmin)) return Error("자신의 관리자 권한을 해제하거나 계정을 비활성화할 수 없습니다.");
@@ -709,7 +719,7 @@ object PublicUser(User u)
 {var profile=StaffAccounts.Get(store,u.Id);return new { u.Id, u.Username, u.Name, u.Department,u.Position, u.IsAdmin, u.CanBroadcast, u.Active, activationRequired=profile?.NeedsActivation==true,seatIp=profile?.SeatIp,sharedPassword=profile?.SharedPassword==true,passwordChangeRequired=profile is{SharedPassword:true,NeedsActivation:false} };}
 static IResult Error(string message, int status = 400) => Results.Json(new { error = message }, statusCode: status);
 static bool ValidPassword(string? password) => password is { Length: >= 12 and <= 128 } && !string.IsNullOrWhiteSpace(password);
-static bool ValidProfile(string? username, string? name, string? department) => username is not null && Regex.IsMatch(username, "^[A-Za-z0-9._-]{3,32}$") &&
+static bool ValidProfile(string? username, string? name, string? department) => StaffAccounts.LoginName(username) &&
     !string.IsNullOrWhiteSpace(name) && name.Length <= 50 && !string.IsNullOrWhiteSpace(department) && department.Length <= 50;
 static void InsertUser(Store store, User u, string hash) => store.Execute("INSERT INTO Users(Id,Username,Name,Department,PasswordHash,IsAdmin,CanBroadcast) VALUES($id,$username,$name,$department,$hash,$admin,$broadcast)",
     ("$id", u.Id), ("$username", u.Username), ("$name", u.Name), ("$department", u.Department), ("$hash", hash), ("$admin", u.IsAdmin), ("$broadcast", u.CanBroadcast));

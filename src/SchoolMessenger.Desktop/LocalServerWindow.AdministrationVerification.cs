@@ -42,18 +42,18 @@ public sealed partial class LocalServerWindow
         Width=760;Height=560;UpdateLayout();
         var memberHeading=ViewControls<TextBlock>(administrationView).Single(text=>text.Text=="교직원·권한");
         var registrationButton=ViewControls<Button>(administrationView).Single(button=>System.Windows.Automation.AutomationProperties.GetName(button)=="교직원 등록 · 승인");
-        FrameworkElement[] memberHeader=[memberHeading,registrationButton,Action("조직도 폴더 관리"),Action("활성화 번호 일괄 받기")];
+        FrameworkElement[] memberHeader=[memberHeading,registrationButton,Action("조직도 폴더 관리")];
         check(memberHeading.ActualHeight<memberHeading.FontSize*1.6&&memberHeader.All(control=>
         {
             var start=control.TransformToAncestor(this).Transform(new Point());
             return control.IsVisible&&control.ActualWidth>0&&start.X>=0&&start.X+control.ActualWidth<=ActualWidth-8&&
                 start.Y>=0&&start.Y+control.ActualHeight<=ActualHeight-42;
-        }),"the member heading stays on one line and all three toolbar buttons are within the viewport at minimum size");
+        }),"the member heading stays on one line and both toolbar buttons are within the viewport at minimum size");
         var memberRows=ViewControls<Button>(administrationView).Where(button=>System.Windows.Automation.AutomationProperties.GetName(button).EndsWith(" 계정 설정",StringComparison.Ordinal)).ToArray();
         check(memberRows.Length>=2&&memberRows.All(button=>button.ActualWidth>0&&button.TransformToAncestor(this).Transform(new Point()).X+button.ActualWidth<=ActualWidth-8),
             "the member table stays within the administrator window at its minimum width");
         capture("administrator-members-compact.png",this);Width=1060;Height=780;UpdateLayout();
-        await Click(ViewControls<Button>(administrationView).Single(b=>System.Windows.Automation.AutomationProperties.GetName(b)==name+" 계정 설정"));await Wait(()=>ViewControls<TextBlock>(administrationView).Any(t=>t.Text.StartsWith("아이디 "+login,StringComparison.Ordinal)),"교직원 설정을 열지 못했습니다.");
+        await Click(ViewControls<Button>(administrationView).Single(b=>System.Windows.Automation.AutomationProperties.GetName(b)==name+" 계정 설정"));await Wait(()=>ViewControls<TextBlock>(administrationView).Any(t=>t.Text.StartsWith("로그인 이름 "+login,StringComparison.Ordinal)),"교직원 설정을 열지 못했습니다.");
         TextBox Input(string label)=>ViewControls<TextBox>(administrationView).Single(t=>System.Windows.Automation.AutomationProperties.GetName(t)==label);
         Input("부서").Text="수정된 가상 부서";Input("직책").Text="가상부장";foreach(var role in new[]{"학사일정 담당","시간표 담당"})ViewControls<CheckBox>(administrationView).Single(c=>System.Windows.Automation.AutomationProperties.GetName(c)==role).IsChecked=true;await Click(Action("변경 저장"));
         await Wait(()=>HasText("수정된 가상 부서")&&HasText("학사일정"),"교직원 설정 저장이 반영되지 않았습니다.");

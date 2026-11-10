@@ -53,6 +53,7 @@ class Client {
     if(route==='/api/register'&&method==='POST'&&body?.agreement===undefined)body={...body,agreement:await acceptRequiredPoliciesForFixture(address)};
     const headers = { Cookie: [...this.cookies].map(([key, value]) => `${key}=${value}`).join('; '), ...extraHeaders };
     if (method !== 'GET' && withCsrf) headers['X-CSRF-TOKEN'] = this.csrf;
+    if (this.computer) headers['X-Test-Computer'] = this.computer;
     const options = { method, headers };
     if (body instanceof FormData) options.body = body;
     else if (typeof body === 'string') { headers['Content-Type'] = 'text/plain'; options.body = body; }
@@ -82,7 +83,7 @@ try {
   for (const [username, name, department] of [['alice', '김담임', '1학년부'], ['bob', '이교무', '교무부'], ['carol', '박행정', '행정실']])
     await admin.request('/api/admin/users', 'POST', { username, name, department, password, isAdmin: false, canBroadcast: false });
   await alice.login('alice'); await bob.login('bob'); await carol.login('carol');
-  await presenceChecks({Client,admin,bob,carol,check});
+  await presenceChecks({Client,admin,bob,carol,check,password});
   await anonymous.request('/hub/negotiate?negotiateVersion=1', 'POST', {}, 401);
   const negotiation = await bob.request('/hub/negotiate?negotiateVersion=1', 'POST', {});
   const hubPath = '/hub?id=' + encodeURIComponent(negotiation.connectionToken);
@@ -156,6 +157,20 @@ try {
     assert.ok(!(await admin.request('/api/admin/registrations')).some(r => r.id === pending.id));
     await applicant.request('/api/register', 'POST', registration, 409);
     check('only administrators approve and registration cannot grant privileged roles');
+    // The name is the login name: no separate id, a second person of the name adds ".2", and a name signs in an older id account.
+    const named = new Client(); named.csrf = (await named.request('/api/session')).csrfToken;
+    await named.request('/api/register', 'POST', { name: '이름 신청', department: '교무기획부', password }, 400);
+    assert.equal((await named.request('/api/register', 'POST', { name: '이름신청', department: '교무기획부', password })).status, 'pending');
+    assert.ok((await named.request('/api/register', 'POST', { name: '이름신청', department: '교무기획부', password }, 409)).error.includes('이름'));
+    await named.request('/api/register', 'POST', { username: '이름신청.2', department: '연구부', password });
+    const applied = (await admin.request('/api/admin/registrations')).filter(r => r.name === '이름신청').map(r => r.username).sort();
+    assert.deepEqual(applied, ['이름신청', '이름신청.2']);
+    for (const r of (await admin.request('/api/admin/registrations')).filter(r => r.name === '이름신청')) await admin.request('/api/admin/registrations/' + r.id + '/approve', 'POST', {});
+    await named.login('이름신청.2'); assert.equal(named.user.name, '이름신청'); assert.equal(named.user.department, '연구부');
+    const byName = new Client(); await byName.login(registration.name); assert.equal(byName.user.username, registration.username);
+    const shared = new Client(); shared.csrf = (await shared.request('/api/session')).csrfToken;
+    await shared.login('이름신청'); assert.equal(shared.user.department, '교무기획부');
+    check('registration takes a name alone, tells same-name people apart by a suffix, and a name signs in an account with another login id');
     const persistent = applicant.loginCookieHeaders.find(c => c.startsWith('SchoolMessenger.Session='));
     assert.ok(new Date(persistent.match(/expires=([^;]+)/i)[1]).getTime() > Date.now() + 29 * 86400000);
     const restored = new Client(); restored.cookies = new Map(applicant.cookies);
@@ -198,7 +213,7 @@ try {
     await admin.login('admin', false, password);
     assert.ok(existsSync('artifacts/client-preview.png')); assert.ok(existsSync('artifacts/compose-preview.png'));
     check('native WPF login, mailbox, detail, compose send and screenshots');
-    assert.ok((await admin.request('/api/admin/registrations')).some(r => r.username === 'native.teacher'));
+    assert.ok((await admin.request('/api/admin/registrations')).some(r => r.username === '가입신청교사' && r.name === '가입신청교사'));
     assert.ok(existsSync('artifacts/registration-preview.png') && existsSync('artifacts/login-preview.png'));
     assert.equal(existsSync(path.join(data, 'client/login.dat')), false);
     assert.equal(JSON.parse(readFileSync(path.join(data, 'client/preferences.json'), 'utf8')).AutoLogin, false);

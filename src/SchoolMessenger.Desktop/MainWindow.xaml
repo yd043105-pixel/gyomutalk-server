@@ -53,8 +53,8 @@
    <StackPanel x:Name="SchoolField" Margin="0,0,0,15"><TextBlock Text="학교" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,0,7"/><Grid><TextBox x:Name="SchoolSearch" AutomationProperties.Name="학교 찾기" Padding="32,6,8,6"/><Path Data="{StaticResource SearchIcon}" Stroke="{DynamicResource Faint}" StrokeThickness="1.75" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Width="16" Height="16" Stretch="Uniform" HorizontalAlignment="Left" Margin="11,0,0,0" IsHitTestVisible="False"/></Grid></StackPanel>
    <TextBlock Text="학교 서버 주소" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,0,7"/><DockPanel><Button x:Name="FindServerButton" DockPanel.Dock="Right" Content="교내 자동검색" Click="FindNearbyServerClick" Margin="7,0,0,0" Padding="9,7"/><TextBox x:Name="ServerAddress" TextChanged="ConnectionAddressChanged" AutomationProperties.Name="학교 서버 주소"/></DockPanel>
    <TextBlock Text="관리자가 알려준 주소를 넣거나 ‘교내 자동검색’을 누르세요." FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"/>
-   <TextBlock Text="아이디" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,15,0,7"/><TextBox x:Name="UsernameBox" AutomationProperties.Name="아이디"/>
-   <TextBlock Text="관리자가 등록한 계정은 보통 본인 이름, 직접 신청한 계정은 그때 정한 아이디입니다." FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+   <TextBlock Text="이름" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,15,0,7"/><TextBox x:Name="UsernameBox" AutomationProperties.Name="이름"/>
+   <TextBlock Text="본인 이름을 넣으세요. 예전에 영문 아이디로 신청한 계정은 그 아이디로도 로그인됩니다." FontSize="11" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"/>
    <TextBlock Text="비밀번호" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,15,0,7"/><PasswordBox x:Name="PasswordBox" KeyDown="PasswordKeyDown"/>
    <CheckBox x:Name="AutoStartCheck" Content="Windows 로그인 시 자동 실행" FontSize="11" Margin="0,17,0,0" Checked="StartupChanged" Unchecked="StartupChanged"/>
    <CheckBox x:Name="RememberLogin" Content="이 Windows 계정에서 자동 로그인" FontSize="11" Margin="0,9,0,0" Checked="RememberChanged" Unchecked="RememberChanged"/>

@@ -38,7 +38,8 @@ public static class StaffAccounts
     { using var c=Store.Command(db,"INSERT INTO OfficeAudit(ActorId,Action,ResourceId,CreatedAt) VALUES($actor,$action,$id,$now)",tx,("$actor",actor),("$action",action),("$id",id),("$now",Maintenance.Now));c.ExecuteNonQuery(); }
     static string Actor(HttpContext c)=>c.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
     static IResult Error(string message,int status=400)=>Results.Json(new{error=message},statusCode:status);
-    static string NewCode()=>RandomNumberGenerator.GetString("ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789",20);
+    // The first password is known to everyone, so an account nobody has signed in to stops accepting it after this long.
+    public const int FirstSignInDays=30;
     public static void Map(WebApplication app, RouteGroupBuilder admin, Store store, PasswordHasher<User> hasher, RegistrationPolicy policy)
     {
         admin.MapGet("/staff",()=>store.Users().Select(u=>new{u.Id,u.Username,u.Name,u.Department,u.Position,u.Active,profile=Get(store,u.Id)}));
@@ -47,14 +48,14 @@ public static class StaffAccounts
             if(!LoginName(request.LoginName)||string.IsNullOrWhiteSpace(request.Name)||request.Name.Length>50||string.IsNullOrWhiteSpace(request.Department)||request.Department.Length>50||!Position(request.Position)||!PasswordValid(request))return Error("로그인 이름(2~50자), 이름·부서·직책(50자)을 확인하세요. 공통 비밀번호는 12345678, 개별 임시 비밀번호는 12~128자입니다.");
             string? ip=null;
             if(!string.IsNullOrWhiteSpace(request.SeatIp)){if(!IPAddress.TryParse(request.SeatIp,out var address)||address.AddressFamily!=System.Net.Sockets.AddressFamily.InterNetwork||IPAddress.IsLoopback(address)||address.Equals(IPAddress.Any)||address.Equals(IPAddress.Broadcast))return Error("좌석에는 유효한 IPv4 주소를 입력하세요.");ip=address.ToString();}
-            var id=Guid.NewGuid().ToString("N");var code=NewCode();var expires=Maintenance.Now+7*86_400_000L;
+            var id=Guid.NewGuid().ToString("N");var expires=Maintenance.Now+FirstSignInDays*86_400_000L;
             var user=new User(id,request.LoginName,request.Name.Trim(),request.Department.Trim(),"",false,false,true,1,0,0);
             using var db=store.Open();using var tx=db.BeginTransaction(deferred:false);
             try
             {
                 using(var insert=Store.Command(db,"INSERT INTO Users(Id,Username,Name,Department,Position,PasswordHash,IsAdmin,CanBroadcast) VALUES($id,$login,$name,$department,$position,$hash,0,0)",tx,("$id",id),("$login",user.Username),("$name",user.Name),("$department",user.Department),("$position",request.Position.Trim()),("$hash",hasher.HashPassword(user,request.TemporaryPassword))))insert.ExecuteNonQuery();
-                using(var insert=Store.Command(db,"INSERT INTO StaffProfiles(UserId,SeatIp,NeedsActivation,ActivationHash,ExpiresAt,SharedPassword) VALUES($id,$ip,1,$hash,$expiry,$shared)",tx,("$id",id),("$ip",ip),("$hash",Hash(code)),("$expiry",expires),("$shared",request.UseSharedPassword)))insert.ExecuteNonQuery();
-                Audit(db,tx,Actor(context),"staff.create",id);tx.Commit();return Results.Ok(new{id,activationCode=code,expiresAt=expires});
+                using(var insert=Store.Command(db,"INSERT INTO StaffProfiles(UserId,SeatIp,NeedsActivation,ActivationHash,ExpiresAt,SharedPassword) VALUES($id,$ip,1,NULL,$expiry,$shared)",tx,("$id",id),("$ip",ip),("$expiry",expires),("$shared",request.UseSharedPassword)))insert.ExecuteNonQuery();
+                Audit(db,tx,Actor(context),"staff.create",id);tx.Commit();return Results.Ok(new{id,expiresAt=expires});
             }
             catch(SqliteException e)when(e.SqliteErrorCode==19){return Error("이미 등록된 로그인 이름 또는 좌석 IP입니다. 동명이인은 로그인 이름을 구분하세요.",409);}
         });
@@ -63,31 +64,13 @@ public static class StaffAccounts
             var user=store.GetUser(id);if(user is null||user.IsAdmin)return Results.NotFound();
             if(!PasswordValid(request)||!LoginName(request.LoginName))return Error("로그인 이름과 비밀번호 정책을 확인하세요.");
             if(request.UseSharedPassword&&store.FindUser(request.LoginName) is{} duplicate&&duplicate.Id!=id)return Error("동명이인은 이름 뒤에 .2 등을 붙여 구분하세요.",409);
-            var code=NewCode();var expires=Maintenance.Now+7*86_400_000L;
+            var expires=Maintenance.Now+FirstSignInDays*86_400_000L;
             using var db=store.Open();using var tx=db.BeginTransaction(deferred:false);
             using(var profile=Store.Command(db,"INSERT OR IGNORE INTO StaffProfiles(UserId,NeedsActivation,ExpiresAt) VALUES($id,1,0)",tx,("$id",id)))profile.ExecuteNonQuery();
             try{using var update=Store.Command(db,"UPDATE Users SET Username=$login,PasswordHash=$hash,SessionVersion=SessionVersion+1,FailedAttempts=0,LockedUntil=0 WHERE Id=$id",tx,("$login",request.UseSharedPassword?request.LoginName:user.Username),("$hash",hasher.HashPassword(user,request.TemporaryPassword)),("$id",id));update.ExecuteNonQuery();}
             catch(SqliteException e)when(e.SqliteErrorCode==19){return Error("이미 등록된 로그인 이름입니다.",409);}
-            using(var update=Store.Command(db,"UPDATE StaffProfiles SET NeedsActivation=1,ActivationHash=$hash,ExpiresAt=$expiry,Failures=0,LockedUntil=0,SharedPassword=$shared WHERE UserId=$id",tx,("$hash",Hash(code)),("$expiry",expires),("$id",id),("$shared",request.UseSharedPassword)))update.ExecuteNonQuery();
-            Audit(db,tx,Actor(context),"staff.reset",id);tx.Commit();return Results.Ok(new{activationCode=code,expiresAt=expires});
-        });
-        // One list for every account still waiting for its first activation, so the administrator can hand codes out at
-        // once. Only hashes are stored, so earlier codes cannot be shown again: they are replaced and stop working.
-        admin.MapPost("/staff/activation-codes",IResult(HttpContext context)=>
-        {
-            var expires=Maintenance.Now+7*86_400_000L;var issued=new List<object>();
-            using var db=store.Open();using var tx=db.BeginTransaction(deferred:false);
-            var waiting=new List<(string Id,string Name,string Username,string Department,string Position)>();
-            using(var read=Store.Command(db,"SELECT u.Id,u.Name,u.Username,u.Department,u.Position FROM Users u JOIN StaffProfiles p ON p.UserId=u.Id WHERE p.NeedsActivation=1 AND u.IsAdmin=0 AND u.Active=1 ORDER BY u.Department,u.Name",tx))
-            using(var reader=read.ExecuteReader())while(reader.Read())waiting.Add((reader.GetString(0),reader.GetString(1),reader.GetString(2),reader.GetString(3),reader.IsDBNull(4)?"":reader.GetString(4)));
-            foreach(var person in waiting)
-            {
-                var code=NewCode();
-                using(var update=Store.Command(db,"UPDATE StaffProfiles SET ActivationHash=$hash,ExpiresAt=$expiry,Failures=0,LockedUntil=0 WHERE UserId=$id",tx,("$hash",Hash(code)),("$expiry",expires),("$id",person.Id)))update.ExecuteNonQuery();
-                Audit(db,tx,Actor(context),"staff.activation-reissue",person.Id);
-                issued.Add(new{person.Name,loginName=person.Username,person.Department,person.Position,activationCode=code,expiresAt=expires});
-            }
-            tx.Commit();return Results.Ok(issued);
+            using(var update=Store.Command(db,"UPDATE StaffProfiles SET NeedsActivation=1,ActivationHash=NULL,ExpiresAt=$expiry,Failures=0,LockedUntil=0,SharedPassword=$shared WHERE UserId=$id",tx,("$expiry",expires),("$id",id),("$shared",request.UseSharedPassword)))update.ExecuteNonQuery();
+            Audit(db,tx,Actor(context),"staff.reset",id);tx.Commit();return Results.Ok(new{expiresAt=expires});
         });
         admin.MapPost("/staff/{id}/seat",IResult(string id,StaffSeatRequest request,HttpContext context)=>
         {
@@ -103,16 +86,10 @@ public static class StaffAccounts
             if(policy.Validate(request.Agreement) is{} policyError)return Error(policyError,policy.Current.CanRegister?400:503);
             if(request.NewPassword is not{Length:>=12 and <=128}||string.IsNullOrWhiteSpace(request.NewPassword))return Error("개인 비밀번호는 12~128자입니다.");
             using var db=store.Open();using var tx=db.BeginTransaction(deferred:false);
-            using var read=Store.Command(db,"SELECT ActivationHash,ExpiresAt,Failures,LockedUntil FROM StaffProfiles WHERE UserId=$id AND NeedsActivation=1",tx,("$id",id));
-            string codeHash;long expires,locked;int failures;
-            using(var reader=read.ExecuteReader()){if(!reader.Read())return Error("초기 설정 대상이 아닙니다.",409);codeHash=reader.GetString(0);expires=reader.GetInt64(1);failures=reader.GetInt32(2);locked=reader.GetInt64(3);}
-            if(expires<=Maintenance.Now)return Error("활성화 기간이 만료되었습니다. 관리자에게 재발급을 요청하세요.",410);
-            if(locked>Maintenance.Now)return Error("활성화 번호 입력이 잠겼습니다. 15분 후 다시 시도하세요.",429);
-            if(request.Code is not{Length:20}||!CryptographicOperations.FixedTimeEquals(Convert.FromHexString(codeHash),Convert.FromHexString(Hash(request.Code))))
-            {
-                if(locked>0)failures=0;
-                using var fail=Store.Command(db,"UPDATE StaffProfiles SET Failures=$failures,LockedUntil=$until WHERE UserId=$id",tx,("$failures",failures+1),("$until",failures+1>=5?Maintenance.Now+900_000:0),("$id",id));fail.ExecuteNonQuery();tx.Commit();return Error("개별 전달받은 활성화 번호를 확인하세요.");
-            }
+            // The first sign-in needs no separate number: the person agrees to the terms and sets a password of their own.
+            using var read=Store.Command(db,"SELECT ExpiresAt FROM StaffProfiles WHERE UserId=$id AND NeedsActivation=1",tx,("$id",id));
+            if(read.ExecuteScalar() is not long expires)return Error("초기 설정 대상이 아닙니다.",409);
+            if(expires<=Maintenance.Now)return Error("초기 비밀번호를 쓸 수 있는 기간이 지났습니다. 관리자에게 계정 초기화를 요청하세요.",410);
             // Reject invalid/locked codes before spending CPU on PBKDF2 password work.
             if(hasher.VerifyHashedPassword(user,user.PasswordHash,request.NewPassword)!=PasswordVerificationResult.Failed)return Error("임시 비밀번호와 다른 개인 비밀번호를 설정하세요.");
             var passwordHash=hasher.HashPassword(user,request.NewPassword);

@@ -58,7 +58,7 @@ public partial class RegistrationWindow : Window
             if(policy is null||!policy.CanRegister)throw new InvalidOperationException(policy?.Message??"약관을 먼저 불러와야 합니다.");
             if(policy.Documents.Any(d=>d.Required&&PolicyChoices[d.Id].IsChecked!=true))throw new InvalidOperationException("필수 약관·개인정보 안내의 전문을 확인하고 체크하세요.");
             var agreement=new RegistrationAcceptance(policy.Revision,PolicyChoices.Where(c=>c.Value.IsChecked==true).Select(c=>c.Key).ToArray());
-            var response = await api.Send<JsonElement>(HttpMethod.Post, "api/register", new { username = UsernameBox.Text.Trim(), name = NameBox.Text.Trim(), department = DepartmentBox.Text.Trim(), password = PasswordBox.Password,agreement });
+            var response = await api.Send<JsonElement>(HttpMethod.Post, "api/register", new { username = NameBox.Text.Trim(), department = DepartmentBox.Text.Trim(), password = PasswordBox.Password,agreement });
             PasswordBox.Clear(); ConfirmBox.Clear(); Feedback.Text = response.GetProperty("message").GetString();
             SubmitButton.Content = "신청 완료 · 창을 닫고 승인 후 로그인하세요";
         }

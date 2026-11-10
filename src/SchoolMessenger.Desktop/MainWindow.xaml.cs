@@ -147,14 +147,14 @@ public partial class MainWindow : Window
         await RequireServerAddress();
         if (hub is not null) await hub.DisposeAsync(); Api?.Dispose(); Api = new Api(ServerAddress.Text); await CheckChosenSchool();
         await Api.Login(UsernameBox.Text.Trim(), PasswordBox.Password, RememberLogin.IsChecked == true); PasswordBox.Clear(); UsernameBox.Text=Api.Session!.User!.Username; SavePreferences();
-        if(Api.Session!.User!.ActivationRequired){savedLogin.Clear();new StaffActivationWindow(Api){Owner=this}.ShowDialog();await Api.RefreshSession();throw new InvalidOperationException("계정 활성화 후 다시 로그인하세요.");}
+        if(Api.Session!.User!.ActivationRequired){savedLogin.Clear();new StaffActivationWindow(Api){Owner=this}.ShowDialog();await Api.RefreshSession();throw new InvalidOperationException("첫 설정을 마쳤으면 방금 정한 비밀번호로 다시 로그인하세요.");}
         if(Api.Session.User.PasswordChangeRequired){savedLogin.Clear();ShowPasswordChange(true);throw new InvalidOperationException("개인 비밀번호로 변경한 뒤 다시 로그인하세요.");}
         if (RememberLogin.IsChecked == true) savedLogin.Save(Api); else savedLogin.Clear();
         await EnterWorkspace();
     }
     async Task EnterWorkspace()
     {
-        if(Api?.Session?.User?.ActivationRequired==true){savedLogin.Clear();new StaffActivationWindow(Api){Owner=this}.ShowDialog();throw new InvalidOperationException("계정 활성화 후 다시 로그인하세요.");}
+        if(Api?.Session?.User?.ActivationRequired==true){savedLogin.Clear();new StaffActivationWindow(Api){Owner=this}.ShowDialog();throw new InvalidOperationException("첫 설정을 마쳤으면 방금 정한 비밀번호로 다시 로그인하세요.");}
         if(Api?.Session?.User?.PasswordChangeRequired==true){savedLogin.Clear();ShowPasswordChange(true);throw new InvalidOperationException("개인 비밀번호로 변경한 뒤 다시 로그인하세요.");}
         var user = Api!.Session!.User!; IdentityLabel.Text = user.Name + " 선생님"; IdentityDepartment.Text = string.Join(" · ",new[]{user.Department,user.Position}.Where(s=>s.Length>0)); archive=null; ShowOwnPresence(false,false);
         schoolName=(await Api.Get<SchoolMessenger.Contracts.RegistrationPolicySet>("api/registration/policy")).Operator;
@@ -661,7 +661,7 @@ public partial class MainWindow : Window
             var registration = new RegistrationWindow(ServerAddress.Text) { Owner = this }; registration.Show();
             await registration.PolicyReady;
             foreach(var choice in registration.PolicyChoices.Values){choice.IsEnabled=true;choice.IsChecked=true;}
-            registration.UsernameBox.Text = "native.teacher"; registration.NameBox.Text = "가입신청교사"; registration.DepartmentBox.Text = "교무기획부";
+            registration.NameBox.Text = "가입신청교사"; registration.DepartmentBox.Text = "교무기획부";
             registration.PasswordBox.Password = registration.ConfirmBox.Password = Environment.GetEnvironmentVariable("SCHOOL_UI_PASSWORD")!;
             registration.SubmitButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));
             for (var i = 0; i < 50 && !registration.SubmitButton.Content.ToString()!.StartsWith("신청 완료", StringComparison.Ordinal); i++) await Task.Delay(100);

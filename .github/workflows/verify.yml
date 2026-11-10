@@ -41,7 +41,7 @@ jobs:
       - name: Verify retained PC features and retirement backups
         shell: pwsh
         run: |
-          foreach ($test in @('chat-survey','timetable-neis','message-storage','staff-activation-codes','discovery-listener','file-scan','large-attachments')) {
+          foreach ($test in @('chat-survey','timetable-neis','message-storage','discovery-listener','file-scan','large-attachments')) {
             node "tests/$test.mjs"
             if ($LASTEXITCODE -ne 0) { throw "Verification failed: $test" }
           }

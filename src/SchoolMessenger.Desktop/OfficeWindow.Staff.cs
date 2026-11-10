@@ -18,18 +18,6 @@ public sealed partial class OfficeWindow
     static string Value(JsonElement row,string key)=>row.TryGetProperty(key,out var value)&&value.ValueKind==JsonValueKind.String?value.GetString()??"":"";
     static bool Flag(JsonElement row,string key)=>row.TryGetProperty(key,out var value)&&value.ValueKind==JsonValueKind.True;
     // Member directory: searchable table on the left, the selected teacher's settings on the right (Figma "구성원 · 교직원·권한").
-    // Reissues every pending activation code and saves them as one CSV the administrator hands out.
-    async Task DownloadActivationCodes()
-    {
-        if(Notice.Show(InteractionOwner,"아직 활성화하지 않은 교직원의 활성화 번호를 모두 새로 발급해 CSV 파일로 저장합니다.\n\n이전에 전달한 번호는 더 이상 쓸 수 없습니다. 파일에는 개인별 활성화 번호가 들어 있으니 배부한 뒤 삭제하세요.","활성화 번호 일괄 받기",MessageBoxButton.OKCancel)!=MessageBoxResult.OK)return;
-        var picker=new Microsoft.Win32.SaveFileDialog{Filter="CSV 파일|*.csv",FileName="교직원-활성화번호-"+DateTime.Now.ToString("yyyyMMdd")+".csv"};if(picker.ShowDialog(InteractionOwner)!=true)return;
-        var list=await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff/activation-codes",new{});
-        static string Cell(string value){if(value.Length>0&&"=+-@".Contains(value.TrimStart().FirstOrDefault()))value="'"+value;return "\""+value.Replace("\"","\"\"")+"\"";}
-        var lines=new List<string>{"이름,부서,직책,로그인 아이디,활성화 번호,유효 기한"};
-        foreach(var p in list.EnumerateArray())lines.Add(string.Join(",",new[]{Value(p,"name"),Value(p,"department"),Value(p,"position"),Value(p,"loginName"),Value(p,"activationCode"),DateTimeOffset.FromUnixTimeMilliseconds(p.GetProperty("expiresAt").GetInt64()).ToLocalTime().ToString("yyyy-MM-dd HH:mm")}.Select(Cell)));
-        System.IO.File.WriteAllText(picker.FileName,string.Join("\r\n",lines)+"\r\n",new System.Text.UTF8Encoding(true));
-        Notice.Show(InteractionOwner,list.GetArrayLength()+"명의 활성화 번호를 저장했습니다. 유효 기간은 7일입니다.\n교직원은 처음 비밀번호로 로그인한 뒤 이 번호를 입력합니다.","활성화 번호 일괄 받기");
-    }
     async Task StaffList()
     {
         var usersTask=api.Get<JsonElement>("api/admin/users");var permissionsTask=api.Get<JsonElement>("api/admin/office/permissions");var pendingTask=api.Get<JsonElement>("api/admin/registrations");var timetableTask=api.Get<JsonElement>("api/admin/timetable-managers");
@@ -45,13 +33,8 @@ public sealed partial class OfficeWindow
         add.SetResourceReference(StyleProperty, "PrimaryButton");
         AutomationProperties.SetName(add, "교직원 등록 · 승인");
         var folders = new Button { Content = "조직도 폴더 관리" };
-        var codes = new Button
-        {
-            Content = "활성화 번호 일괄 받기", IsEnabled = staff.Any(s => s.Pending && !s.Admin),
-            ToolTip = "아직 활성화하지 않은 교직원의 활성화 번호를 새로 발급해 CSV 파일 하나로 저장합니다."
-        };
         foreach (var (button, action) in new (Button Button, Func<Task> Action)[]
-            { (add, Administration), (folders, EditRosterFolders), (codes, DownloadActivationCodes) })
+            { (add, Administration), (folders, EditRosterFolders) })
         {
             button.Margin = new Thickness(0, 0, 8, 6);
             button.Click += async (_, _) => await Run(action);
@@ -60,7 +43,7 @@ public sealed partial class OfficeWindow
         // Toolbar: search and status filters; the sign-up filter opens the approval page.
         var toolbar=new DockPanel{Margin=new Thickness(0,0,0,16)};var count=AdminUi.Label("","Faint");count.Margin=new Thickness(2,8,0,0);DockPanel.SetDock(count,Dock.Bottom);toolbar.Children.Add(count);
         var tools=new WrapPanel();toolbar.Children.Add(tools);body.Children.Add(toolbar);
-        var searchBox=new Grid{Width=240,Margin=new Thickness(0,0,8,6)};var search=new TextBox{Padding=new Thickness(32,6,8,6),ToolTip="이름 · 부서 · 아이디 · 좌석 IP 검색"};AutomationProperties.SetName(search,"교직원 검색");searchBox.Children.Add(search);
+        var searchBox=new Grid{Width=240,Margin=new Thickness(0,0,8,6)};var search=new TextBox{Padding=new Thickness(32,6,8,6),ToolTip="이름 · 부서 · 로그인 이름 · 좌석 IP 검색"};AutomationProperties.SetName(search,"교직원 검색");searchBox.Children.Add(search);
         var glass=AdminUi.Icon("AdminSearchIcon",15,"Faint");glass.HorizontalAlignment=HorizontalAlignment.Left;glass.Margin=new Thickness(10,0,0,0);glass.IsHitTestVisible=false;searchBox.Children.Add(glass);
         var hint=AdminUi.Label("이름 · 부서 · 좌석 IP 검색","Faint",13);hint.IsHitTestVisible=false;hint.Margin=new Thickness(33,0,0,0);hint.VerticalAlignment=VerticalAlignment.Center;searchBox.Children.Add(hint);tools.Children.Add(searchBox);
         var rows=new StackPanel();var panel=new Border();var chips=new List<Button>();
@@ -97,7 +80,7 @@ public sealed partial class OfficeWindow
         }
         ArrangeStaff();
         content.SizeChanged += (_, _) => ArrangeStaff();
-        static Border Status(StaffRow s)=>s.Pending?AdminUi.Badge("활성화 대기","Warning"):s.Active?AdminUi.Badge("사용 중","Success"):AdminUi.Badge("중지","Neutral");
+        static Border Status(StaffRow s)=>s.Pending?AdminUi.Badge("첫 로그인 전","Warning"):s.Active?AdminUi.Badge("사용 중","Success"):AdminUi.Badge("중지","Neutral");
         void Rows()
         {
             rows.Children.Clear();var query=search.Text.Trim();hint.Visibility=search.Text.Length==0?Visibility.Visible:Visibility.Collapsed;
@@ -127,7 +110,7 @@ public sealed partial class OfficeWindow
             var s=staff.FirstOrDefault(x=>x.Id==selectedStaff);if(s is null){panel.Child=AdminUi.Label("교직원을 선택하세요.","Muted",14);return;}
             var stack=new StackPanel();panel.Child=stack;
             var top=new DockPanel{Margin=new Thickness(0,0,0,18)};var state=Status(s);DockPanel.SetDock(state,Dock.Right);top.Children.Add(state);top.Children.Add(AdminUi.Avatar(s.Name,44));
-            var who=new StackPanel{Margin=new Thickness(12,0,8,0),VerticalAlignment=VerticalAlignment.Center};who.Children.Add(AdminUi.Heading(s.Name));who.Children.Add(AdminUi.Label(string.Join(" · ",new[]{"아이디 "+s.Username,s.Department,s.Position}.Where(v=>v.Trim().Length>0)),"Muted",11));top.Children.Add(who);stack.Children.Add(top);
+            var who=new StackPanel{Margin=new Thickness(12,0,8,0),VerticalAlignment=VerticalAlignment.Center};who.Children.Add(AdminUi.Heading(s.Name));who.Children.Add(AdminUi.Label(string.Join(" · ",new[]{"로그인 이름 "+s.Username,s.Department,s.Position}.Where(v=>v.Trim().Length>0)),"Muted",11));top.Children.Add(who);stack.Children.Add(top);
             stack.Children.Add(AdminUi.Group("기본 정보"));
             var fields=new Grid();fields.ColumnDefinitions.Add(new ColumnDefinition());fields.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(12)});fields.ColumnDefinitions.Add(new ColumnDefinition());stack.Children.Add(fields);
             TextBox Input(string label,string value,int index,int maxLength)
@@ -149,7 +132,7 @@ public sealed partial class OfficeWindow
             var rooms=Switch("특별실 운영 담당","특별실을 추가하고 예약을 조정합니다.",s.Rooms);
             var timetable=Switch("시간표 담당",s.Admin?"관리자는 기본으로 시간표를 올릴 수 있습니다.":"나이스에서 받은 시간표를 올려 선생님들의 시간표에 반영합니다.",s.Timetable||s.Admin);timetable.IsEnabled=!s.Admin;
             var actions=new DockPanel{Margin=new Thickness(0,18,0,0)};
-            var reset=new Button{Content="계정 초기화",ToolTip="초기 비밀번호 12345678로 되돌리고 새 활성화 번호를 발급합니다."};reset.SetResourceReference(StyleProperty,"DangerButton");actions.Children.Add(reset);
+            var reset=new Button{Content="계정 초기화",ToolTip="초기 비밀번호 12345678로 되돌립니다. 다시 로그인하면 개인 비밀번호를 새로 정합니다."};reset.SetResourceReference(StyleProperty,"DangerButton");actions.Children.Add(reset);
             var save=new Button{Content="변경 저장",Margin=new Thickness(8,0,0,0)};save.SetResourceReference(StyleProperty,"PrimaryButton");DockPanel.SetDock(save,Dock.Right);
             var toggleActive=new Button{Content=s.Active?"사용 중지":"다시 사용",Margin=new Thickness(8,0,0,0)};DockPanel.SetDock(toggleActive,Dock.Right);
             actions.Children.Add(save);actions.Children.Add(toggleActive);actions.Children.Add(new Border());stack.Children.Add(actions);
@@ -170,11 +153,11 @@ public sealed partial class OfficeWindow
             });
             reset.Click+=async(_,_)=>await Run(async()=>
             {
-                if(Notice.Show(InteractionOwner,s.Name+" 님의 계정을 초기화할까요?\n\n아이디 "+s.Username+"와 초기 비밀번호 12345678로 바뀌고, 모든 기기에서 로그아웃됩니다. 새 활성화 번호로 다시 시작해야 합니다."+(s.Active?"":"\n\n지금 사용 중지 상태인 계정이며, 초기화하면 다시 사용할 수 있게 됩니다."),"교직원 계정 초기화",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
-                var result=await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff/"+s.Id+"/reset",new StaffAccountRequest(s.Username,s.Name,s.Department,null,"12345678",UseSharedPassword:true));
+                if(Notice.Show(InteractionOwner,s.Name+" 님의 계정을 초기화할까요?\n\n로그인 이름 "+s.Username+"와 초기 비밀번호 12345678로 바뀌고, 모든 기기에서 로그아웃됩니다. 다시 로그인하면 개인 비밀번호를 새로 정합니다."+(s.Active?"":"\n\n지금 사용 중지 상태인 계정이며, 초기화하면 다시 사용할 수 있게 됩니다."),"교직원 계정 초기화",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+                await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff/"+s.Id+"/reset",new StaffAccountRequest(s.Username,s.Name,s.Department,null,"12345678",UseSharedPassword:true));
                 // New sign-in details are for handing to this person, so a stopped account comes back with them.
                 if(!s.Active)await api.Send<JsonElement>(HttpMethod.Patch,"api/admin/users/"+s.Id,new{name=s.Name,department=s.Department,position=s.Position,password="",isAdmin=s.Admin,canBroadcast=s.Broadcast,active=true});
-                Notice.Show(InteractionOwner,"개별 전달할 활성화 번호:\n"+result.GetProperty("activationCode").GetString()+"\n유효 기간: 7일. 번호는 이 화면에서만 표시됩니다.","계정 초기화");await StaffList();
+                Notice.Show(InteractionOwner,s.Name+" 님께 알려 주세요.\n\n로그인 이름: "+s.Username+"\n초기 비밀번호: 12345678\n\n30일 안에 로그인해 개인 비밀번호로 바꿔야 합니다.","계정 초기화");await StaffList();
             });
         }
         if(staff.All(s=>s.Id!=selectedStaff))selectedStaff=staff.FirstOrDefault()?.Id;
@@ -219,7 +202,7 @@ public sealed partial class OfficeWindow
         var recovery=new StackPanel();body.Children.Add(recovery);await RecoveryReview.Add(recovery,api,InteractionOwner,Administration);
         var content=new Grid();content.ColumnDefinitions.Add(new ColumnDefinition());content.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(16)});content.ColumnDefinitions.Add(new ColumnDefinition());content.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});content.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});body.Children.Add(content);
         // New account form.
-        var form=new StackPanel();form.Children.Add(AdminUi.Heading("새 교직원 등록"));var note=AdminUi.Label("첫 로그인은 공통 초기 비밀번호(12345678)와 등록 후 받는 활성화 번호를 함께 넣어야 합니다. 활성화 번호는 본인에게만 전달하세요. 로그인하면 바로 개인 비밀번호로 바꿉니다.","Muted",13);note.Margin=new Thickness(0,4,0,16);form.Children.Add(note);
+        var form=new StackPanel();form.Children.Add(AdminUi.Heading("새 교직원 등록"));var note=AdminUi.Label("등록한 교직원은 본인 이름과 초기 비밀번호 12345678로 처음 로그인하고, 바로 개인 비밀번호로 바꿉니다. 30일 안에 로그인하지 않으면 계정 초기화가 필요합니다.","Muted",13);note.Margin=new Thickness(0,4,0,16);form.Children.Add(note);
         var fields=new Grid();fields.ColumnDefinitions.Add(new ColumnDefinition());fields.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(12)});fields.ColumnDefinitions.Add(new ColumnDefinition());form.Children.Add(fields);
         TextBox Input(string label,int index,int maxLength,string? hint=null)
         {
@@ -227,13 +210,13 @@ public sealed partial class OfficeWindow
             var cell=new StackPanel{Margin=new Thickness(0,0,0,12)};var caption=AdminUi.Label(label,"Muted",13);caption.Margin=new Thickness(0,0,0,6);cell.Children.Add(caption);
             var box=new TextBox{MaxLength=maxLength,ToolTip=hint};AutomationProperties.SetName(box,label);cell.Children.Add(box);Grid.SetRow(cell,index/2);Grid.SetColumn(cell,index%2==0?0:2);fields.Children.Add(cell);return box;
         }
-        var name=Input("이름",0,40);var login=Input("로그인 아이디",1,40,"기본은 본인 이름입니다. 동명이인은 이름.2처럼 구분하세요.");name.TextChanged+=(_,_)=>login.Text=name.Text.Trim();
+        var name=Input("이름",0,40);var login=Input("로그인 이름",1,40,"기본은 본인 이름입니다. 동명이인은 이름.2처럼 구분하세요.");name.TextChanged+=(_,_)=>login.Text=name.Text.Trim();
         var department=Input("부서",2,60);var position=Input("직책",3,50,"예: 교무부장, 담임");var ip=Input("좌석 IP · 교사 자리 PC 주소 · 선택",4,15,"교사 PC 자동 로그인용 IPv4입니다. 아이디가 아니며 휴대폰 로그인에는 쓰지 않습니다.");
-        var register=new Button{Content="등록하고 활성화 번호 받기",HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,4,0,0)};register.SetResourceReference(StyleProperty,"PrimaryButton");form.Children.Add(register);
+        var register=new Button{Content="교직원 등록",HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,4,0,0)};register.SetResourceReference(StyleProperty,"PrimaryButton");form.Children.Add(register);
         register.Click+=async(_,_)=>await Run(async()=>
         {
-            var value=await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff",new StaffAccountRequest(login.Text.Trim(),name.Text,department.Text,ip.Text,"12345678",position.Text,true));
-            Notice.Show(InteractionOwner,"개별 전달할 활성화 번호:\n"+value.GetProperty("activationCode").GetString()+"\n유효 기간: 7일. 번호는 이 화면에서만 표시됩니다.","교직원 등록");var added=name.Text.Trim();await Administration();error.Text=added+" 님을 등록했습니다.";
+            await api.Send<JsonElement>(HttpMethod.Post,"api/admin/staff",new StaffAccountRequest(login.Text.Trim(),name.Text,department.Text,ip.Text,"12345678",position.Text,true));
+            var added=name.Text.Trim();var loginName=login.Text.Trim();await Administration();error.Text=added+" 님을 등록했습니다. 로그인 이름 "+loginName+", 초기 비밀번호 12345678을 알려 주세요.";
         });
         var formCard=AdminUi.Card(form);formCard.VerticalAlignment=VerticalAlignment.Top;content.Children.Add(formCard);
         // Sign-up requests waiting for approval.
@@ -248,7 +231,7 @@ public sealed partial class OfficeWindow
             foreach(var b in new[]{reject,approve}){DockPanel.SetDock(b,Dock.Right);row.Children.Add(b);}
             row.Children.Add(AdminUi.Avatar(who));var text=new StackPanel{Margin=new Thickness(10,0,8,0),VerticalAlignment=VerticalAlignment.Center};text.Children.Add(AdminUi.Label(who,"Ink",14,true));
             var created=request.TryGetProperty("createdAt",out var at)&&at.ValueKind==JsonValueKind.Number?DateTimeOffset.FromUnixTimeMilliseconds(at.GetInt64()).ToOffset(TimeSpan.FromHours(9)).ToString("M월 d일 신청"):"";
-            text.Children.Add(AdminUi.Label(string.Join(" · ",new[]{Value(request,"department"),"아이디 "+Value(request,"username"),created}.Where(v=>v.Length>0)),"Muted",11));row.Children.Add(text);requests.Children.Add(row);
+            text.Children.Add(AdminUi.Label(string.Join(" · ",new[]{Value(request,"department"),"로그인 이름 "+Value(request,"username"),created}.Where(v=>v.Length>0)),"Muted",11));row.Children.Add(text);requests.Children.Add(row);
         }
         if(pending.GetArrayLength()==0)requests.Children.Add(AdminUi.Label("대기 중인 가입 신청이 없습니다. 교직원이 교사 메신저에서 ‘계정 신청’을 보내면 여기에 표시됩니다.","Muted",13));
         var requestCard=AdminUi.Card(requests);requestCard.VerticalAlignment=VerticalAlignment.Top;content.Children.Add(requestCard);

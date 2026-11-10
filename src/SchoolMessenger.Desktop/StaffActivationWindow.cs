@@ -13,13 +13,12 @@ public sealed class StaffActivationWindow:Window
 {
     public StaffActivationWindow(Api api)
     {
-        Title="교직원 계정 · 첫 설정";Width=480;Height=690;WindowStartupLocation=WindowStartupLocation.CenterOwner;
+        Title="교직원 계정 · 첫 설정";Width=480;Height=620;WindowStartupLocation=WindowStartupLocation.CenterOwner;
         var stack=new StackPanel{Margin=new Thickness(24)};AdminUi.Page(this,new ScrollViewer{Content=stack,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
-        stack.Children.Add(new TextBlock{Text="관리자가 개별 전달한 활성화 번호와 개인 비밀번호를 설정하세요. 완료 전에는 업무 자료를 열 수 없습니다.",TextWrapping=TextWrapping.Wrap});
-        stack.Children.Add(new TextBlock{Text="개별 활성화 번호",Margin=new Thickness(0,16,0,5)});var code=new TextBox();stack.Children.Add(code);
+        stack.Children.Add(new TextBlock{Text="처음 로그인하셨습니다. 앞으로 쓸 개인 비밀번호를 정하고 안내를 확인하세요. 마치기 전에는 업무 자료를 열 수 없습니다.",TextWrapping=TextWrapping.Wrap});
         var password=new PasswordBox();var confirm=new PasswordBox();
         {stack.Children.Add(new TextBlock{Text="새 개인 비밀번호 · 12~128자",Margin=new Thickness(0,16,0,5)});stack.Children.Add(password);stack.Children.Add(new TextBlock{Text="비밀번호 확인",Margin=new Thickness(0,12,0,5)});stack.Children.Add(confirm);}
-        var feedback=new TextBlock{TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,12,0,12)};var save=new Button{Content="계정 활성화",IsEnabled=false};bool busy=false;
+        var feedback=new TextBlock{TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,12,0,12)};var save=new Button{Content="첫 설정 마치기",IsEnabled=false};bool busy=false;
         Closed+=(_,_)=>{password.Clear();confirm.Clear();};
         Loaded+=async(_,_)=>
         {
@@ -40,8 +39,8 @@ public sealed class StaffActivationWindow:Window
                     {
                         if(password.Password!=confirm.Password)throw new InvalidOperationException("비밀번호 확인이 일치하지 않습니다.");
                         if(policy.Documents.Any(d=>d.Required&&choices[d.Id].IsChecked!=true))throw new InvalidOperationException("필수 안내의 전문을 확인하고 체크하세요.");
-                        await api.Send<JsonElement>(HttpMethod.Post,"api/activate",new StaffActivation(code.Text.Trim(),password.Password,new RegistrationAcceptance(policy.Revision,choices.Where(p=>p.Value.IsChecked==true).Select(p=>p.Key).ToArray())));
-                        Notice.Show(this,"설정 완료. 개인 비밀번호로 다시 로그인하세요.","계정 활성화");DialogResult=true;
+                        await api.Send<JsonElement>(HttpMethod.Post,"api/activate",new StaffActivation(password.Password,new RegistrationAcceptance(policy.Revision,choices.Where(p=>p.Value.IsChecked==true).Select(p=>p.Key).ToArray())));
+                        Notice.Show(this,"설정을 마쳤습니다. 방금 정한 비밀번호로 다시 로그인하세요.","첫 설정");DialogResult=true;
                     }
                     catch(Exception e){feedback.Text=e.Message;}finally{password.Clear();confirm.Clear();busy=false;save.IsEnabled=policy.CanRegister;}
                 };

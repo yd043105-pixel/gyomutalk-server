@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {RemoteChannel} from './features.mjs';
 
-export async function presenceChecks({Client,admin,bob,carol,check}) {
+export async function presenceChecks({Client,admin,bob,carol,check,password}) {
  const channels=[];const get=async id=>(await admin.request('/api/users')).find(p=>p.id===id);
  // The transport's DELETE response can precede OnDisconnectedAsync. Observe the
  // public state until cleanup finishes, with a deadline that still fails leaks.
@@ -33,5 +33,17 @@ export async function presenceChecks({Client,admin,bob,carol,check}) {
   await bob.request('/api/presence/mobile/leave','POST',{},404);
   assert.equal((await get(bob.user.id)).mobile,false);
   check('Retired phone presence endpoints are absent and PC roster mobile flags stay false');
+  // One computer at a time. A saved sign-in on another computer stops working while the account is connected elsewhere.
+  const lab=new Client();lab.computer='lab-pc';await lab.login(bob.user.username);await lab.request('/api/users');
+  const desk=new Client();desk.computer='desk-pc';await desk.login(bob.user.username);
+  const live=await new RemoteChannel(desk,'/hub').connect();channels.push(live);await live.event('PresenceChanged');
+  await lab.request('/api/users','GET',undefined,401);
+  const other=new Client();other.computer='lab-pc';other.csrf=(await other.request('/api/session')).csrfToken;
+  assert.ok((await other.request('/api/login','POST',{username:bob.user.username,password},409)).error.includes('다른 컴퓨터'));
+  const same=new Client();same.computer='desk-pc';await same.login(bob.user.username);await same.request('/api/users');
+  const server=new Client();await server.login(bob.user.username);await server.request('/api/users');
+  await live.close();await disconnected();
+  await other.login(bob.user.username);await other.request('/api/users');
+  check('A second computer cannot sign in or keep a saved sign-in while the account is connected elsewhere; it can once that computer disconnects');
  } finally {for(const channel of channels.reverse())if(!channel.closed)await channel.close();}
 }

@@ -7,13 +7,15 @@ using Microsoft.AspNetCore.SignalR;
 namespace SchoolMessenger.Server;
 
 [Authorize]
-public sealed class MessageHub(Presence presence, Store store) : Hub
+public sealed class MessageHub(Presence presence, Store store, IHostEnvironment environment) : Hub
 {
     public override async Task OnConnectedAsync()
     {
         var id = Context.UserIdentifier!;
-        var identity = new LiveConnection(Context, id, Context.User!.FindFirstValue("version"),Context.User!.FindFirstValue("sid"));
-        if (!identity.Valid(store)) { Context.Abort(); return; }
+        var identity = new LiveConnection(Context, id, Context.User!.FindFirstValue("version"),Context.User!.FindFirstValue("sid"),
+            Context.GetHttpContext() is { } http ? Presence.Computer(http, environment.IsDevelopment()) : "");
+        // A computer that was already signed in before another one took over does not come back online.
+        if (!identity.Valid(store) || presence.Elsewhere(id, identity.Computer)) { Context.Abort(); return; }
         presence.Live[Context.ConnectionId] = identity;
         presence.Connections[Context.ConnectionId] = id;
         presence.InitializeActivity(Context.ConnectionId);
@@ -44,6 +46,17 @@ public sealed partial class Presence
     public ConcurrentDictionary<string, LiveConnection> Live { get; } = new();
     public ConcurrentDictionary<string, string> Connections { get; } = new();
     public bool Online(string userId) => Connections.Values.Contains(userId);
+    // The server PC itself ("local", where the administrator program runs) neither blocks nor is blocked.
+    public bool Elsewhere(string userId, string computer) => computer != "local" &&
+        Live.Values.Any(live => live.UserId == userId && live.Computer != "local" && live.Computer != computer);
+    // Which computer a request comes from. Every loopback address is this server PC; tests name a computer themselves.
+    public static string Computer(HttpContext context, bool development)
+    {
+        if (development && context.Request.Headers.TryGetValue("X-Test-Computer", out var named) && named.Count == 1) return named.ToString();
+        var address = context.Connection.RemoteIpAddress;
+        if (address is null || System.Net.IPAddress.IsLoopback(address)) return "local";
+        return (address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address).ToString();
+    }
     public bool Away(string userId)
     {var ids=Connections.Where(c=>c.Value==userId).Select(c=>c.Key).ToArray();return ids.Length>0&&ids.All(ConnectionAway);}
     public void InitializeActivity(string connection)=>activity[connection]=new(false,Environment.TickCount64-3000);
@@ -57,7 +70,7 @@ public sealed partial class Presence
         return now-state.ChangedAt>=3000&&activity.TryUpdate(connection,new(away,now),state);
     }
 }
-public sealed record LiveConnection(HubCallerContext Context, string UserId, string? Version,string? Session)
+public sealed record LiveConnection(HubCallerContext Context, string UserId, string? Version,string? Session,string Computer="")
 {
     public bool Valid(Store store) { using var db=store.Open();return store.GetUser(UserId) is { Active:true } user && user.SessionVersion.ToString()==Version && DeviceSessions.Valid(db,UserId,Version,Session); }
 }

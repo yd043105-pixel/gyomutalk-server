@@ -17,7 +17,14 @@ public record TimetableDelivery(TimetableBatch Batch,TimetableHomeroom[] Homeroo
 
 public sealed record TimetablePosition(string Date, string ClassId, int Period);
 public sealed record TimetableExchange(TimetablePosition First, TimetablePosition Second);
-public sealed record TimetableSwapPlanRequest(string[] Dates, string[]? Dependencies);
+public sealed record TimetableSwapPlanRequest(string[] Dates, string[]? Dependencies, TimetableExchange[]? Exchanges = null);
+public sealed record TimetableSwapOptionsRequest(string[] Dates, string[]? Dependencies, TimetableExchange[]? Exchanges, TimetablePosition Pick);
+// One lesson the picked lesson can trade places with, and every exchange that trade needs (bundled classes move along).
+public sealed record TimetableSwapOption(TimetablePosition Target, TimetableExchange[] Exchanges);
+// Lessons that run at the same time for several classes: wherever these (class, subject) lessons share a period, they move together.
+public sealed record TimetableBundleMember(string ClassId, string Subject);
+public sealed record TimetableBundleRule(string Id, string Name, TimetableBundleMember[] Members);
+public sealed record TimetableBaseLesson(string ClassId, string ClassName, int Grade, string Subject, string Teachers, int Hours);
 public sealed record TimetableSwapCreate(string Id, long Revision, TimetableExchange[] Exchanges, string[]? Dependencies, string? Reason);
 public sealed record TimetableSwapDecision(string Status);
 public sealed record TimetablePlanSlot(TimetablePosition Position, TimetableSlot Lesson, bool Mine, string? BundleName = null);
