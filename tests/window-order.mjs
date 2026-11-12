@@ -20,11 +20,15 @@ try{
   const db=new DatabaseSync(path.join(fixture,'server','school.db'));
   try {
     const {Id:owner,Name:teacherName}=db.prepare("SELECT Id,Name FROM Users WHERE Username='admin'").get();
-    const id=()=>randomUUID().replaceAll('-',''),classId=id(),className='2학년 1반',batch=id(),client=id();
+    const id=()=>randomUUID().replaceAll('-',''),batch=id(),client=id();
+    // A school-sized week: 18 classes and 48 teachers, so the swap board is checked at the size teachers really see.
+    const rooms=Array.from({length:18},(_,c)=>({id:id(),name:`${Math.floor(c/6)+1}학년 ${c%6+1}반`,grade:Math.floor(c/6)+1}));
+    const subjects=['국어','수학','영어','통합사회','통합과학','체육','음악 감상과 비평','미술 창작'];
     const monday=new Date(Date.now()+9*3600000);monday.setUTCDate(monday.getUTCDate()-(monday.getUTCDay()+6)%7);
     const date=day=>new Date(monday.getTime()+day*86400000).toISOString().slice(0,10);
-    const cells=Array.from({length:35},(_,i)=>({classId,className,day:Math.floor(i/7)+1,period:i%7+1,subject:i%2?'문학':'국어',teacherId:owner,teacherName}));
-    db.prepare('INSERT INTO TimetableClasses VALUES(?,?,?)').run(classId,className,2);
+    // Teacher (class + 5 x slot) mod 48 never teaches two classes in one period; teacher 0 is the signed-in account.
+    const cells=rooms.flatMap((room,c)=>Array.from({length:35},(_,i)=>{const t=(c+i*5)%48;return{classId:room.id,className:room.name,day:Math.floor(i/7)+1,period:i%7+1,subject:subjects[t%subjects.length],teacherId:t?'':owner,teacherName:t?'가상교사 '+String(t).padStart(2,'0'):teacherName};}));
+    for(const room of rooms)db.prepare('INSERT INTO TimetableClasses VALUES(?,?,?)').run(room.id,room.name,room.grade);
     const payload={id:batch,revision:1,owner,clientId:client,kind:'base',year:monday.getUTCFullYear(),semester:2,start:date(0),end:date(6),date:null,fileName:'가상시간표.xlsx',publishedAt:Date.now(),withdrawn:false,cells};
     db.prepare('INSERT INTO TimetableBatches(Revision,Id,Owner,ClientId,Payload,Delivered) VALUES(1,?,?,?,?,1)').run(batch,owner,client,JSON.stringify(payload));
   } finally { db.close(); }

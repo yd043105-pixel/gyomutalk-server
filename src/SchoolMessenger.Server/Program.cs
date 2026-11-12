@@ -707,6 +707,7 @@ app.MapHub<RemoteHub>("/remote", options => { options.CloseOnAuthenticationExpir
 // Cleanup before accepting connections also handles expiry while the server was offline.
 app.Services.GetRequiredService<Maintenance>().Cleanup();
 Timetables.Map(app, app.Services.GetRequiredService<Timetables>());
+SchoolFeatures.Map(app, store, app.Services.GetRequiredService<Timetables>());
 BackendOperations.Map(app,store.Open);
 DeploymentReview.Map(app,deploymentReview);
 DeviceSessions.Map(app,store.Open);

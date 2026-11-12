@@ -109,7 +109,7 @@ public sealed partial class LocalServerWindow
         {
             await source.Get<JsonElement>("api/admin/server-resources");
             if(revision!=viewRevision||!adminSessions.TryGetValue(role,out var current)||!ReferenceEquals(source,current))return;
-            if(page=="timetable-feature") { await ShowTimetableFeature(source,revision); return; }
+            if(page=="features") { await ShowFeatures(source,revision); return; }
             if(page=="attachment-limit") { await ShowAttachmentLimit(source,revision); return; }
             administrationView.Children.Clear();
             Window controller=page switch
@@ -125,23 +125,32 @@ public sealed partial class LocalServerWindow
             var view=(FrameworkElement)controller.Content;controller.Content=null;view.Resources=controller.Resources;
             administrationController=controller;
             controller.Closed+=(_,_)=>{if(!closingPage&&ReferenceEquals(administrationController,controller))_ = SignOutAdministrator(role);};
-            // Office and student-parent pages draw their own cards; overview pages sit directly on the canvas.
-            administrationView.Children.Add(controller is ServerManagementWindow or OfficeWindow?view:Surface(view,new Thickness(0)));
+            // Every page draws its own title and cards, so it sits directly on the canvas.
+            if(view is Border sheet)sheet.Background=null;
+            administrationView.Children.Add(view);
         }
         catch(ApiRequestException e)when(e.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden){await SignOutAdministrator(role);}
         catch(Exception e){if(revision==viewRevision){var panel=new StackPanel();panel.Children.Add(Note(e.Message));var retry=new Button{Content="다시 연결",HorizontalAlignment=HorizontalAlignment.Left};retry.Click+=async(_,_)=>await OpenAdministration(page,role);panel.Children.Add(retry);administrationView.Children.Add(Surface(panel));}}
+    }
+    // Every page drawn here has the frame of the office pages: title and one line of description on the canvas, cards under it.
+    void ShowPage(string title,string description,params FrameworkElement[] cards)
+    {
+        var page=new StackPanel{Margin=new Thickness(0,0,6,0)};page.Children.Add(AdminUi.PageTitle(title,description));
+        foreach(var card in cards){card.Margin=new Thickness(0,16,0,0);page.Children.Add(card);}
+        administrationView.Children.Clear();
+        administrationView.Children.Add(new ScrollViewer{Content=page,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Disabled});
     }
     async Task ShowAttachmentLimit(Api source,int revision)
     {
         await source.RefreshAttachmentLimit();
         if(revision!=viewRevision)return;
-        var panel=new StackPanel();panel.Children.Add(AdminUi.Heading("첨부 용량",22));
-        panel.Children.Add(Note("일반 메시지·채팅의 파일 한 개와 메시지 전체에 같은 상한을 적용합니다. 폴더는 ZIP 크기를 기준으로 계산합니다."));
-        var limit=new ComboBox{ItemsSource=Enumerable.Range(2,9).ToArray(),SelectedItem=(int)(source.AttachmentLimit/SchoolMessenger.Contracts.AttachmentLimits.GiB),Width=140,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(0,12,0,12)};
-        System.Windows.Automation.AutomationProperties.SetName(limit,"메시지당 최대 첨부 용량 (GiB)");
-        panel.Children.Add(Note("최대 첨부 용량 (GiB)"));panel.Children.Add(limit);
-        var status=Note("기본값 2GiB · 설정 범위 2~10GiB");
-        var save=new Button{Content="설정 저장",HorizontalAlignment=HorizontalAlignment.Left};save.SetResourceReference(StyleProperty,"PrimaryButton");panel.Children.Add(save);panel.Children.Add(status);
+        var panel=new StackPanel();
+        var caption=AdminUi.Label("메시지 하나에 붙일 수 있는 최대 용량 (GiB)","Muted",13);caption.Margin=new Thickness(0,0,0,6);panel.Children.Add(caption);
+        var limit=new ComboBox{ItemsSource=Enumerable.Range(2,9).ToArray(),SelectedItem=(int)(source.AttachmentLimit/SchoolMessenger.Contracts.AttachmentLimits.GiB),Width=140,HorizontalAlignment=HorizontalAlignment.Left};
+        System.Windows.Automation.AutomationProperties.SetName(limit,"메시지당 최대 첨부 용량 (GiB)");panel.Children.Add(limit);
+        var actions=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,16,0,0)};
+        var save=new Button{Content="설정 저장"};save.SetResourceReference(StyleProperty,"PrimaryButton");actions.Children.Add(save);
+        var status=Note("기본값 2GiB · 설정 범위 2~10GiB");status.VerticalAlignment=VerticalAlignment.Center;status.Margin=new Thickness(12,0,0,0);actions.Children.Add(status);panel.Children.Add(actions);
         save.Click+=async(_,_)=>
         {
             save.IsEnabled=limit.IsEnabled=false;
@@ -153,39 +162,58 @@ public sealed partial class LocalServerWindow
             catch(Exception error){status.Text=error.Message;}
             finally{save.IsEnabled=limit.IsEnabled=true;}
         };
-        administrationView.Children.Clear();administrationView.Children.Add(Surface(panel));
+        ShowPage("첨부 용량","일반 메시지·채팅의 파일 한 개와 메시지 전체에 같은 상한을 적용합니다. 폴더는 ZIP 크기를 기준으로 계산합니다.",Surface(panel));
     }
-    async Task ShowTimetableFeature(Api source,int revision)
+    // The optional menus of the teacher program. A switch saves as soon as it is pressed and connected teachers follow at once.
+    static readonly (string Name,string Title,string Detail)[] FeatureChoices=
+    [
+        ("timetable","시간표","시간표 조회, 수업 교체 신청, 기초시간표 등록. 끄면 서버도 시간표 자료를 내주지 않습니다."),
+        ("chat","채팅","교직원끼리 대화방에서 주고받는 채팅."),
+        ("tasks","할 일 · 파일 제출","할 일 목록과, 메시지를 보내며 파일 제출을 받는 기능."),
+        ("survey","설문","설문 만들기와 응답, 결과 보기."),
+        ("calendar","학사일정","학교 일정 달력."),
+        ("rooms","특별실 예약","특별실 예약 표. 특별실 목록은 왼쪽 ‘특별실’에서 관리합니다."),
+        ("remote","원격 지원","다른 교직원의 PC 화면을 함께 보며 돕는 원격 지원."),
+    ];
+    async Task ShowFeatures(Api source,int revision)
     {
-        var current=(await source.Get<JsonElement>("api/timetable/status")).GetProperty("enabled").GetBoolean();
-        if(revision!=viewRevision)return;
-        var panel=new StackPanel();
-        panel.Children.Add(AdminUi.Heading("시간표 기능",22));
-        panel.Children.Add(Note("별도 시간표 서비스를 사용하는 학교는 교무톡의 시간표를 끌 수 있습니다. 다시 켜면 기존 시간표와 교체 신청을 볼 수 있습니다."));
-        var enabled=new CheckBox{Content="교무톡 시간표 사용",IsChecked=current,Margin=new Thickness(0,16,0,12)};panel.Children.Add(enabled);
-        var status=Note(current?"현재 켜짐":"현재 꺼짐");
-        var save=new Button{Content="설정 저장",HorizontalAlignment=HorizontalAlignment.Left};save.SetResourceReference(StyleProperty,"PrimaryButton");
-        panel.Children.Add(save);panel.Children.Add(status);
-        save.Click+=async(_,_)=>
+        Dictionary<string,bool> current;
+        try{current=await source.Get<Dictionary<string,bool>>("api/features");}
+        catch(ApiRequestException e)when(e.StatusCode==HttpStatusCode.NotFound)
         {
-            save.IsEnabled=enabled.IsEnabled=false;
-            try
+            if(revision==viewRevision)ShowPage("기능 설정","교직원 메신저에 보일 기능을 고릅니다.",Surface(Note("이 서버는 기능 설정을 지원하지 않는 이전 버전입니다. 왼쪽 아래 ‘업데이트 확인’으로 서버를 먼저 업데이트하세요.")));
+            return;
+        }
+        if(revision!=viewRevision)return;
+        var panel=new StackPanel();var status=Note("스위치를 누르면 바로 저장됩니다.");
+        foreach(var (name,title,detail) in FeatureChoices)
+        {
+            var text=new StackPanel();text.Children.Add(AdminUi.Label(title,"Ink",14,true));text.Children.Add(AdminUi.Label(detail,"Muted",12));
+            var toggle=new CheckBox{Content=text,IsChecked=current.GetValueOrDefault(name,true)};toggle.SetResourceReference(StyleProperty,"Switch");
+            System.Windows.Automation.AutomationProperties.SetName(toggle,title);
+            toggle.Click+=async(_,_)=>
             {
-                var result=await source.Send<JsonElement>(HttpMethod.Post,"api/admin/timetable-feature",new { enabled=enabled.IsChecked==true });
-                status.Text=result.GetProperty("enabled").GetBoolean()?"저장했습니다. 교직원 메신저에 시간표가 표시됩니다.":"저장했습니다. 교직원 메신저에서 시간표를 숨깁니다.";
-            }
-            catch(Exception error){status.Text=error.Message;}
-            finally{save.IsEnabled=enabled.IsEnabled=true;}
-        };
-        administrationView.Children.Clear();administrationView.Children.Add(Surface(panel));
+                var on=toggle.IsChecked==true;panel.IsEnabled=false;
+                try
+                {
+                    var saved=await source.Send<Dictionary<string,bool>>(HttpMethod.Post,"api/admin/features",new{name,enabled=on});
+                    toggle.IsChecked=saved.GetValueOrDefault(name,on);
+                    status.Text=toggle.IsChecked==true?$"저장했습니다. 교직원 메신저에 ‘{title}’ 메뉴가 표시됩니다.":$"저장했습니다. 교직원 메신저에서 ‘{title}’ 메뉴를 숨깁니다.";
+                }
+                catch(Exception error){toggle.IsChecked=!on;status.Text=error.Message;}
+                finally{panel.IsEnabled=true;}
+            };
+            panel.Children.Add(toggle);
+        }
+        status.Margin=new Thickness(0,12,0,0);panel.Children.Add(status);
+        ShowPage("기능 설정","학교에서 쓰는 기능만 켜 두세요. 끈 기능은 접속 중인 교직원 메신저 메뉴에서 바로 사라지고, 다시 켜면 기존 자료가 그대로 보입니다.",Surface(panel),
+            Note("메시지·파일 보내기·조직도·즐겨찾기는 메신저의 기본 기능이라 항상 켜져 있습니다."));
     }
     void ShowAdministratorLogin(string service,string page,string? message=null)
     {
-        administrationView.Children.Clear();var revision=viewRevision;
-        var content=new StackPanel{MaxWidth=560,HorizontalAlignment=HorizontalAlignment.Left};
-        var title=Text(RoleName(service)+" 관리자 로그인",22);title.FontWeight=FontWeights.Bold;content.Children.Add(title);
-        var intro=Note("구성원과 학교 설정을 바꾸려면 이 서버의 관리자 계정으로 로그인하세요.");intro.Margin=new Thickness(0,0,0,18);content.Children.Add(intro);
-        StackPanel Field(string label,FrameworkElement input){var field=new StackPanel{Margin=new Thickness(0,0,0,14)};var caption=AdminUi.Label(label,"Muted",13,true);caption.Margin=new Thickness(0,0,0,6);field.Children.Add(caption);field.Children.Add(input);content.Children.Add(field);return field;}
+        var revision=viewRevision;
+        var content=new StackPanel{MaxWidth=520,HorizontalAlignment=HorizontalAlignment.Left};
+        StackPanel Field(string label,FrameworkElement input){var field=new StackPanel{Margin=new Thickness(0,0,0,14)};var caption=AdminUi.Label(label,"Muted",13);caption.Margin=new Thickness(0,0,0,6);field.Children.Add(caption);field.Children.Add(input);content.Children.Add(field);return field;}
         var card=cards.First(c=>c.Service==service);var local=card.Host.Installed&&card.Activated;
         var address=new TextBox{Text=local&&card.Mode.SelectedIndex==0?(service=="office"?"http://localhost:5080":"http://localhost:5081"):local&&Simple(card)?"https://localhost:"+SimpleOperation.Port(service):"",MinWidth=360,ToolTip="학교에서 안내한 해당 서버의 HTTPS 주소"};
         var addressField=Field("서버 주소",address);
@@ -199,8 +227,9 @@ public sealed partial class LocalServerWindow
         }
         var username=new TextBox{Text=local&&Simple(card)&&card.AdminUsername.Text.Trim().Length>0?card.AdminUsername.Text.Trim():"admin"};Field("관리자 아이디",username);
         var password=new PasswordBox{MinHeight=38};Field("관리자 비밀번호",password);
-        var status=Note(message??"비밀번호와 로그인 정보는 파일에 저장하지 않습니다.");content.Children.Add(status);
-        var login=new Button{Content="관리자 로그인",Margin=new Thickness(0,16,0,12),HorizontalAlignment=HorizontalAlignment.Left,MinWidth=140,IsDefault=true};login.SetResourceReference(StyleProperty,"PrimaryButton");content.Children.Add(login);
+        var actions=new StackPanel{Orientation=Orientation.Horizontal};
+        var login=new Button{Content="관리자 로그인",MinWidth=140,IsDefault=true};login.SetResourceReference(StyleProperty,"PrimaryButton");actions.Children.Add(login);
+        var status=Note(message??"비밀번호와 로그인 정보는 파일에 저장하지 않습니다.");status.VerticalAlignment=VerticalAlignment.Center;status.Margin=new Thickness(12,0,0,0);actions.Children.Add(status);content.Children.Add(actions);
         password.Loaded+=(_,_)=>password.Focus();
         login.Click+=async(_,_)=>
         {
@@ -209,7 +238,7 @@ public sealed partial class LocalServerWindow
             catch(Exception e){status.Text=e.Message;}
             finally{password.Clear();login.IsEnabled=true;}
         };
-        content.Children.Add(Note("서버가 꺼져 있다면 왼쪽 서버 메뉴에서 먼저 시작하세요. 최초 서버 비밀번호는 교사의 초기 비밀번호와 다릅니다."));
-        administrationView.Children.Add(Surface(new ScrollViewer{Content=content,VerticalScrollBarVisibility=ScrollBarVisibility.Auto}));
+        ShowPage(RoleName(service)+" 관리자 로그인","구성원과 학교 설정을 바꾸려면 이 서버의 관리자 계정으로 로그인하세요.",Surface(content),
+            Note("서버가 꺼져 있다면 왼쪽 서버 메뉴에서 먼저 시작하세요. 최초 서버 비밀번호는 교사의 초기 비밀번호와 다릅니다."));
     }
 }

@@ -200,8 +200,9 @@ public partial class MainWindow : Window
         hub.On<string>("MessageRecalled", async id => await Dispatcher.InvokeAsync(() => Run(async()=>{Archive.Remove(id);await Refresh();})).Task.Unwrap());
         hub.On<string>("ReadChanged", async _ => await Dispatcher.InvokeAsync(() => Run(RefreshWindows)).Task.Unwrap());
         hub.On("PresenceChanged", async () => await Dispatcher.InvokeAsync(() => Run(RefreshPeople)).Task.Unwrap());
-        hub.On<string>("ChatChanged", id => Dispatcher.InvokeAsync(() => Run(async () => { ChatChanged?.Invoke(id); await NotifyChat(id); })).Task.Unwrap());
-        hub.On<string>("SurveyChanged", id => Dispatcher.InvokeAsync(() => Run(async () => { SurveyChanged?.Invoke(id); await NotifySurvey(id); })).Task.Unwrap());
+        hub.On<string>("ChatChanged", id => Dispatcher.InvokeAsync(() => Run(async () => { ChatChanged?.Invoke(id); if (Feature("chat")) await NotifyChat(id); })).Task.Unwrap());
+        hub.On<string>("SurveyChanged", id => Dispatcher.InvokeAsync(() => Run(async () => { SurveyChanged?.Invoke(id); if (Feature("survey")) await NotifySurvey(id); })).Task.Unwrap());
+        hub.On("FeaturesChanged",()=>Dispatcher.InvokeAsync(()=>Run(RefreshFeatures)).Task.Unwrap());
         hub.On<string,long>("TimetableChanged",(date,revision)=>Dispatcher.InvokeAsync(()=>Run(NotifyTimetable)).Task.Unwrap());
         hub.On("TimetableAvailabilityChanged",()=>Dispatcher.InvokeAsync(()=>Run(async()=>{await RefreshTimetableAvailability();})).Task.Unwrap());
         hub.Reconnecting += _ => { Dispatcher.Invoke(() => ConnectionLabel.Text = "재연결 중 · 수신 확인 계속"); return Task.CompletedTask; };
@@ -221,6 +222,7 @@ public partial class MainWindow : Window
             var incoming = await Api.Get<MessageItem[]>("api/messages?box=received");
             var arrived = incoming.Any(m => !knownIncoming.Contains(m.Id));
             foreach (var message in incoming) knownIncoming.Add(message.Id);
+            await RefreshFeatures();
             if (arrived) await NotifyUnread("message", null);
             await NotifyTimetable();
             await RefreshWindows();
@@ -386,9 +388,9 @@ public partial class MainWindow : Window
         var send = (MenuItem)menu.Items[2];
         menu.Opened += (_, _) => send.Header = selectedPeople.Count == 0 ? "메시지 보내기" : $"메시지 보내기 · 선택 {selectedPeople.Count}명";
         Add("파일 보내기", async (_, _) => await WriteMessage(person.Id, filesOnly: true));
-        Add("채팅하기", (_, _) => OpenChat([person.Id]));
-        Add("설문 보내기", (_, _) => OpenSurvey([person.Id]));
-        if (person.Online && person.Id != Api?.Session?.User?.Id)
+        if (Feature("chat")) Add("채팅하기", (_, _) => OpenChat([person.Id]));
+        if (Feature("survey")) Add("설문 보내기", (_, _) => OpenSurvey([person.Id]));
+        if (Feature("remote") && person.Online && person.Id != Api?.Session?.User?.Id)
         {
             Add("원격 지원하기", async (_, _) => await Run(() => RequestRemote(person.Id, false)));
             Add("원격 지원받기", async (_, _) => await Run(() => RequestRemote(person.Id, true)));
@@ -442,7 +444,7 @@ public partial class MainWindow : Window
         if(administratorWindow is{IsVisible:true}){administratorWindow.Activate();return;}
         administratorWindow=new ServerManagementWindow(this,Api);administratorWindow.Closed+=(_,_)=>administratorWindow=null;administratorWindow.Show();
     }
-    void OpenOfficeClick(object sender,RoutedEventArgs e){if(Api is not null)new OfficeWindow(this).Show();}
+    void OpenOfficeClick(object sender,RoutedEventArgs e){if(Api is not null&&(Feature("calendar")||Feature("rooms")))new OfficeWindow(this).Show();}
     async void OpenPolicies(object sender,RoutedEventArgs e)
     {
         if(Api is null)return;
@@ -486,7 +488,7 @@ public partial class MainWindow : Window
         timer.Stop(); activityTimer.Stop();sentAway=null; toast?.Close(); chatSeen.Clear(); knownSurveys.Clear(); CloseSessionWindows();
         if (hub is not null) { await hub.DisposeAsync(); hub = null; } Api?.Dispose(); Api = null;
         OrganizationTree.Items.Clear(); people = []; rosterFolders = null; selectedPeople.Clear(); Workspace.Visibility = Visibility.Collapsed; LoginPanel.Visibility = Visibility.Visible;
-        TimetableButton.Visibility=Visibility.Collapsed;
+        TimetableButton.Visibility=Visibility.Collapsed;featuresOff=[];ShowFeatures();
     }
     internal void ShowWindow() { Show(); WindowState = WindowState.Normal; Activate(); }
     void WindowClosing(object? sender, CancelEventArgs e)

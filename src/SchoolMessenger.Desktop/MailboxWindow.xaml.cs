@@ -104,7 +104,7 @@ public partial class MailboxWindow : Window
         RecallButton.Visibility=detail.Message.SenderId==Api.Session!.User!.Id?Visibility.Visible:Visibility.Collapsed;
         RecallButton.IsEnabled=detail.Recipients.Any(r=>r.ReadAt is null);
         RecallButton.ToolTip="안 읽은 수신자가 한 명 이상 남아 있으면 회수할 수 있습니다.";
-        SubmissionButton.Visibility = detail.SubmissionRequest ? Visibility.Visible : Visibility.Collapsed;
+        SubmissionButton.Visibility = detail.SubmissionRequest && main.Feature("tasks") ? Visibility.Visible : Visibility.Collapsed;
         var index = messages.ToList().FindIndex(m => m.Id == id);
         if (index >= 0)
         {

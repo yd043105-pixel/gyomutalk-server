@@ -27,15 +27,24 @@ public sealed partial class LocalServerWindow
         check(administrationController is null&&HasText("교내 업무 관리자 로그인")&&!OwnedWindows.Cast<Window>().Any(w=>w.IsVisible),"member administration requires in-place authentication without opening the teacher messenger");capture("administrator-signin.png",this);
         check(await SignInAdministrator("office","http://127.0.0.1:5080","admin",password,viewRevision),"office administrator signs in directly in the administrator application");
         var source=adminSessions["office"];var login="synthetic"+Guid.NewGuid().ToString("N")[..8];var name="가상교사 가";
-        await OpenAdministration("timetable-feature","office");
-        var feature=ViewControls<CheckBox>(administrationView).Single(c=>c.Content?.ToString()=="교무톡 시간표 사용");
-        feature.IsChecked=false;await Click(Action("설정 저장"));await Wait(()=>HasText("시간표를 숨깁니다"),"시간표 설정이 저장되지 않았습니다.");
-        check(!(await source.Get<JsonElement>("api/timetable/status")).GetProperty("enabled").GetBoolean(),"the administrator switches off the school timetable from the native settings page");
-        feature.IsChecked=true;await Click(Action("설정 저장"));await Wait(()=>HasText("시간표가 표시됩니다"),"시간표를 다시 켜지 못했습니다.");
-        await OpenAdministration("attachment-limit","office");
+        await OpenAdministration("features","office");await Wait(()=>ViewControls<CheckBox>(administrationView).Count()>=7,"기능 설정이 열리지 않았습니다.");
+        async Task Toggle(string title,bool on)
+        {
+            var box=ViewControls<CheckBox>(administrationView).Single(c=>System.Windows.Automation.AutomationProperties.GetName(c)==title);
+            box.IsChecked=on;box.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+            await Wait(()=>HasText(on?$"‘{title}’ 메뉴가 표시됩니다":$"‘{title}’ 메뉴를 숨깁니다"),title+" 설정이 저장되지 않았습니다.");
+        }
+        await Toggle("시간표",false);await Toggle("설문",false);
+        var features=await source.Get<Dictionary<string,bool>>("api/features");
+        check(!features["timetable"]&&!features["survey"]&&features["chat"]&&!(await source.Get<JsonElement>("api/timetable/status")).GetProperty("enabled").GetBoolean(),
+            "the administrator switches optional menus off one by one from the native settings page; the timetable is also closed on the server");
+        capture("administrator-features.png",this);
+        await Toggle("시간표",true);await Toggle("설문",true);
+        check((await source.Get<Dictionary<string,bool>>("api/features")).Values.All(on=>on),"switching the menus back on restores every feature");
+        await OpenAdministration("attachment-limit","office");await Wait(()=>ViewControls<ComboBox>(administrationView).Any(),"첨부 용량 화면이 열리지 않았습니다.");
         var capacity=ViewControls<ComboBox>(administrationView).Single();capacity.SelectedItem=3;
         await Click(Action("설정 저장"));await Wait(()=>HasText("3GiB로 저장했습니다"),"첨부 용량 설정이 저장되지 않았습니다.");
-        await source.RefreshAttachmentLimit();check(source.AttachmentLimit==3L*1024*1024*1024,"the native administrator can change the school attachment limit");
+        await source.RefreshAttachmentLimit();check(source.AttachmentLimit==3L*1024*1024*1024,"the native administrator can change the school attachment limit");capture("administrator-attachment.png",this);
         var teacher=await source.Send<JsonElement>(HttpMethod.Post,"api/admin/users",new{username=login,name,department="가상 교무부",password,isAdmin=false,canBroadcast=false});
         await OpenAdministration("members","office");await Wait(()=>HasText(name),"구성원 목록이 로드되지 않았습니다.");
         check(administrationController is OfficeWindow&&!administrationController.IsVisible&&!OwnedWindows.Cast<Window>().Any(w=>w.IsVisible),"existing member settings load inside the single administrator window");capture("administrator-members.png",this);
@@ -80,10 +89,13 @@ public sealed partial class LocalServerWindow
         var roomFields=ViewControls<TextBox>(administrationView).ToArray();var original=roomFields[0];var roomName="가상 특별실 "+Guid.NewGuid().ToString("N")[..6];roomFields[0].Text=roomName;roomFields[1].Text="가상 본관";await Click(Action("특별실 추가"));
         await Wait(()=>!ViewControls<TextBox>(administrationView).Contains(original)&&ViewControls<TextBox>(administrationView).Any(t=>t.Text==roomName),"특별실 저장이 반영되지 않았습니다.");
         check((await source.Get<JsonElement>("api/office/setup")).GetProperty("rooms").EnumerateArray().Any(r=>r.GetProperty("name").GetString()==roomName),"special-room settings persist from the administrator's main content area");capture("administrator-rooms.png",this);
-        await OpenAdministration("calendar","office");await Wait(()=>ViewControls<Button>(administrationView).Any(b=>b.Content?.ToString()=="학교 일정 등록"),"학교 일정 관리가 로드되지 않았습니다.");check(administrationController is OfficeWindow,"school calendar management is available in the administrator's main content area");
-        await OpenAdministration("audit","office");await Wait(()=>HasText("최근 운영 변경 기록"),"운영 기록이 로드되지 않았습니다.");check(administrationController is OfficeWindow,"operating-change audit records load without opening another main window");
-        await OpenAdministration("policy","office");await Wait(()=>ViewControls<Button>(administrationView).Any(b=>b.Content?.ToString()=="학교 검토용 초안 파일 만들기"&&b.IsEnabled),"학교 정책 초안 설정이 로드되지 않았습니다.");check(administrationController is SchoolPolicyWindow,"school privacy-policy drafting initializes inside the shared administrator host");
-        await OpenAdministration("feedback","office");await Wait(()=>HasText("오류 메일:"),"오류 신고 관리가 로드되지 않았습니다.");check(administrationController is FeedbackWindow,"authenticated error reports and improvement feedback load in the same program");
+        await OpenAdministration("calendar","office");await Wait(()=>ViewControls<Button>(administrationView).Any(b=>b.Content?.ToString()=="학교 일정 등록"),"학교 일정 관리가 로드되지 않았습니다.");check(administrationController is OfficeWindow,"school calendar management is available in the administrator's main content area");capture("administrator-calendar.png",this);
+        await OpenAdministration("audit","office");await Wait(()=>HasText("최근 운영 변경 기록"),"운영 기록이 로드되지 않았습니다.");check(administrationController is OfficeWindow,"operating-change audit records load without opening another main window");capture("administrator-audit.png",this);
+        await OpenAdministration("policy","office");await Wait(()=>ViewControls<Button>(administrationView).Any(b=>b.Content?.ToString()=="학교 검토용 초안 파일 만들기"&&b.IsEnabled),"학교 정책 초안 설정이 로드되지 않았습니다.");check(administrationController is SchoolPolicyWindow,"school privacy-policy drafting initializes inside the shared administrator host");capture("administrator-policy.png",this);
+        await source.Send<JsonElement>(HttpMethod.Post,"api/feedback",new SchoolMessenger.Contracts.FeedbackRequest(Guid.NewGuid().ToString("N"),"bug","windows","messages","가상 오류 신고","가상 재현 절차: 메시지를 보낸 뒤 받은함 목록이 바로 갱신되지 않았습니다.","0.1.1"));
+        await OpenAdministration("feedback","office");await Wait(()=>HasText("오류 메일:")&&HasText("가상 오류 신고"),"오류 신고 관리가 로드되지 않았습니다.");check(administrationController is FeedbackWindow,"authenticated error reports and improvement feedback load in the same program, one card per report");capture("administrator-feedback.png",this);
+        // No page may leave a white sheet on the grey canvas: the embedded page itself has no background of its own.
+        check(administrationView.Children.OfType<Border>().All(sheet=>sheet.Background is null),"embedded pages sit on the canvas with their own cards");
         await OpenAdministration("resources","office");await Wait(()=>administrationController is ServerManagementWindow {Ready:true},"통합 운영 현황이 로드되지 않았습니다.");check(!administrationController!.IsVisible,"resource monitoring is embedded rather than spawning a separate main window");capture("administrator-resources.png",this);
         await SignOutAdministrators();check(adminSessions.Count==0&&administrationController is null&&!OwnedWindows.Cast<Window>().Any(w=>w.IsVisible),"locking the administrator clears every session and child view");
         var administratorOnly=new LocalServerWindow(System.IO.Path.Combine(directory,"empty-install"),System.IO.Path.Combine(directory,"administrator-only"),@"Software\YyManagerVerification\"+Guid.NewGuid().ToString("N")){Owner=this};

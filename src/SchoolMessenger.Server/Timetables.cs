@@ -26,6 +26,8 @@ public sealed partial class Timetables
     record FeatureChange(bool? Enabled);
     bool enabled;
     bool Enabled => Volatile.Read(ref enabled);
+    internal bool FeatureEnabled => Enabled;
+    internal Task<IResult> SetFeatureEnabled(bool value, HttpContext c) => SetFeature(new(value), c);
     public Timetables(Store school,IConfiguration config,IHostEnvironment environment,IHubContext<MessageHub> hub,DeploymentReview review)
     {
         this.review=review;

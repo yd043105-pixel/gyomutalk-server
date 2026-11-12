@@ -25,6 +25,7 @@
  <Geometry x:Key="AdminSearchIcon">M14.5,9 A5.5,5.5 0 1 1 3.5,9 A5.5,5.5 0 1 1 14.5,9 M13,13 L17,17</Geometry>
  <Geometry x:Key="AdminPlusIcon">M10,4 V16 M4,10 H16</Geometry>
  <Geometry x:Key="AdminDownloadIcon">M10,3 V13 M6,9 L10,13 L14,9 M4,16.5 H16</Geometry>
+ <Geometry x:Key="AdminSwitchIcon">M7,5.5 H13 A4.5,4.5 0 0 1 13,14.5 H7 A4.5,4.5 0 0 1 7,5.5 Z M14.6,10 A1.6,1.6 0 1 1 11.4,10 A1.6,1.6 0 1 1 14.6,10</Geometry>
  <Geometry x:Key="AdminCheckIcon">M4.5,10.5 L8,14 L15.5,6</Geometry>
  <Geometry x:Key="AdminAlertIcon">M10,8.5 V12 M10,14.5 H10.2</Geometry>
  <Style x:Key="Glyph" TargetType="Path"><Setter Property="Stroke" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}"/><Setter Property="StrokeThickness" Value="1.6"/><Setter Property="StrokeLineJoin" Value="Round"/><Setter Property="StrokeStartLineCap" Value="Round"/><Setter Property="StrokeEndLineCap" Value="Round"/><Setter Property="Stretch" Value="Uniform"/><Setter Property="Width" Value="16"/><Setter Property="Height" Value="16"/></Style>

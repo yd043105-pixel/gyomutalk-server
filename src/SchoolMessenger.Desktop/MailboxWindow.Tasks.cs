@@ -21,7 +21,7 @@ public partial class MailboxWindow
 
     void LoadTaskPrompt(string messageId)
     {
-        taskCandidates = main.Archive.Suggestions(messageId);
+        taskCandidates = main.Feature("tasks") ? main.Archive.Suggestions(messageId) : [];
         if (taskCandidates.Length == 0) return;
         TaskPromptTitle.Text = $"할 일 {taskCandidates.Length}개를 찾았어요. 추가할까요?";
         TaskPromptFeedback.Text = "선택하지 않은 항목은 추가하지 않습니다. 기한은 할 일 목록에서 수정할 수 있어요.";

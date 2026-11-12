@@ -258,6 +258,15 @@ try{
  await duty.request('timetable/bundle-rules/'+rule.id,'DELETE');assert.equal((await duty.request('timetable/bundle-rules')).length,0);
  check('class-and-subject bundles trade periods together, only rule-keeping trades are offered, and the manager approves a request without a file');
  const setting='admin/timetable-feature', status='timetable/status';
+ // Optional menus: every signed-in teacher reads them, only the administrator changes them.
+ assert.deepEqual(await teacher.request('features'),{timetable:true,chat:true,tasks:true,survey:true,calendar:true,rooms:true,remote:true});
+ await new Client(base0).request('features','GET',undefined,401);
+ await duty.request('admin/features','POST',{name:'chat',enabled:false},403);
+ await admin.request('admin/features','POST',{name:'mail',enabled:false},400);
+ await admin.request('admin/features','POST',{name:'chat'},400);
+ assert.equal((await admin.request('admin/features','POST',{name:'chat',enabled:false})).chat,false);
+ assert.equal((await teacher.request('features')).chat,false);
+ assert.ok(Array.isArray(await teacher.request('chats')),'a hidden menu keeps its data');
  assert.deepEqual(await teacher.request(status),{enabled:true});
  await new Client(base0).request(status,'GET',undefined,401);
  await duty.request(setting,'POST',{enabled:false},403);
@@ -273,10 +282,14 @@ try{
  await stop();await start();
  const restoredAdmin=await new Client(base0).login();
  assert.deepEqual(await restoredAdmin.request(status),{enabled:false});
+ const menus=await restoredAdmin.request('features');assert.deepEqual([menus.timetable,menus.chat,menus.survey],[false,false,true]);
+ assert.equal((await restoredAdmin.request('admin/features','POST',{name:'timetable',enabled:true})).timetable,true);
+ assert.equal((await restoredAdmin.request('admin/features','POST',{name:'chat',enabled:true})).chat,true);
  await restoredAdmin.request(setting,'POST',{enabled:true});
  assert.deepEqual(await restoredAdmin.request(status),{enabled:true});
  assert.equal((await restoredAdmin.request('timetable/swaps')).find(s=>s.id===approval.id).status,'approved');
  assert.equal((await restoredAdmin.request('timetable/day?date='+mondayText+'&classId='+firstClass)).slots[0].subject,'음악');
  check('only administrators can toggle timetables, disabled data is inaccessible, the setting survives a restart and re-enabling restores the timetable and requests');
+ check('optional menus are read by every teacher and switched only by the administrator; the choice survives a restart and hides no data');
 }catch(e){console.error(logs.slice(-2500));throw e;}
 finally{await stop();}

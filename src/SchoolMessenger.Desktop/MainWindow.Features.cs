@@ -25,12 +25,12 @@ public partial class MainWindow
     void OpenNotification(string target, string? room)
     {
         if (Api is null) return;
-        if (target == "chat")
+        if (target == "chat" && Feature("chat"))
         {
             if (SessionWindows.OfType<ChatWindow>().FirstOrDefault() is not { } open) { new ChatWindow(this, people, null, room).Show(); return; }
             open.Activate(); if (room is not null) _ = Run(() => open.ShowRoom(room));
         }
-        else if (target == "survey") OpenSurvey();
+        else if (target == "survey" && Feature("survey")) OpenSurvey();
         else if (target == "timetable") { if (TimetableButton.IsVisible) new TimetableWindow(this, room).Show(); }
         else OpenMailbox("unread");
     }
@@ -40,7 +40,7 @@ public partial class MainWindow
         if (Api is null) return;
         await UpdateUnread();
         rooms ??= await Archive.LocalRooms(await Api.Get<ChatRoom[]>("api/chats"));
-        var chats = rooms.Where(r => !MutedRooms.Contains(r.Id) && !Reading(r.Id)).Sum(r => r.Unread);
+        var chats = Feature("chat") ? rooms.Where(r => !MutedRooms.Contains(r.Id) && !Reading(r.Id)).Sum(r => r.Unread) : 0;
         foreach (var known in rooms) chatSeen[known.Id] = known.LastAt;
         if (unreadCount + chats == 0) return;
         var goal = target == "message" && unreadCount > 0 || chats == 0 ? "message" : "chat";
@@ -69,6 +69,33 @@ public partial class MainWindow
         foreach (var window in SessionWindows.OfType<TimetableWindow>().ToArray()) await window.Refresh();
         if (fresh.Length > 0) ShowToast(fresh.Length == 1 ? "시간표가 변경되었습니다" : $"시간표 변경 {fresh.Length}건", fresh[0].Title, "timetable", fresh[0].Date);
     }
+    // Menus the school's administrator switched off; an older server has no such list and shows everything.
+    HashSet<string> featuresOff = [];
+    public bool Feature(string name) => !featuresOff.Contains(name);
+    async Task RefreshFeatures()
+    {
+        var source=Api;if(source is null)return;
+        Dictionary<string,bool>? map=null;
+        try { map=await source.Get<Dictionary<string,bool>>("api/features"); }
+        catch(ApiRequestException e) when(e.StatusCode==System.Net.HttpStatusCode.NotFound) { }
+        if(source!=Api)return;
+        featuresOff=map?.Where(f=>!f.Value).Select(f=>f.Key).ToHashSet()??[];
+        ShowFeatures();
+        foreach(var window in SessionWindows)
+        {
+            var open=window switch{ChatWindow=>Feature("chat"),SurveyWindow=>Feature("survey"),WorkWindow=>Feature("tasks"),OfficeWindow{Administrative:false}=>Feature("calendar")||Feature("rooms"),_=>true};
+            if(!open)window.Close();
+        }
+        await RefreshTimetableAvailability();
+    }
+    void ShowFeatures()
+    {
+        Visibility Shown(bool on)=>on?Visibility.Visible:Visibility.Collapsed;
+        ChatButton.Visibility=Shown(Feature("chat"));WorkButton.Visibility=Shown(Feature("tasks"));SurveyButton.Visibility=Shown(Feature("survey"));
+        OfficeButton.Visibility=Shown(Feature("calendar")||Feature("rooms"));
+        var office=Feature("calendar")&&Feature("rooms")?"학사일정 · 특별실 예약":Feature("rooms")?"특별실 예약":"학사일정";
+        OfficeButton.ToolTip=office;System.Windows.Automation.AutomationProperties.SetName(OfficeButton,office);
+    }
     int timetableAvailabilityRequest;
     async Task<bool> RefreshTimetableAvailability()
     {
@@ -91,17 +118,17 @@ public partial class MainWindow
     }
     void OpenChatClick(object sender, RoutedEventArgs e) => OpenChat();
     void OpenSurveyClick(object sender, RoutedEventArgs e) => OpenSurvey();
-    void OpenWorkClick(object sender, RoutedEventArgs e) { if (Api is not null) new WorkWindow(this).Show(); }
+    void OpenWorkClick(object sender, RoutedEventArgs e) { if (Api is not null && Feature("tasks")) new WorkWindow(this).Show(); }
     void OpenTimetableClick(object sender,RoutedEventArgs e){if(Api is not null&&TimetableButton.IsVisible)new TimetableWindow(this).Show();}
     void OpenChat(string[]? ids = null)
     {
-        if (Api is null) return;
+        if (Api is null || !Feature("chat")) return;
         var selected = ids ?? [];
         var valid = selected.Where(id => id != Api.Session!.User!.Id).ToArray();
         if (ids is not null && valid.Length == 0) { StatusLabel.Text = "다른 교직원을 선택하세요."; return; }
         new ChatWindow(this, people, valid.Length > 0 ? valid : null).Show();
     }
-    void OpenSurvey(string[]? ids = null) { if (Api is not null) new SurveyWindow(this, people, ids).Show(); }
+    void OpenSurvey(string[]? ids = null) { if (Api is not null && Feature("survey")) new SurveyWindow(this, people, ids).Show(); }
     Task RequestRemote(string person, bool shareMine)
     { remote ??= new RemoteClient(this); return remote.Request(person, shareMine); }
     async Task VerifyFeatureUi(string directory)

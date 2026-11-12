@@ -28,6 +28,8 @@ public partial class ComposeWindow : Window
         InitializeComponent(); StatusTone.Watch(Feedback);
         InitializeEditor();
         SubmissionDate.SelectedDate = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(9)).Date.AddDays(7);
+        // Collected files are handed in through the task list, so the option goes with that menu.
+        if (!main.Feature("tasks") && CollectFiles.Parent is FrameworkElement collect) collect.Visibility = Visibility.Collapsed;
         ScheduleDate.SelectedDate = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(9)).Date.AddDays(1);
         server = main.Api!.Address.ToString();
         legacyDraftPath = Path.Combine(main.LocalDirectory, $"draft-{main.Api.Session!.User!.Id}.dpapi");

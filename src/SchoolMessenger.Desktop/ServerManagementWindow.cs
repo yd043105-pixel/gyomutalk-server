@@ -29,7 +29,7 @@ public sealed partial class ServerManagementWindow:Window
     {
         this.api=api;if(owner is MainWindow workOwner)workOwner.RegisterWorkWindow(this);else Owner=owner;Resources=owner.Resources;Title="관리자 시스템 · 서버 운영";Width=940;Height=760;MinWidth=760;MinHeight=560;Style=(Style)FindResource("SchoolWindow");
         MaxHeight=SystemParameters.WorkArea.Height-30;WindowStartupLocation=WindowStartupLocation.CenterOwner;
-        var dock=hostView;dock.Margin=new Thickness(24,18,24,12);Content=dock;
+        var dock=hostView;dock.Margin=owner is LocalServerWindow?new Thickness(0):new Thickness(24,18,24,12);Content=dock;
         var footer=new DockPanel{Margin=new Thickness(0,12,0,0)};var refresh=new Button{Content="상태 새로고침",MinHeight=38,Margin=new Thickness(0,0,16,0)};refresh.Click+=async(_,_)=>await Refresh(true);DockPanel.SetDock(refresh,Dock.Left);footer.Children.Add(refresh);footer.Children.Add(feedback);DockPanel.SetDock(footer,Dock.Bottom);dock.Children.Add(footer);
         var header=new DockPanel{Margin=new Thickness(0,0,0,18)};
         var localControl=new Button{Content="이 PC 서버 시작 · 중지 관리",Margin=new Thickness(0,5,0,10)};
@@ -40,7 +40,7 @@ public sealed partial class ServerManagementWindow:Window
             if(Application.Current.MainWindow is LocalServerWindow manager){manager.Show();manager.ShowServerControls();manager.Activate();return;}
             var start=new ProcessStartInfo(Environment.ProcessPath!){UseShellExecute=false,CreateNoWindow=true};start.ArgumentList.Add("--server-manager");Process.Start(start);
         };localControl.Content="이 PC 서버 시작·중지";localControl.VerticalAlignment=VerticalAlignment.Center;DockPanel.SetDock(localControl,Dock.Right);header.Children.Add(localControl);
-        var heading=new StackPanel();var title=Label("서버 운영",22);title.FontWeight=FontWeights.Bold;heading.Children.Add(title);heading.Children.Add(Label("접속 서버  "+api.Address,12));header.Children.Add(heading);DockPanel.SetDock(header,Dock.Top);dock.Children.Add(header);
+        var heading=new StackPanel();heading.Children.Add(AdminUi.PageTitle(owner is LocalServerWindow?"운영 현황":"서버 운영","접속 서버  "+api.Address));header.Children.Add(heading);DockPanel.SetDock(header,Dock.Top);dock.Children.Add(header);
         var tabs=new TabControl{BorderThickness=new Thickness(0)};tabs.SetResourceReference(Control.BackgroundProperty,"Soft");dock.Children.Add(tabs);body.Margin=new Thickness(0,12,0,0);
         tabs.Items.Add(new TabItem{Header="운영 현황",Content=new ScrollViewer{Content=body,VerticalScrollBarVisibility=ScrollBarVisibility.Auto}});
         var cards=new Grid();for(var i=0;i<3;i++)cards.ColumnDefinitions.Add(new ColumnDefinition());
@@ -73,12 +73,12 @@ public sealed partial class ServerManagementWindow:Window
     static Border Section(string title,UIElement content)
     {
         var stack=new StackPanel();var heading=Label(title,16);heading.FontWeight=FontWeights.Bold;heading.Margin=new Thickness(0,0,0,14);stack.Children.Add(heading);stack.Children.Add(content);
-        var card=new Border{Child=stack,Padding=new Thickness(20),CornerRadius=new CornerRadius(14),Margin=new Thickness(0,0,0,16)};card.SetResourceReference(Border.BackgroundProperty,"Surface");return card;
+        var card=new Border{Child=stack,Padding=new Thickness(20),CornerRadius=new CornerRadius(10),BorderThickness=new Thickness(1),Margin=new Thickness(0,0,0,16)};card.SetResourceReference(Border.BackgroundProperty,"Surface");card.SetResourceReference(Border.BorderBrushProperty,"Line");return card;
     }
     static void AddCard(Grid grid,int column,string title,TextBlock value,ProgressBar? bar,TextBlock? note=null)
     {
         var stack=new StackPanel();stack.Children.Add(Label(title,12));stack.Children.Add(value);if(bar is not null)stack.Children.Add(bar);if(note is not null)stack.Children.Add(note);
-        var card=new Border{CornerRadius=new CornerRadius(12),Padding=new Thickness(14),Margin=new Thickness(0,8,10,12),BorderThickness=new Thickness(1),Child=stack};
+        var card=new Border{CornerRadius=new CornerRadius(10),Padding=new Thickness(16),Margin=new Thickness(0,8,10,12),BorderThickness=new Thickness(1),Child=stack};
         card.SetResourceReference(Border.BackgroundProperty,"Surface");card.SetResourceReference(Border.BorderBrushProperty,"Line");value.FontWeight=FontWeights.Bold;Grid.SetColumn(card,column);grid.Children.Add(card);
     }
     static string Bytes(double value)=>value>=1073741824?(value/1073741824).ToString("0.0")+" GB":(value/1048576).ToString("0.0")+" MB";

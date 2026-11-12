@@ -118,6 +118,17 @@ public partial class MainWindow
                     :"disabling the timetable hides the sidebar entry and closes its open window");
             }
             await Toggle(false);await Toggle(true);
+            // The other optional menus follow the administrator's switches the same way, without signing in again.
+            async Task Menu(string name,bool enabled,Func<bool> done)
+            {
+                await Api.Send<JsonElement>(System.Net.Http.HttpMethod.Post,"api/admin/features",new { name, enabled });
+                for(var i=0;i<80&&!done();i++)await Task.Delay(50);
+            }
+            await Menu("calendar",false,()=>Equals(OfficeButton.ToolTip,"특별실 예약"));var roomsOnly=OfficeButton.IsVisible&&Equals(OfficeButton.ToolTip,"특별실 예약");
+            await Menu("rooms",false,()=>!OfficeButton.IsVisible);var hidden=!OfficeButton.IsVisible;
+            await Menu("calendar",true,()=>OfficeButton.IsVisible);await Menu("rooms",true,()=>Equals(OfficeButton.ToolTip,"학사일정 · 특별실 예약"));
+            Check(roomsOnly&&hidden&&OfficeButton.IsVisible&&Equals(OfficeButton.ToolTip,"학사일정 · 특별실 예약")&&ChatButton.IsVisible&&Feature("remote"),
+                "switching the calendar and the rooms off removes them from the sidebar at once, and switching them on brings them back");
         }
         catch(ApiRequestException error) when(error.StatusCode==System.Net.HttpStatusCode.NotFound) { }
         await Bring(compose); await Bring(this);

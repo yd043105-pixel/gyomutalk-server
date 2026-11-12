@@ -15,14 +15,34 @@ public sealed class SchoolPolicyWindow:Window
 {
     public SchoolPolicyWindow(Window owner,Api api)
     {
-        Owner=owner;Title="학교별 약관 · 개인정보 설정 초안";Width=600;Height=700;WindowStartupLocation=WindowStartupLocation.CenterOwner;
-        var body=new StackPanel{Margin=new Thickness(24)};AdminUi.Page(this,new ScrollViewer{Content=body,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
-        void Text(string value)=>body.Children.Add(new TextBlock{Text=value,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,8,0,6)});
-        TextBox Field(string label,string initial=""){Text(label);var field=new TextBox{Text=initial,MaxLength=150};body.Children.Add(field);return field;}
-        Text("학교별 서버 운영 관리자가 작성합니다. 개발자 김동욱은 각 학교의 개인정보 보호책임자로 자동 지정되지 않습니다. 일반 회원은 이 설정을 변경할 수 없습니다.");
-        TextBox school=Field("운영 학교명"),office=Field("권리 요청 창구 (예: ○○고등학교 교무실)"),phone=Field("학교 문의 전화"),responsible=Field("학교 개인정보 보호책임자 성명·직위 (모르면 비워 두기)"),contact=Field("보호책임자 연락처 (모르면 비워 두기)");
-        Text("검토용 JSON 파일만 만듭니다. 전문·처리 근거·보유 기간·위탁·만 14세 미만 절차와 학교 확정 사항을 검토한 뒤, 서버 운영 설정의 registrationPolicyFile에 절대 경로를 지정하고 계획된 재시작 때 적용하세요. 업무·학교 소식 서버는 각각 설정합니다.");
-        var result=new TextBlock{TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,12,0,0)};var save=new Button{Content="학교 검토용 초안 파일 만들기",IsEnabled=false,Margin=new Thickness(0,12,0,0)};body.Children.Add(save);body.Children.Add(result);
+        Owner=owner;Title="학교별 약관 · 개인정보 설정 초안";Width=640;Height=720;WindowStartupLocation=WindowStartupLocation.CenterOwner;
+        var embedded=owner is LocalServerWindow;
+        var body=new StackPanel{Margin=embedded?new Thickness(0,0,6,0):new Thickness(24)};AdminUi.Page(this,new ScrollViewer{Content=body,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
+        var title=AdminUi.PageTitle("약관·개인정보","학교 이름과 문의처를 넣어, 학교가 검토할 약관·개인정보 처리방침 초안 파일을 만듭니다.");title.Margin=new Thickness(0,0,0,16);body.Children.Add(title);
+        // Fields two to a row, like the other administrator forms.
+        var form=new StackPanel();form.Children.Add(AdminUi.Group("학교 정보"));
+        var fields=new Grid();fields.ColumnDefinitions.Add(new ColumnDefinition());fields.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(12)});fields.ColumnDefinitions.Add(new ColumnDefinition());form.Children.Add(fields);
+        var index=0;
+        TextBox Field(string label,bool wide=false)
+        {
+            if(wide&&index%2==1)index++;
+            if(index%2==0)fields.RowDefinitions.Add(new RowDefinition{Height=GridLength.Auto});
+            var cell=new StackPanel{Margin=new Thickness(0,0,0,12)};var caption=AdminUi.Label(label,"Muted",13);caption.Margin=new Thickness(0,0,0,6);cell.Children.Add(caption);
+            var field=new TextBox{MaxLength=150};System.Windows.Automation.AutomationProperties.SetName(field,label);cell.Children.Add(field);
+            Grid.SetRow(cell,index/2);Grid.SetColumn(cell,index%2==0?0:2);if(wide){Grid.SetColumnSpan(cell,3);index++;}index++;fields.Children.Add(cell);return field;
+        }
+        TextBox school=Field("운영 학교명"),phone=Field("학교 문의 전화 (예: 061-000-0000)"),office=Field("권리 요청 창구 (예: ○○고등학교 교무실)",true),responsible=Field("개인정보 보호책임자 성명·직위 (모르면 비워 두기)"),contact=Field("보호책임자 연락처 (모르면 비워 두기)");
+        var actions=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,4,0,0)};
+        var save=new Button{Content="학교 검토용 초안 파일 만들기",IsEnabled=false};save.SetResourceReference(StyleProperty,"PrimaryButton");actions.Children.Add(save);form.Children.Add(actions);
+        var result=AdminUi.Label("","Muted",13);result.Margin=new Thickness(0,10,0,0);StatusTone.Watch(result);form.Children.Add(result);
+        var formCard=AdminUi.Card(form);formCard.Margin=new Thickness(0,0,0,12);body.Children.Add(formCard);
+        var notes=new StackPanel();notes.Children.Add(AdminUi.Group("알아 둘 점"));
+        foreach(var line in new[]{
+            "학교별 서버 운영 관리자가 작성합니다. 개발자 김동욱은 각 학교의 개인정보 보호책임자로 자동 지정되지 않으며, 일반 회원은 이 설정을 바꿀 수 없습니다.",
+            "검토용 JSON 파일만 만듭니다. 운영 중인 서버에는 아무것도 적용하지 않습니다.",
+            "전문·처리 근거·보유 기간·위탁·만 14세 미만 절차와 학교 확정 사항을 검토한 뒤, 서버 운영 설정의 registrationPolicyFile에 파일의 절대 경로를 지정하고 계획된 재시작 때 적용하세요."})
+        {var note=AdminUi.Label("· "+line,"Muted",13);note.Margin=new Thickness(0,0,0,6);notes.Children.Add(note);}
+        var noteCard=AdminUi.Card(notes);noteCard.SetResourceReference(Border.BackgroundProperty,"Subtle");body.Children.Add(noteCard);
         RegistrationPolicySet? policy=null;
         var initialized=false;body.Loaded+=async(_,_)=>
         {

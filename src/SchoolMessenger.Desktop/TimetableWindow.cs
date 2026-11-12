@@ -21,6 +21,8 @@ public sealed partial class TimetableWindow:Window
     readonly ComboBox scope=new(){MinWidth=220};
     bool busy;
     readonly ScrollViewer pageScroll=new(){VerticalScrollBarVisibility=ScrollBarVisibility.Auto};
+    // Pages that must not scroll as a whole (the swap board) fill this instead of the scrolling body.
+    readonly Border fixedPage=new(){Visibility=Visibility.Collapsed};
     readonly Border scheduleFooter = new() { Visibility = Visibility.Collapsed, Padding = new Thickness(16,6,16,6), BorderThickness = new Thickness(0,1,0,0) };
     JsonElement setup;
     string? candidate,requestId;
@@ -32,7 +34,8 @@ public sealed partial class TimetableWindow:Window
         Style=(Style)FindResource("SchoolWindow");WindowStartupLocation=WindowStartupLocation.CenterOwner;
         var page=new DockPanel();page.SetResourceReference(Panel.BackgroundProperty,"Surface");
         scheduleFooter.SetResourceReference(Border.BackgroundProperty,"Subtle");scheduleFooter.SetResourceReference(Border.BorderBrushProperty,"Line");
-        DockPanel.SetDock(scheduleFooter,Dock.Bottom);page.Children.Add(scheduleFooter);pageScroll.Content=body;page.Children.Add(pageScroll);Content=page;
+        DockPanel.SetDock(scheduleFooter,Dock.Bottom);page.Children.Add(scheduleFooter);pageScroll.Content=body;var stage=new Grid();stage.Children.Add(pageScroll);stage.Children.Add(fixedPage);page.Children.Add(stage);Content=page;
+        feedback.IsVisibleChanged+=(_,_)=>{if(boardHint is not null)boardHint.Visibility=feedback.Visibility==Visibility.Visible?Visibility.Collapsed:Visibility.Visible;};
         if(DateTime.TryParse(selectedDate,out var day)){selected=day;weekly=false;}
         Loaded+=async(_,_)=>await Run(Load);
     }
@@ -40,8 +43,14 @@ public sealed partial class TimetableWindow:Window
     static string TeacherLabel(JsonElement value)=>value.GetProperty("name").GetString()+" · "+value.GetProperty("department").GetString()+" · "+value.GetProperty("username").GetString();
     static TextBlock Text(string value,int size=14)=>new(){Text=value,FontSize=size,FontWeight=size>=20?FontWeights.Bold:FontWeights.Normal,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,0,0,10)};
     void Action(string label,Func<Task> action){var b=AdminUi.Tone(new Button{Content=label,Margin=new Thickness(0,0,8,10),HorizontalAlignment=HorizontalAlignment.Left},label);b.Click+=async(_,_)=>await Run(action);body.Children.Add(b);}
-    async Task Run(Func<Task> action){if(busy)return;busy=true;body.IsEnabled=scheduleFooter.IsEnabled=false;feedback.Text="";try{await action();}catch(Exception e){feedback.Text=e.Message;}finally{busy=false;body.IsEnabled=scheduleFooter.IsEnabled=true;}}
-    void ResetBody(){body.Children.Clear();scheduleFooter.Visibility=Visibility.Collapsed;scheduleFooter.Child=null;}
+    async Task Run(Func<Task> action){if(busy)return;busy=true;body.IsEnabled=scheduleFooter.IsEnabled=fixedPage.IsEnabled=false;feedback.Text="";try{await action();}catch(Exception e){feedback.Text=e.Message;}finally{busy=false;body.IsEnabled=scheduleFooter.IsEnabled=fixedPage.IsEnabled=true;}}
+    void ResetBody()
+    {
+        body.Children.Clear();scheduleFooter.Visibility=Visibility.Collapsed;scheduleFooter.Child=null;
+        // The status line is one control that moves between pages.
+        (feedback.Parent as Panel)?.Children.Remove(feedback);feedback.Margin=new Thickness(0,12,0,12);
+        boardHint=null;fixedPage.Child=null;fixedPage.Visibility=Visibility.Collapsed;pageScroll.Visibility=Visibility.Visible;
+    }
     DateTime selected=DateTime.UtcNow.AddHours(9).Date;bool weekly=true;StackPanel view=new();
     FrameworkElement Head()
     {
@@ -175,21 +184,29 @@ public sealed partial class TimetableWindow:Window
     readonly List<(string Name,JsonElement Value)> imports=[];
     public async Task Refresh(){if(view.Parent==body)await Run(Load);}
     Task Choose() => Choose([]);
-    async Task Choose(string[] approvalIds)
+    // gradeFiles: base timetables picked grade by grade; each file must hold exactly that grade.
+    async Task Choose(string[] approvalIds, (int Grade, string Path)[]? gradeFiles = null)
     {
-        var dialog=new Microsoft.Win32.OpenFileDialog{Title="나이스에서 받은 시간표 파일 선택",Filter="시간표 엑셀 (*.xlsx)|*.xlsx",Multiselect=true};if(dialog.ShowDialog(this)!=true)return;
-        if (dialog.FileNames.Length > 20)
+        string[] paths;
+        if (gradeFiles is null)
+        {
+            var dialog=new Microsoft.Win32.OpenFileDialog{Title="나이스에서 받은 시간표 파일 선택",Filter="시간표 엑셀 (*.xlsx)|*.xlsx",Multiselect=true};if(dialog.ShowDialog(this)!=true)return;
+            paths = dialog.FileNames;
+        }
+        else paths = gradeFiles.Select(f => f.Path).ToArray();
+        if (paths.Length > 20)
             throw new InvalidOperationException("시간표 엑셀은 한 번에 20개까지 선택할 수 있습니다.");
         var selectedFiles = new List<(string Name, FileStream Stream)>();
         try
         {
             // Check every local file before creating any import drafts on the server.
-            foreach (var path in dialog.FileNames)
+            foreach (var path in paths)
                 selectedFiles.Add((Path.GetFileName(path), OpenTimetableFile(path)));
             publishingSwaps = approvalIds;
             imports.Clear();
-            foreach (var (name, stream) in selectedFiles)
+            for (var i = 0; i < selectedFiles.Count; i++)
             {
+                var (name, stream) = selectedFiles[i];
                 feedback.Text = name + " 읽는 중…";
                 using var form = new MultipartFormDataContent();
                 form.Add(new StreamContent(stream), "file", name);
@@ -201,6 +218,13 @@ public sealed partial class TimetableWindow:Window
                 {
                     throw new InvalidOperationException(name + ": " + e.Message, e);
                 }
+                if (gradeFiles is null) continue;
+                var book = imports[^1].Value.GetProperty("workbook");
+                if (book.GetProperty("kind").GetString() != "base")
+                    throw new InvalidOperationException(name + ": 기초시간표 파일이 아닙니다. 나이스에서 기초시간표를 내려받아 올려 주세요.");
+                var found = book.GetProperty("cells").EnumerateArray().Select(c => c.GetProperty("grade").GetInt32()).Distinct().Order().ToArray();
+                if (found.Length != 1 || found[0] != gradeFiles[i].Grade)
+                    throw new InvalidOperationException($"{gradeFiles[i].Grade}학년 칸에 올린 {name}은 {string.Join("·", found)}학년 시간표입니다. 학년에 맞는 파일을 선택하세요.");
             }
         }
         finally
