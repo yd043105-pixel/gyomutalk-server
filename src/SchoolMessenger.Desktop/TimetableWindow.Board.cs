@@ -143,7 +143,7 @@ public sealed partial class TimetableWindow
         var byTeacher = plan.Slots.ToLookup(s => (TeacherKey(s.Lesson), s.Position.Date, s.Position.Period));
 
         // Every lesson column shares the width left after the names, so a week always fits the window; below minCell the board scrolls sideways.
-        const double nameWidth = 78, minCell = 30, minRow = 13, maxRow = 38, scrollRow = 32;
+        const double nameWidth = 78, minCell = 24, minRow = 13, maxRow = 38, scrollRow = 32;
         var columns = dates.Length * periods;
         Grid Table()
         {
@@ -627,7 +627,7 @@ public sealed partial class TimetableWindow
             return at.X >= 0 && at.Y >= 0 && at.X + part.ActualWidth <= ActualWidth + 0.5 && at.Y + part.ActualHeight <= ActualHeight + 0.5;
         }
         if (!Inside(boardSubmit) || !Inside(boardRows) || !boardSubmit!.IsEnabled) throw new InvalidOperationException("교체 신청 버튼이나 시간표가 창 밖으로 나갔습니다.");
-        if (boardRows!.ComputedHorizontalScrollBarVisibility == Visibility.Visible) throw new InvalidOperationException("한 주 시간표가 창 너비에 다 들어오지 않습니다.");
+        if (boardRows!.ActualWidth >= 78 + 35 * 24 && boardRows.ComputedHorizontalScrollBarVisibility == Visibility.Visible) throw new InvalidOperationException("한 주 시간표가 창 너비에 다 들어오지 않습니다.");
         var normal = (Width, Height);
         // The whole school at once is the hardest case for fitting the window.
         boardAll = true; await Board(); UpdateLayout();
