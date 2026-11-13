@@ -38,9 +38,6 @@ public sealed partial class LocalServerWindow
             Check(ambiguous&&card.SchoolPick!.Choice.Text.Contains("같은 이름의 학교"),"a typed school name shared by several schools must be picked from the list by address");
             card.SchoolPick.Set(school.Name,school.Address);Check(card.SchoolPick.Selected==school&&card.SchoolPick.Choice.Text.Contains(school.Address),"the picked school shows its address");
             Check(card.SimpleFields.IsVisible&&card.PasswordFields.IsVisible&&!card.TrialFields.IsVisible&&!card.ProductionFields.IsVisible,"simple setup asks only for school name, administrator account and approval document");
-            var noPolicy=false;try{RenderPolicy(new(school.Name,"","교감","2026-11-03","사용하지 않음"));}catch(InvalidOperationException){noPolicy=true;}
-            Check(noPolicy&&ConfirmedPolicy(card.SimpleData.Text) is null,"sign-ups wait until the school confirms its terms with a contact");
-            ConfirmPolicy(card.SimpleData.Text,new(school.Name,"교무실 031-000-0000","교감 가상","2026-11-03","사용하지 않음"));
             await Start(card);
             Check(card.Host.Running&&card.Fingerprint.Length==64,"the server starts in production mode with a generated certificate");
             Check(CertificatePins.ValidateFingerprint(new Uri(address+"/"),card.Fingerprint),"the administrator program trusts the certificate it generated for its own sign-in");
@@ -56,10 +53,10 @@ public sealed partial class LocalServerWindow
                 var capture=Path.Combine(outputDirectory,"capture.png");File.WriteAllBytes(capture,[137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1,8,6,0,0,0,31,21,196,137,0,0,0,10,73,68,65,84,120,156,99,0,1,0,0,5,0,1,13,10,45,180,0,0,0,0,73,69,78,68,174,66,96,130]);
                 Check((await api.Upload(capture)).Id.Length>0,"a captured image uploads through this PC's real scanner path, whichever antivirus runs here");
                 var info=await api.Get<JsonElement>("server-info");
-                var signup=await api.Get<JsonElement>("api/registration/policy");var terms=signup.GetProperty("documents")[0].GetProperty("body").GetString()!;
-                Check(signup.GetProperty("canRegister").GetBoolean()&&!signup.GetProperty("draft").GetBoolean()&&signup.GetProperty("operator").GetString()==school.Name&&terms.Contains("교무실 031-000-0000")&&!terms.Contains("{{")&&!terms.Contains("초안"),"the confirmed school terms open sign-up as the official service, with the school's name and contact");
-                var applied=await api.Send<JsonElement>(HttpMethod.Post,"api/register",new{username="new.teacher",name="가상 교사",department="교무부",password="Teacher-"+Guid.NewGuid().ToString("N")[..12],agreement=new{revision=signup.GetProperty("revision").GetString(),acceptedIds=new[]{"terms","privacy"}}});
-                Check(applied.GetProperty("status").GetString()=="pending","a teacher applies for an account under the confirmed terms and waits for approval");
+                var signup=await api.Get<JsonElement>("api/registration/policy");
+                Check(signup.GetProperty("canRegister").GetBoolean()&&signup.GetProperty("documents").GetArrayLength()==0&&signup.GetProperty("operator").GetString()==school.Name,"sign-up is open from the first start with no terms to agree to; earlier programs are told the school's name and no documents");
+                var applied=await api.Send<JsonElement>(HttpMethod.Post,"api/register",new{username="new.teacher",name="가상 교사",department="교무부",password="Teach-"+Guid.NewGuid().ToString("N")[..2]});
+                Check(applied.GetProperty("status").GetString()=="pending","a teacher applies for an account with an eight-character password and waits for approval");
                 Check(info.GetProperty("schoolName").GetString()==school.Name&&info.GetProperty("schoolAddress").GetString()==school.Address,"the school name and address identify the server for teacher PCs");
                 Check(SchoolList.Mismatch(school,school.Name,school.Address) is null&&SchoolList.Mismatch(twins[0],school.Name,school.Address) is {} wrong&&wrong.Contains(school.Address),"a user who picked the same-named school elsewhere is told the address belongs to another school");
             }

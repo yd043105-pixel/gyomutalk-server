@@ -36,7 +36,7 @@ internal sealed class LocalServerProcess(string root,string service)
     {
         data=Path.GetFullPath(data);
         if(data.Equals(root,StringComparison.OrdinalIgnoreCase)||data.StartsWith(root+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("데이터는 프로그램 설치 폴더 밖에 저장하세요.");
-        if(!File.Exists(Path.Combine(data,".initialized"))&&(password.Length is <12 or >128||string.IsNullOrWhiteSpace(password)))throw new InvalidOperationException("최초 관리자 비밀번호는 12~128자로 입력하세요.");
+        if(!File.Exists(Path.Combine(data,".initialized"))&&(password.Length is <8 or >128||string.IsNullOrWhiteSpace(password)))throw new InvalidOperationException("최초 관리자 비밀번호는 8~128자로 입력하세요.");
         return data;
     }
     // Office server with an administrator-generated certificate; see SimpleOperation.
@@ -50,7 +50,7 @@ internal sealed class LocalServerProcess(string root,string service)
         start.Environment["Operations__SecurityReviewFile"]=review;start.Environment["Operations__SchoolId"]=setup.SchoolId;
         start.Environment["School__Name"]=setup.School;start.Environment["School__Address"]=setup.SchoolAddress;
         // Sign-ups use the documents the school confirmed in the administrator program; without them none are taken.
-        var policy=LocalServerWindow.PolicyPath(data);start.Environment["Registration__PolicyFile"]=File.Exists(policy)?policy:"";start.Environment["School__AllowedNetworks"]=SimpleOperation.AllowedNetworks();
+        start.Environment["School__AllowedNetworks"]=SimpleOperation.AllowedNetworks();
         start.Environment["School__DataDirectory"]=data;start.Environment["School__BackupDirectory"]=Path.GetFullPath(setup.Backup);start.Environment["School__AttachmentBackup"]="true";
         start.Environment["School__CertificateThumbprint"]=thumbprint;start.Environment["School__CertificateStore"]="CurrentUser";
         start.Environment["School__AdminUsername"]=setup.AdminUsername;
@@ -58,7 +58,7 @@ internal sealed class LocalServerProcess(string root,string service)
         // An existing server keeps its administrator password unless a new one is given for this start.
         else if(password.Length>0)
         {
-            if(password.Length is <12 or >128||string.IsNullOrWhiteSpace(password))throw new InvalidOperationException("새 관리자 비밀번호는 12~128자로 입력하세요.");
+            if(password.Length is <8 or >128||string.IsNullOrWhiteSpace(password))throw new InvalidOperationException("새 관리자 비밀번호는 8~128자로 입력하세요.");
             start.Environment["School__ResetAdminPassword"]=password;
         }
         start.ArgumentList.Add("--urls");start.ArgumentList.Add(SimpleOperation.Listener(service));

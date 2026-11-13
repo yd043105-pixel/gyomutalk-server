@@ -1,4 +1,3 @@
-import {acceptRequiredPoliciesForFixture} from './registration-fixture.mjs';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import { spawn } from 'node:child_process';
@@ -50,7 +49,6 @@ async function stop() { if (server && server.exitCode === null) { const closed =
 class Client {
   cookies = new Map(); csrf = '';
   async request(route, method = 'GET', body, expected = 200, withCsrf = true, extraHeaders = {}) {
-    if(route==='/api/register'&&method==='POST'&&body?.agreement===undefined)body={...body,agreement:await acceptRequiredPoliciesForFixture(address)};
     const headers = { Cookie: [...this.cookies].map(([key, value]) => `${key}=${value}`).join('; '), ...extraHeaders };
     if (method !== 'GET' && withCsrf) headers['X-CSRF-TOKEN'] = this.csrf;
     if (this.computer) headers['X-Test-Computer'] = this.computer;

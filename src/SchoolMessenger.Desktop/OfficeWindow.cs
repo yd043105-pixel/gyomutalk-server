@@ -22,19 +22,33 @@ public sealed partial class OfficeWindow:Window
     public OfficeWindow(MainWindow main,bool administration=false):this(main,main.Api!,administration){}
     internal OfficeWindow(Window owner,Api source,bool administration,string page="administration")
     {
-        api=source;this.administration=administration;if(owner is MainWindow main){main.RegisterWorkWindow(this);feature=main.Feature;}else Owner=owner;Resources=owner.Resources;Title=administration?"교직원 · 학교 운영 관리":"교무톡 · 학사일정 · 특별실";Width=960;Height=780;MinHeight=500;MinWidth=700;FontSize=13;Style=(Style)FindResource("SchoolWindow");
-        WindowStartupLocation=WindowStartupLocation.CenterOwner;var dock=new DockPanel();DockPanel.SetDock(error,Dock.Bottom);dock.Children.Add(error);surface.Child=new ScrollViewer{Content=body,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};if(owner is LocalServerWindow)error.Margin=new Thickness(0,10,0,0);else dock.SetResourceReference(BackgroundProperty,"Surface");dock.Children.Add(surface);Content=dock;Page();var initialized=false;dock.Loaded+=async(_,_)=>{if(initialized)return;initialized=true;await Run(async()=>{if(!administration){await Load(false);return;}switch(page){case "staff":await StaffList();break;case "rooms":setup=await api.Get<JsonElement>("api/office/setup");await Rooms();break;case "calendar":await Load(false);break;case "audit":await Audit();break;default:await Administration();break;}});};
+        api=source;this.administration=administration;if(owner is MainWindow main){main.RegisterWorkWindow(this);feature=main.Feature;}else Owner=owner;
+        // The administrator pages are drawn with the administrator program's styles; opened from the teacher program they bring those styles along.
+        if(administration&&owner is not LocalServerWindow){Resources=new ResourceDictionary();Resources.MergedDictionaries.Add(owner.Resources);Resources.MergedDictionaries.Add(new ResourceDictionary{Source=new Uri("/AdminTheme.xaml",UriKind.Relative)});}else Resources=owner.Resources;
+        Title=administration?"교직원 · 학교 운영 관리":"교무톡 · 학사일정 · 특별실";Width=960;Height=780;MinHeight=500;MinWidth=700;FontSize=13;Style=(Style)FindResource("SchoolWindow");
+        WindowStartupLocation=WindowStartupLocation.CenterOwner;var dock=new DockPanel();DockPanel.SetDock(error,Dock.Bottom);dock.Children.Add(error);surface.Child=new ScrollViewer{Content=body,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};if(owner is LocalServerWindow)error.Margin=new Thickness(0,10,0,0);else dock.SetResourceReference(BackgroundProperty,administration?"Soft":"Surface");dock.Children.Add(surface);Content=dock;Page();var initialized=false;dock.Loaded+=async(_,_)=>{if(initialized)return;initialized=true;await Run(async()=>{if(!administration){await Load(false);return;}switch(page){case "staff":await StaffList();break;case "rooms":setup=await api.Get<JsonElement>("api/office/setup");await Rooms();break;case "calendar":await Load(false);break;case "audit":await Audit();break;default:await Administration();break;}});};
     }
     readonly Border surface=new(){CornerRadius=new CornerRadius(10)};
     // Every page starts here: most pages sit on a card, the member directory draws its own table and panel.
     void Page(bool card=true)
     {
-        body.Children.Clear();body.Margin=card?new Thickness(24):new Thickness(0,0,Embedded?6:0,0);surface.BorderThickness=new Thickness(card?1:0);
+        // A form keeps to a readable width on the left; a list or a table takes the page, with the same margin in every host.
+        body.Children.Clear();column=null;body.Width=card?560:double.NaN;body.HorizontalAlignment=card?HorizontalAlignment.Left:HorizontalAlignment.Stretch;
+        body.Margin=card?new Thickness(24):Embedded?new Thickness(0,0,6,0):new Thickness(24,16,24,16);surface.BorderThickness=new Thickness(card&&Embedded?1:0);
         if(card){surface.SetResourceReference(Border.BackgroundProperty,"Surface");surface.SetResourceReference(Border.BorderBrushProperty,"Line");}else surface.Background=null;
     }
-    static TextBlock Text(string text,int size=14)=>new(){Text=text,FontSize=size,FontWeight=size>=20?FontWeights.Bold:FontWeights.Normal,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,8,0,6)};
+    // 22 is a page title, 12 a note under a field, anything else the caption above a field.
+    static TextBlock Text(string text,int size=14){var block=size>=20?AdminUi.Heading(text,22):AdminUi.Label(text,"Muted",12);block.Margin=size>=20?new Thickness(0,6,0,2):size==12?new Thickness(0,10,0,4):new Thickness(0,14,0,6);return block;}
     void Button(string label,Func<Task> action){var b=AdminUi.Tone(new Button{Content=label,Margin=new Thickness(0,4,0,8),HorizontalAlignment=HorizontalAlignment.Left},label);b.Click+=async(_,_)=>await Run(action);body.Children.Add(b);}
-    TextBox Field(string label,string value=""){body.Children.Add(Text(label));var box=new TextBox{Text=value};body.Children.Add(box);return box;}
+    // Fields go down the page, or side by side in the two halves of Pair.
+    Panel? column;
+    T Put<T>(string label,T input)where T:FrameworkElement{var panel=column??body;panel.Children.Add(Text(label));panel.Children.Add(input);System.Windows.Automation.AutomationProperties.SetName(input,label);return input;}
+    TextBox Field(string label,string value="")=>Put(label,new TextBox{Text=value});
+    void Pair(Action left,Action right)
+    {
+        var grid=new Grid();grid.ColumnDefinitions.Add(new ColumnDefinition());grid.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(12)});grid.ColumnDefinitions.Add(new ColumnDefinition());
+        var a=new StackPanel();var b=new StackPanel();Grid.SetColumn(b,2);grid.Children.Add(a);grid.Children.Add(b);body.Children.Add(grid);column=a;left();column=b;right();column=null;
+    }
     async Task Run(Func<Task> action){if(busy)return;busy=true;body.IsEnabled=false;error.Text="";try{await action();}catch(Exception e){error.Text=e.Message;}finally{busy=false;body.IsEnabled=true;}}
     static string Date(JsonElement row,string key)=>DateTimeOffset.FromUnixTimeMilliseconds(row.GetProperty(key).GetInt64()).ToOffset(TimeSpan.FromHours(9)).ToString("M/d HH:mm");
     DateTime officeDate=DateTime.UtcNow.AddHours(9).Date;
@@ -112,22 +126,27 @@ public sealed partial class OfficeWindow:Window
     Task Editor(bool booking,JsonElement? existing)
     {
         if(booking)return BookingEditor(existing);
-        Page();Button("목록으로",()=>Load(booking));var title=Field("제목",existing?.GetProperty("title").GetString()??"");var description=booking?null:Field("행사·일정 설명",existing?.GetProperty("description").GetString()??"");
+        Page();Button("목록으로",()=>Load(false));body.Children.Add(Text(existing is null?"학교 일정 등록":"학교 일정 변경",22));
+        var title=Field("제목",existing?.GetProperty("title").GetString()??"");title.MaxLength=200;var description=Field("설명 (선택)",existing?.GetProperty("description").GetString()??"");
+        var whole=existing is{} e&&e.GetProperty("allDay").GetBoolean();
         var start=existing is{} a?DateTimeOffset.FromUnixTimeMilliseconds(a.GetProperty("start").GetInt64()).ToOffset(TimeSpan.FromHours(9)):DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(9)).AddHours(1);
         var end=existing is{} b?DateTimeOffset.FromUnixTimeMilliseconds(b.GetProperty("end").GetInt64()).ToOffset(TimeSpan.FromHours(9)):start.AddHours(1);
-        body.Children.Add(Text("시작 날짜 · 한국 시간"));var first=new DatePicker{SelectedDate=start.Date};body.Children.Add(first);var firstTime=Field("시작 시각 · HH:mm",start.ToString("HH:mm"));
-        body.Children.Add(Text("종료 날짜"));var last=new DatePicker{SelectedDate=end.Date};body.Children.Add(last);var lastTime=Field("종료 시각 · HH:mm",end.ToString("HH:mm"));
-        var allDay=new CheckBox{Content="종일 · 종료 날짜는 마지막 날의 다음 날",IsChecked=!booking&&existing is{} e&&e.GetProperty("allDay").GetBoolean(),Margin=new Thickness(0,12,0,12)};if(!booking)body.Children.Add(allDay);
-        var rooms=setup.GetProperty("rooms").EnumerateArray().Where(r=>r.GetProperty("active").GetBoolean()).ToArray();var choices=rooms.Select(r=>new Choice(r.GetProperty("id").GetString()!,r.GetProperty("name").GetString()!)).ToArray();var room=new ComboBox{ItemsSource=choices,SelectedIndex=choices.Length>0?0:-1};if(booking){body.Children.Add(Text("특별실"));body.Children.Add(room);if(existing is{} old)room.SelectedItem=choices.FirstOrDefault(r=>r.Id==old.GetProperty("roomId").GetString());}
-        var client=booking&&existing is{} previous?previous.GetProperty("clientId").GetString()!:Guid.NewGuid().ToString("N");
+        // An all-day event is stored up to the midnight after its last day; people pick the last day itself.
+        var first=new DatePicker{SelectedDate=start.Date};var last=new DatePicker{SelectedDate=whole?end.Date.AddDays(-1):end.Date};TextBox firstTime=null!,lastTime=null!;
+        Pair(()=>Put("시작 날짜",first),()=>firstTime=Field("시작 시각 (예: 09:00)",start.ToString("HH:mm")));
+        Pair(()=>Put("끝나는 날짜",last),()=>lastTime=Field("끝나는 시각 (예: 16:30)",end.ToString("HH:mm")));
+        var allDay=new CheckBox{Content="하루 종일 (시각 없이 날짜만)",IsChecked=whole,Margin=new Thickness(0,14,0,6)};body.Children.Add(allDay);
+        void Times(){firstTime.IsEnabled=lastTime.IsEnabled=allDay.IsChecked!=true;}
+        allDay.Click+=(_,_)=>Times();Times();
+        var client=Guid.NewGuid().ToString("N");
         Button("저장",async()=>
         {
             if(first.SelectedDate is not{} from||last.SelectedDate is not{} to)throw new InvalidOperationException("날짜를 선택하세요.");
-            if(!TimeSpan.TryParseExact(firstTime.Text,"hh\\:mm",CultureInfo.InvariantCulture,out var startTime)||!TimeSpan.TryParseExact(lastTime.Text,"hh\\:mm",CultureInfo.InvariantCulture,out var endTime))throw new InvalidOperationException("시간은 HH:mm 형식입니다.");
-            var begin=new DateTimeOffset(DateTime.SpecifyKind(from.Date,DateTimeKind.Unspecified).Add(!booking&&allDay.IsChecked==true?TimeSpan.Zero:startTime),TimeSpan.FromHours(9)).ToString("yyyy-MM-dd'T'HH:mm:sszzz");var finish=new DateTimeOffset(DateTime.SpecifyKind(to.Date,DateTimeKind.Unspecified).Add(!booking&&allDay.IsChecked==true?TimeSpan.Zero:endTime),TimeSpan.FromHours(9)).ToString("yyyy-MM-dd'T'HH:mm:sszzz");var revision=existing?.GetProperty("revision").GetInt32()??0;
-            if(booking&&room.SelectedItem is not Choice)throw new InvalidOperationException("관리자가 특별실을 먼저 등록해야 합니다.");
-            object request=booking?new OfficeBookingRequest(client,(room.SelectedItem as Choice??throw new InvalidOperationException("특별실을 선택하세요.")).Id,title.Text,begin,finish,revision):new OfficeEventRequest(client,title.Text,description!.Text,begin,finish,allDay.IsChecked==true,revision);
-            await api.Send<JsonElement>(HttpMethod.Post,"api/office/"+(booking?"bookings":"events")+(existing is{} old?"/"+old.GetProperty("id").GetString():""),request);await Load(booking);
+            var day=allDay.IsChecked==true;TimeSpan startTime=default,endTime=default;
+            if(!day&&(!TimeSpan.TryParseExact(firstTime.Text.Trim(),"hh\\:mm",CultureInfo.InvariantCulture,out startTime)||!TimeSpan.TryParseExact(lastTime.Text.Trim(),"hh\\:mm",CultureInfo.InvariantCulture,out endTime)))throw new InvalidOperationException("시각은 09:00처럼 적어 주세요.");
+            string Stamp(DateTime date,TimeSpan time)=>new DateTimeOffset(DateTime.SpecifyKind(date.Date,DateTimeKind.Unspecified).Add(time),TimeSpan.FromHours(9)).ToString("yyyy-MM-dd'T'HH:mm:sszzz");
+            var request=new OfficeEventRequest(client,title.Text,description.Text,Stamp(from,startTime),Stamp(day?to.AddDays(1):to,endTime),day,existing?.GetProperty("revision").GetInt32()??0);
+            await api.Send<JsonElement>(HttpMethod.Post,"api/office/events"+(existing is{} old?"/"+old.GetProperty("id").GetString():""),request);await Load(false);
         });return Task.CompletedTask;
     }
     Task Rooms()

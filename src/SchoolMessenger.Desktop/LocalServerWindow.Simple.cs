@@ -59,8 +59,6 @@ public sealed partial class LocalServerWindow
         items.Add((true,"Windows 방화벽","설치할 때 같은 학교망(로컬 서브넷)의 접속만 허용했습니다.",null,null));
         scanProbe??=FilePolicy.ScannerWorks();
         items.Add(scanProbe.IsCompleted?(scanProbe.Result?(true,"첨부파일 검사","Microsoft Defender로 올라오는 파일을 검사합니다.",null,null):(false,"첨부파일 검사","Defender가 꺼져 있어 검사하지 못합니다(다른 백신을 쓰는 PC). 파일 형식 확인과 백신 실시간 감시에만 의존합니다.",null,null)):(true,"첨부파일 검사","확인 중…",null,null));
-        var policy=ConfirmedPolicy(c.SimpleData.Text);
-        items.Add((policy is not null,"약관·개인정보 확정",policy is null?"학교 이름·문의처·보호책임자를 넣어 약관을 확정해야 교직원 계정 신청과 활성화를 받습니다.":"시행일 "+policy.Effective+" · "+policy.School+" 약관으로 회원가입을 받습니다.",policy is null?"확정하기":"다시 확정",()=>ShowPolicy(c)));
         // Optional, and of no use until the phone apps ship.
         // Rebuilt only when something changed so a click is never lost to the 3-second refresh.
         var key=string.Join("|",items.Select(i=>i.Done+i.Title+i.Detail));if(key==c.ChecklistKey)return;c.ChecklistKey=key;

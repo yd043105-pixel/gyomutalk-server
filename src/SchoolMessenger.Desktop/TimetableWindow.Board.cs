@@ -52,11 +52,15 @@ public sealed partial class TimetableWindow
         if (WindowState == WindowState.Normal)
         {
             var area = SystemParameters.WorkArea;
+            boardRestore ??= new Rect(Left, Top, Width, Height);
             if (Width < 1240) { Width = Math.Min(area.Width - 24, 1480); Left = area.Left + (area.Width - Width) / 2; }
             if (Height < area.Height - 24) { Height = Math.Min(area.Height - 24, 1100); Top = area.Top + (area.Height - Height) / 2; }
         }
         await Board();
     }
+
+    // The size the window had before the board widened it; it goes back to that when the board is left.
+    Rect? boardRestore;
 
     async Task Board()
     {
@@ -66,7 +70,7 @@ public sealed partial class TimetableWindow
         boardPlan = await api.Send<TimetableSwapPlan>(HttpMethod.Post, "api/timetable/swap-plan",
             new TimetableSwapPlanRequest(BoardDates, boardDependencies, BoardExchanges));
         boardPick = null; boardOptions = []; boardCells.Clear();
-        ResetBody();
+        ResetBody(board: true);
         // The board fills the window: the title and days stay on top, the request stays at the bottom, only the teachers scroll.
         var page = new DockPanel { Margin = new Thickness(16, 10, 16, 12) };
 

@@ -21,7 +21,7 @@ public sealed partial class ServerManagementWindow
         {
             var record=await api.Get<JsonElement>("api/admin/deployment-review");var panel=new StackPanel{Margin=new Thickness(22)};
             var state=record.GetProperty("state").GetString();
-            panel.Children.Add(Label(state=="trial"?"시험 모드 · 운영 검토 기록 미적용":state=="expired"?"학교 검토 기록 유효기간 만료":"학교 검토 기록 형식·증빙 해시 확인",20));
+            panel.Children.Add(Label(state=="trial"?"시험 모드 · 운영 검토 기록 미적용":state=="expired"?"학교 검토 기록 유효기간 만료":"학교 검토 기록 형식·증빙 해시 확인",20));((TextBlock)panel.Children[^1]).FontWeight=FontWeights.Bold;
             if(state!="trial")
             {
                 panel.Children.Add(Label("학교: "+record.GetProperty("school").GetString()));
@@ -64,7 +64,7 @@ public sealed partial class ServerManagementWindow
             }
             var panel=new StackPanel{Margin=new Thickness(22)};var dialog=Dialog("서버 PC 자동 구동",panel);
             panel.Children.Add(Label("Windows가 재시작되면 로그인 전에도 서버를 시작하고, 비정상 종료 시 1분 간격으로 최대 3회 다시 시작합니다."));
-            panel.Children.Add(Label("기존 서버 운영 설정 JSON을 선택하세요. 업무 서버와 학교 소식 서버는 각각 등록합니다. 비밀 설정을 만든 전용 표준 Windows 운영 계정으로 실행해야 합니다.",12));
+            panel.Children.Add(Label("기존 서버 운영 설정 JSON을 선택하세요. 비밀 설정을 만든 전용 표준 Windows 운영 계정으로 실행해야 합니다.",12));
             var path=new TextBox{IsReadOnly=true};panel.Children.Add(path);var choose=new Button{Content="운영 설정 파일 선택",Margin=new Thickness(0,10,0,5)};panel.Children.Add(choose);choose.Click+=(_,_)=>{var picker=new OpenFileDialog{Filter="서버 운영 설정 (*.json)|*.json",CheckFileExists=true};if(picker.ShowDialog(dialog)==true)path.Text=picker.FileName;};
             var status=Label("");panel.Children.Add(status);var actions=new WrapPanel();panel.Children.Add(actions);bool working=false;
             foreach(var (name,mode) in new[]{("설정 상태 확인","Status"),("자동 구동 켜기","Enable"),("자동 구동 끄기","Disable")})

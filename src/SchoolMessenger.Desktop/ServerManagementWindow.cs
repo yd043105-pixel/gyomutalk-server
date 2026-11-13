@@ -30,7 +30,7 @@ public sealed partial class ServerManagementWindow:Window
         this.api=api;if(owner is MainWindow workOwner)workOwner.RegisterWorkWindow(this);else Owner=owner;Resources=owner.Resources;Title="관리자 시스템 · 서버 운영";Width=940;Height=760;MinWidth=760;MinHeight=560;Style=(Style)FindResource("SchoolWindow");
         MaxHeight=SystemParameters.WorkArea.Height-30;WindowStartupLocation=WindowStartupLocation.CenterOwner;
         var dock=hostView;dock.Margin=owner is LocalServerWindow?new Thickness(0):new Thickness(24,18,24,12);Content=dock;
-        var footer=new DockPanel{Margin=new Thickness(0,12,0,0)};var refresh=new Button{Content="상태 새로고침",MinHeight=38,Margin=new Thickness(0,0,16,0)};refresh.Click+=async(_,_)=>await Refresh(true);DockPanel.SetDock(refresh,Dock.Left);footer.Children.Add(refresh);footer.Children.Add(feedback);DockPanel.SetDock(footer,Dock.Bottom);dock.Children.Add(footer);
+        var footer=new DockPanel{Margin=new Thickness(0,12,0,0)};var refresh=new Button{Content="상태 새로고침",MinHeight=38,Margin=new Thickness(0,0,16,0),VerticalAlignment=VerticalAlignment.Top};refresh.Click+=async(_,_)=>await Refresh(true);DockPanel.SetDock(refresh,Dock.Left);footer.Children.Add(refresh);footer.Children.Add(feedback);DockPanel.SetDock(footer,Dock.Bottom);dock.Children.Add(footer);
         var header=new DockPanel{Margin=new Thickness(0,0,0,18)};
         var localControl=new Button{Content="이 PC 서버 시작 · 중지 관리",Margin=new Thickness(0,5,0,10)};
         var localRoot=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,".."));
@@ -51,7 +51,6 @@ public sealed partial class ServerManagementWindow:Window
         var connection=new StackPanel{Margin=new Thickness(0,16,0,0)};tabs.Items.Add(new TabItem{Header="시작·연결",Content=new ScrollViewer{Content=connection,VerticalScrollBarVisibility=ScrollBarVisibility.Auto}});
         if(officeService){var discovery=new Button{Content="교내 서버 자동검색 설정",HorizontalAlignment=HorizontalAlignment.Left};discovery.Click+=async(_,_)=>await OpenDiscovery();connection.Children.Add(Section("교사용 PC 연결",discovery));}
         var boot=new Button{Content="서버 PC 재시작 후 자동 구동 설정",HorizontalAlignment=HorizontalAlignment.Left};boot.Click+=(_,_)=>OpenServerStartup();connection.Children.Add(Section("서버 자동 시작",boot));
-        var policy=new Button{Content="학교별 약관 · 개인정보 설정 초안",HorizontalAlignment=HorizontalAlignment.Left};policy.Click+=async(_,_)=>{if(InteractionOwner is LocalServerWindow manager)await manager.OpenAdministration("policy");else new SchoolPolicyWindow(InteractionOwner,api).ShowDialog();};school.Children.Add(Section("학교 운영 정책",policy));
         var securityReview=new Button{Content="보안 도입 검토 기록 확인",HorizontalAlignment=HorizontalAlignment.Left};securityReview.Click+=async(_,_)=>await OpenDeploymentReview();school.Children.Add(Section("보안성 검토 · 외부 서비스",securityReview));
         if(owner is MainWindow main)
         {

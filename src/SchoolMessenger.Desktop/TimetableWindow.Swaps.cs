@@ -45,7 +45,7 @@ public sealed partial class TimetableWindow
     {
         ResetBody();
         Action("시간표로 돌아가기", Load);
-        body.Children.Add(AdminUi.Heading(title, 22));
+        var heading = AdminUi.Heading(title, 22); heading.Margin = new Thickness(0, 0, 0, 12); body.Children.Add(heading);
         body.Children.Add(feedback);
         pageScroll.ScrollToTop();
     }
@@ -177,10 +177,12 @@ public sealed partial class TimetableWindow
         var preview = new Window { Owner = this, Title = "시간표 인쇄 미리보기", Width = 1040, Height = 720,
             WindowStartupLocation = WindowStartupLocation.CenterOwner, Style=(Style)Application.Current.FindResource("SchoolWindow") };
         var layout = new DockPanel();
-        var print = new Button { Content = "인쇄…", Margin = new Thickness(8), HorizontalAlignment = HorizontalAlignment.Right };
-        DockPanel.SetDock(print, Dock.Bottom);
-        layout.Children.Add(print);
-        layout.Children.Add(new FlowDocumentScrollViewer { Document = document });
+        var print = new Button { Content = "인쇄…", HorizontalAlignment = HorizontalAlignment.Right }; print.SetResourceReference(StyleProperty, "PrimaryButton");
+        var footer = new Border { BorderThickness = new Thickness(0, 1, 0, 0), Padding = new Thickness(24, 12, 24, 12), Child = print }; footer.SetResourceReference(Border.BorderBrushProperty, "Line"); footer.SetResourceReference(Border.BackgroundProperty, "Subtle");
+        DockPanel.SetDock(footer, Dock.Bottom);
+        layout.Children.Add(footer);
+        // The page follows the width of the window, so nothing scrolls sideways.
+        layout.Children.Add(new FlowDocumentScrollViewer { Document = document, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         print.Click += (_, _) =>
         {
             try

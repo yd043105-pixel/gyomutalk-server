@@ -60,7 +60,7 @@ public sealed partial class LocalServerWindow
         Group("교직원");Menu("교직원·권한","members","AdminPeopleIcon","office");
         // Sections hold student accounts, so they sit with the student-parent service they depend on.
 
-        Group("학교 설정");Menu("기능 설정","features","AdminSwitchIcon","office");Menu("첨부 용량","attachment-limit","AdminDocIcon","office");Menu("특별실","rooms","AdminRoomIcon","office");Menu("학사일정","calendar","AdminCalendarIcon","office");Menu("약관·개인정보","policy","AdminDocIcon");
+        Group("학교 설정");Menu("기능 설정","features","AdminSwitchIcon","office");Menu("첨부 용량","attachment-limit","AdminDocIcon","office");Menu("특별실","rooms","AdminRoomIcon","office");Menu("학사일정","calendar","AdminCalendarIcon","office");
         Group("기록");Menu("오류·의견","feedback","AdminChatIcon");Menu("운영 변경 기록","audit","AdminHistoryIcon","office");
         SelectCard(cards.FirstOrDefault(c=>c.Host.Installed)??cards[0]);
     }
@@ -139,7 +139,7 @@ public sealed partial class LocalServerWindow
         var first=new StackPanel();card.PasswordLabel=FieldLabel("최초 관리자 비밀번호");first.Children.Add(card.PasswordLabel);first.Children.Add(card.Password);passwords.Children.Add(first);
         var second=new StackPanel();second.Children.Add(FieldLabel("비밀번호 확인"));second.Children.Add(card.Confirm);Grid.SetColumn(second,2);passwords.Children.Add(second);
         System.Windows.Automation.AutomationProperties.SetName(card.Password,"최초 관리자 비밀번호");System.Windows.Automation.AutomationProperties.SetName(card.Confirm,"비밀번호 확인");
-        card.PasswordFields.Children.Add(passwords);var passwordNote=Note("12~128자 · 서버를 처음 만들 때 정합니다.");passwordNote.Margin=new Thickness(0,6,0,0);card.PasswordNote=passwordNote;card.PasswordFields.Children.Add(passwordNote);controls.Children.Add(card.TrialFields);
+        card.PasswordFields.Children.Add(passwords);var passwordNote=Note("8~128자 · 서버를 처음 만들 때 정합니다.");passwordNote.Margin=new Thickness(0,6,0,0);card.PasswordNote=passwordNote;card.PasswordFields.Children.Add(passwordNote);controls.Children.Add(card.TrialFields);
         Field(card.SimpleFields,"학교 이름",card.School,"학교 이름이나 지역으로 검색해 목록에서 고르세요. 교사 PC의 교내 자동검색 결과와 화면 제목에 학교 이름과 주소가 표시됩니다.");
         card.SchoolPick=new SchoolPicker(card.School);card.SimpleFields.Children.Insert(card.SimpleFields.Children.IndexOf(card.School)+1,card.SchoolPick.Choice);
         Field(card.SimpleFields,"관리자 아이디",card.AdminUsername,"영문·숫자·._- 3~32자 · 서버를 처음 만들 때 정하고 이후에는 바꿀 수 없습니다.");

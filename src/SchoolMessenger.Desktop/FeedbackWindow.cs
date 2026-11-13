@@ -28,42 +28,63 @@ public sealed class FeedbackWindow:Window
     void Text(string text)=>body.Children.Add(new TextBlock{Text=text,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,5,0,5)});
     void Button(string label,Func<Task> action){var button=AdminUi.Tone(new Button{Content=label,Margin=new Thickness(0,6,0,0),Padding=new Thickness(8)},label);button.Click+=async(_,_)=>await Run(action);body.Children.Add(button);}
     async Task Run(Func<Task> action){if(busy)return;busy=true;body.IsEnabled=false;result.Text="";try{await action();}catch(Exception error){result.Text=error.Message;}finally{busy=false;body.IsEnabled=true;}}
+    // The status line is one control that moves between the form and the review page.
+    void Fresh(){(result.Parent as Panel)?.Children.Remove(result);body.Children.Clear();}
     async Task Home()
     {
-        body.Children.Clear();body.Children.Add(AdminUi.Heading(privacy?"개인정보 요청":"오류 신고 · 개선 의견",22));Text(privacy?"열람·정정·삭제·처리정지를 요청할 수 있습니다.":"불편한 점이나 바라는 점을 학교에 알려 주세요.");body.Children.Add(result);
-        if(privacy){var policy=await api.Get<RegistrationPolicySet>("api/registration/policy");Text("처리 주체: "+policy.Operator+"\n문의: "+policy.Contact);}
-        Text(privacy?"학교가 로그인 계정과 요청 내용을 확인하여 처리하고 이 화면에 회신합니다. 요청만으로 계정이나 자료가 즉시 삭제되지는 않습니다. 비밀번호·주민등록번호·증명서 사진을 적거나 첨부하지 마세요. 로그인할 수 없거나 다른 방식의 도움이 필요하면 위 학교 문의처로 연락하세요.":"이름·학번·연락처·비밀번호·메시지 본문은 넣지 마세요. 신고는 학교 서버에 보관되며 자동으로 GitHub에 공개되지 않습니다.");
-        var kind=new ComboBox{ItemsSource=privacy?new[]{"개인정보 열람","개인정보 정정","개인정보 삭제·탈퇴·동의 철회","개인정보 처리정지"}:new[]{"오류 신고","개선 의견"},SelectedIndex=0};body.Children.Add(kind);
-        var area=new ComboBox{ItemsSource=new[]{"로그인","메시지","학교 공지","시간표","상담","특별실","파일","기타"},SelectedIndex=7};if(!privacy)body.Children.Add(area);
-        var title=new TextBox{MaxLength=100,Margin=new Thickness(0,8,0,0)};Text("제목 (3~100자)");body.Children.Add(title);
-        var details=new TextBox{MaxLength=4000,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,Height=110,VerticalScrollBarVisibility=ScrollBarVisibility.Auto};Text(privacy?"어떤 정보에 대해 어떻게 처리해 주기를 원하는지 적어 주세요. (10자 이상)":"어떤 순서로 실행했나요? 예상한 결과와 실제 결과를 적어 주세요. (10자 이상)");body.Children.Add(details);
-        FeedbackRequest? pending=null;
-        Button("학교에 접수",async()=>
+        Fresh();
+        var head=new DockPanel{Margin=new Thickness(0,0,0,16)};
+        if(administration||api.Session?.User?.IsAdmin==true){var all=new Button{Content="전체 접수 보기",VerticalAlignment=VerticalAlignment.Bottom};all.SetResourceReference(StyleProperty,"SubtleButton");all.Click+=async(_,_)=>await Run(()=>List(true));DockPanel.SetDock(all,Dock.Right);head.Children.Add(all);}
+        head.Children.Add(AdminUi.PageTitle(privacy?"개인정보 요청":"오류 신고 · 개선 의견",privacy?"내 정보를 보거나 고치거나 지워 달라고 학교 정보관리자 선생님께 요청합니다.":"불편한 점이나 바라는 점을 학교에 알려 주세요."));body.Children.Add(head);
+        var form=new StackPanel();
+        T Field<T>(Panel panel,string label,T input)where T:FrameworkElement{var caption=AdminUi.Label(label,"Muted",12);caption.Margin=new Thickness(0,panel.Children.Count==0?0:14,0,6);panel.Children.Add(caption);panel.Children.Add(input);System.Windows.Automation.AutomationProperties.SetName(input,label);return input;}
+        var kind=new ComboBox{ItemsSource=privacy?new[]{"개인정보 열람","개인정보 정정","개인정보 삭제·탈퇴","개인정보 처리정지"}:new[]{"오류 신고","개선 의견"},SelectedIndex=0};
+        // Only what this program still has; the server keeps the older codes for the reports already filed.
+        var areas=new[]{("로그인","login"),("메시지","messages"),("시간표","timetable"),("특별실","rooms"),("파일","files"),("기타","other")};
+        var area=new ComboBox{ItemsSource=areas.Select(a=>a.Item1).ToArray(),SelectedIndex=areas.Length-1};
+        if(privacy)Field(form,"요청 종류",kind);
+        else
         {
-            if(pending is null&&(title.Text.Trim().Length<3||details.Text.Trim().Length<10))throw new InvalidOperationException("제목 3자, 재현 설명 10자 이상 적어 주세요.");
-            pending??=new(Guid.NewGuid().ToString("N"),privacy?"privacy":kind.SelectedIndex==0?"bug":"suggestion","windows",privacy?new[]{"privacy-access","privacy-rectify","privacy-erase","privacy-restrict"}[kind.SelectedIndex]:new[]{"login","messages","notices","timetable","counseling","rooms","files","other"}[area.SelectedIndex],title.Text,details.Text,typeof(App).Assembly.GetName().Version?.ToString(3)??"1.0.0");
+            var pair=new Grid();pair.ColumnDefinitions.Add(new ColumnDefinition());pair.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(12)});pair.ColumnDefinitions.Add(new ColumnDefinition());
+            var left=new StackPanel();var right=new StackPanel();Grid.SetColumn(right,2);pair.Children.Add(left);pair.Children.Add(right);Field(left,"종류",kind);Field(right,"어디에서",area);form.Children.Add(pair);
+        }
+        var title=Field(form,"제목 (3~100자)",new TextBox{MaxLength=100});
+        var details=Field(form,privacy?"어떤 정보를 어떻게 처리해 주기를 원하는지 (10자 이상)":"어떤 순서로 했고, 무엇이 기대와 달랐는지 (10자 이상)",new TextBox{MaxLength=4000,AcceptsReturn=true,TextWrapping=TextWrapping.Wrap,Height=120,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
+        var note=AdminUi.Label(privacy?"학교 정보관리자 선생님이 로그인 계정과 요청 내용을 확인해 처리하고 이 화면에 회신합니다. 요청만으로 계정이나 자료가 바로 지워지지는 않습니다. 비밀번호·주민등록번호·증명서 사진은 적지 마세요.":"이름·학번·연락처·비밀번호·메시지 본문은 넣지 마세요. 신고는 학교 서버에 보관되며 자동으로 GitHub에 공개되지 않습니다.","Faint",12);note.Margin=new Thickness(0,10,0,0);form.Children.Add(note);
+        var actions=new DockPanel{Margin=new Thickness(0,14,0,0)};var send=new Button{Content="학교에 접수"};send.SetResourceReference(StyleProperty,"PrimaryButton");DockPanel.SetDock(send,Dock.Right);actions.Children.Add(send);
+        result.Margin=new Thickness(0,0,12,0);result.VerticalAlignment=VerticalAlignment.Center;actions.Children.Add(result);form.Children.Add(actions);
+        var sheet=AdminUi.Card(form);sheet.Margin=new Thickness(0,0,0,12);body.Children.Add(sheet);
+        FeedbackRequest? pending=null;
+        send.Click+=async(_,_)=>await Run(async()=>
+        {
+            if(pending is null&&(title.Text.Trim().Length<3||details.Text.Trim().Length<10))throw new InvalidOperationException("제목 3자, 설명 10자 이상 적어 주세요.");
+            pending??=new(Guid.NewGuid().ToString("N"),privacy?"privacy":kind.SelectedIndex==0?"bug":"suggestion","windows",privacy?new[]{"privacy-access","privacy-rectify","privacy-erase","privacy-restrict"}[kind.SelectedIndex]:areas[area.SelectedIndex].Item2,title.Text,details.Text,typeof(App).Assembly.GetName().Version?.ToString(3)??"1.0.0");
             try{var reply=await api.Send<JsonElement>(HttpMethod.Post,"api/feedback",pending);pending=null;await Home();result.Text="접수 완료 · "+reply.GetProperty("id").GetString();}
             catch{kind.IsEnabled=area.IsEnabled=title.IsEnabled=details.IsEnabled=false;throw;}
         });
-        Button("내 접수 현황 새로고침",Home);
-        if(administration||api.Session?.User?.IsAdmin==true)Button("관리자 · 전체 접수와 개발용 내보내기",()=>List(true));
-        foreach(var row in await api.Get<JsonElement[]>("api/feedback"))
+        var mine=(await api.Get<JsonElement[]>("api/feedback")).Where(row=>(row.GetProperty("report").GetProperty("kind").GetString()=="privacy")==privacy).ToArray();
+        var list=new StackPanel();list.Children.Add(AdminUi.Group("내 접수 현황 · "+mine.Length+"건"));
+        if(mine.Length==0)list.Children.Add(AdminUi.Label("아직 접수한 내용이 없습니다.","Muted",13));
+        foreach(var row in mine)
         {
-            if((row.GetProperty("report").GetProperty("kind").GetString()=="privacy")!=privacy)continue;
-            Text(row.GetProperty("report").GetProperty("title").GetString()+" · "+Status(row.GetProperty("status").GetString()));
-            if(privacy&&row.GetProperty("developmentSummary").GetString() is {Length:>0} reply)Text("학교 회신: "+reply);
+            var line=new DockPanel{Margin=new Thickness(0,6,0,6)};var state=row.GetProperty("status").GetString();
+            var badge=AdminUi.Badge(Status(state),state=="resolved"?"Success":state=="received"?"Accent":"Warning");badge.VerticalAlignment=VerticalAlignment.Top;DockPanel.SetDock(badge,Dock.Right);line.Children.Add(badge);
+            var text=new StackPanel{Margin=new Thickness(0,0,12,0)};var name=AdminUi.Label(row.GetProperty("report").GetProperty("title").GetString()??"","Ink",13);name.TextWrapping=TextWrapping.NoWrap;name.TextTrimming=TextTrimming.CharacterEllipsis;text.Children.Add(name);
+            if(privacy&&row.GetProperty("developmentSummary").GetString() is{Length:>0} reply)text.Children.Add(AdminUi.Label("학교 회신: "+reply,"Muted",12));
+            line.Children.Add(text);list.Children.Add(line);
         }
+        body.Children.Add(AdminUi.Card(list));
     }
     // Reports store short codes; the review page shows them in words.
     static string Where(string? code)=>code switch{"windows"=>"Windows 프로그램","mac"=>"Mac 프로그램","login"=>"로그인","messages"=>"메시지","notices"=>"학교 공지","timetable"=>"시간표","counseling"=>"상담","rooms"=>"특별실","files"=>"파일","other"=>"기타",
-        "privacy-access"=>"열람","privacy-rectify"=>"정정","privacy-erase"=>"삭제·탈퇴·동의 철회","privacy-restrict"=>"처리정지",_=>code??""};
+        "privacy-access"=>"열람","privacy-rectify"=>"정정","privacy-erase"=>"삭제·탈퇴","privacy-restrict"=>"처리정지",_=>code??""};
     static string Status(string? state)=>state switch{"received"=>"접수","investigating"=>"확인 중","verified"=>"수정 대기","deferred"=>"보류","resolved"=>"처리 완료",_=>state??""};
     // The administrator's review page: one card per report, newest first, each with its own state and reply.
     async Task List(bool admin)
     {
         var embedded=InteractionOwner is LocalServerWindow;
         var mail=await api.Get<JsonElement>("api/admin/feedback/mail-status");var rows=await api.Get<JsonElement[]>("api/admin/feedback");
-        body.Children.Clear();body.Margin=embedded?new Thickness(0,0,6,0):new Thickness(20);
+        Fresh();body.Margin=embedded?new Thickness(0,0,6,0):new Thickness(20);
         if(!embedded){var back=new Button{Content="‹  신고 화면으로",HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(-8,0,0,6)};back.SetResourceReference(StyleProperty,"SubtleButton");back.Click+=async(_,_)=>await Run(Home);body.Children.Add(back);}
         var head=new DockPanel{Margin=new Thickness(0,0,0,16)};
         var export=new Button{Content="개발용 자료 저장",VerticalAlignment=VerticalAlignment.Bottom,ToolTip="개발용으로 승인한 설명만 JSON 파일로 저장합니다."};

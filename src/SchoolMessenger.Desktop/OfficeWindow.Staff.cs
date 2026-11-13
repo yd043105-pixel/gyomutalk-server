@@ -163,6 +163,14 @@ public sealed partial class OfficeWindow
         if(staff.All(s=>s.Id!=selectedStaff))selectedStaff=staff.FirstOrDefault()?.Id;
         search.TextChanged+=(_,_)=>Rows();Rows();Detail();
     }
+    // The server records short codes; the page says them in words.
+    static string AuditAction(string code)=>code switch
+    {
+        "staff.create"=>"교직원 등록","staff.reset"=>"계정 초기화","staff.stop"=>"계정 사용 중지","staff.resume"=>"계정 다시 사용","staff.seat"=>"좌석 IP 변경","staff.activate"=>"첫 설정 완료","staff.roster-folders"=>"조직도 폴더 변경",
+        "office.permissions"=>"업무 권한 변경","room.save"=>"특별실 저장","booking.save"=>"특별실 예약","booking.cancel"=>"특별실 예약 취소","event.save"=>"학교 일정 저장","event.cancel"=>"학교 일정 취소","attachment.limit"=>"첨부 용량 변경",
+        "timetable.enable"=>"시간표 기능 켬","timetable.disable"=>"시간표 기능 끔",
+        _=>code.Split('.') is["feature",var name,var change]?(name switch{"chat"=>"채팅","tasks"=>"할 일","survey"=>"설문","calendar"=>"학사일정","rooms"=>"특별실 예약","remote"=>"원격 지원",_=>name})+" 기능 "+(change=="enable"?"켬":"끔"):code
+    };
     async Task Audit()
     {
         var rows=await api.Get<JsonElement>("api/admin/office/audit");Page(false);
@@ -171,7 +179,9 @@ public sealed partial class OfficeWindow
         foreach(var row in rows.EnumerateArray())
         {
             var line=new DockPanel();var time=AdminUi.Label(DateTimeOffset.FromUnixTimeMilliseconds(row.GetProperty("createdAt").GetInt64()).ToOffset(TimeSpan.FromHours(9)).ToString("yyyy.MM.dd HH:mm"),"Faint",11);time.VerticalAlignment=VerticalAlignment.Center;DockPanel.SetDock(time,Dock.Right);line.Children.Add(time);
-            var text=new StackPanel{Margin=new Thickness(0,0,12,0)};text.Children.Add(AdminUi.Label(Value(row,"actor")+" · "+Value(row,"action"),"Ink",14,true));text.Children.Add(AdminUi.Label("대상 "+Value(row,"resourceId"),"Muted",12));line.Children.Add(text);
+            var text=new StackPanel{Margin=new Thickness(0,0,12,0)};text.Children.Add(AdminUi.Label(AuditAction(Value(row,"action")),"Ink",14,true));var target=Value(row,"resourceId");
+            // Most targets are internal ids that say nothing to a person; a number or a name is shown.
+            text.Children.Add(AdminUi.Label(Value(row,"actor")+(target.Length is 0 or>=24||target=="features"?"":" · "+target),"Muted",12));line.Children.Add(text);
             var item=new Border{Child=line,Padding=new Thickness(16,10,16,10),BorderThickness=new Thickness(0,0,0,1)};item.SetResourceReference(Border.BorderBrushProperty,"Line");list.Children.Add(item);
         }
         if(rows.GetArrayLength()==0){var none=AdminUi.Label("아직 기록이 없습니다.","Muted",14);none.Margin=new Thickness(16,20,16,20);list.Children.Add(none);}
@@ -181,7 +191,7 @@ public sealed partial class OfficeWindow
     bool Embedded=>InteractionOwner is LocalServerWindow;
     void Heading(string title,string description,UIElement? action=null,(string Label,Func<Task> Open)? back=null)
     {
-        if(back is{} link){var b=new Button{Content="← "+link.Label,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(-8,0,0,6)};b.SetResourceReference(StyleProperty,"SubtleButton");b.Click+=async(_,_)=>await Run(link.Open);body.Children.Add(b);}
+        if(back is{} link){var b=new Button{Content="‹  "+link.Label,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(-8,0,0,6)};b.SetResourceReference(StyleProperty,"SubtleButton");b.Click+=async(_,_)=>await Run(link.Open);body.Children.Add(b);}
         var heading=new DockPanel{Margin=new Thickness(0,0,0,16)};
         if(action is not null){DockPanel.SetDock(action,Dock.Right);if(action is FrameworkElement e)e.VerticalAlignment=VerticalAlignment.Bottom;heading.Children.Add(action);}
         heading.Children.Add(AdminUi.PageTitle(title,description));body.Children.Add(heading);

@@ -44,8 +44,9 @@ public sealed partial class TimetableWindow:Window
     static TextBlock Text(string value,int size=14)=>new(){Text=value,FontSize=size,FontWeight=size>=20?FontWeights.Bold:FontWeights.Normal,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,0,0,10)};
     void Action(string label,Func<Task> action){var b=AdminUi.Tone(new Button{Content=label,Margin=new Thickness(0,0,8,10),HorizontalAlignment=HorizontalAlignment.Left},label);b.Click+=async(_,_)=>await Run(action);body.Children.Add(b);}
     async Task Run(Func<Task> action){if(busy)return;busy=true;body.IsEnabled=scheduleFooter.IsEnabled=fixedPage.IsEnabled=false;feedback.Text="";try{await action();}catch(Exception e){feedback.Text=e.Message;}finally{busy=false;body.IsEnabled=scheduleFooter.IsEnabled=fixedPage.IsEnabled=true;}}
-    void ResetBody()
+    void ResetBody(bool board=false)
     {
+        if(!board&&boardRestore is{} was){if(WindowState==WindowState.Normal){Width=was.Width;Height=was.Height;Left=was.Left;Top=was.Top;}boardRestore=null;}
         body.Children.Clear();scheduleFooter.Visibility=Visibility.Collapsed;scheduleFooter.Child=null;
         // The status line is one control that moves between pages.
         (feedback.Parent as Panel)?.Children.Remove(feedback);feedback.Margin=new Thickness(0,12,0,12);
@@ -297,16 +298,50 @@ public sealed partial class TimetableWindow:Window
         var cancel=new Button{Content="취소",Margin=new Thickness(0,0,8,0)};cancel.SetResourceReference(StyleProperty,"SubtleButton");cancel.Click+=async(_,_)=>await Run(Load);actions.Children.Add(cancel);
         var publish=new Button{Content=publishingSwaps.Length == 0 ? "게시" : "승인·시간표 게시"};publish.SetResourceReference(StyleProperty,"PrimaryButton");publish.Click+=async(_,_)=>await Run(async()=>{await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/publish",new TimetableCommit(candidate!,requestId!,publishingSwaps));await Load();feedback.Text="게시했습니다.";});actions.Children.Add(publish);
     }
+    // One line per published timetable, newest first, with the one thing that can be done to it on the right.
     async Task History()
     {
-        var rows=await api.Get<JsonElement[]>("api/timetable/history");ResetBody();body.Children.Add(Text("시간표 게시 이력",24));body.Children.Add(feedback);Action("조회 화면으로",Load);
-        foreach(var r in rows){body.Children.Add(Text($"#{r.GetProperty("revision")} {r.GetProperty("fileName").GetString()}\n{r.GetProperty("start").GetString()} ~ {r.GetProperty("end").GetString()}"));if(r.TryGetProperty("approvedSwapCount",out var approvals)&&approvals.GetInt32()>0)body.Children.Add(Text($"교체 신청 {approvals.GetInt32()}건 승인·게시",12));else if(!r.GetProperty("withdrawn").GetBoolean())Action("이 게시본 취소",async()=>{if(Notice.Show(this,"일자별 표 취소 시 기초시간표로 돌아갑니다. 취소할까요?","시간표 취소",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/"+r.GetProperty("id").GetString()+"/cancel",new TimetableCommit("",Guid.NewGuid().ToString("N")));await History();});}
+        var rows=await api.Get<JsonElement[]>("api/timetable/history");SchedulePage("게시 이력");
+        if(rows.Length==0){body.Children.Add(AdminUi.EmptyCard("게시한 시간표가 없습니다","시간표를 올려 게시하면 여기에 기록이 남습니다."));return;}
+        var list=new StackPanel();
+        foreach(var r in rows)
+        {
+            var line=new DockPanel{Margin=new Thickness(0,list.Children.Count==0?0:12,0,0)};var withdrawn=r.GetProperty("withdrawn").GetBoolean();var swaps=r.TryGetProperty("approvedSwapCount",out var approvals)?approvals.GetInt32():0;
+            if(withdrawn){var badge=AdminUi.Badge("취소됨","Warning",false);badge.VerticalAlignment=VerticalAlignment.Center;DockPanel.SetDock(badge,Dock.Right);line.Children.Add(badge);}
+            else if(swaps==0)
+            {
+                var cancel=new Button{Content="게시 취소",VerticalAlignment=VerticalAlignment.Center};cancel.SetResourceReference(StyleProperty,"DangerButton");DockPanel.SetDock(cancel,Dock.Right);line.Children.Add(cancel);
+                cancel.Click+=async(_,_)=>await Run(async()=>{if(Notice.Show(this,"일자별 표 취소 시 기초시간표로 돌아갑니다. 취소할까요?","시간표 취소",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/"+r.GetProperty("id").GetString()+"/cancel",new TimetableCommit("",Guid.NewGuid().ToString("N")));await History();});
+            }
+            var text=new StackPanel{VerticalAlignment=VerticalAlignment.Center};var name=AdminUi.Label($"#{r.GetProperty("revision")} · {r.GetProperty("fileName").GetString()}","Ink",13,true);name.TextWrapping=TextWrapping.NoWrap;name.TextTrimming=TextTrimming.CharacterEllipsis;text.Children.Add(name);
+            text.Children.Add(AdminUi.Label($"{r.GetProperty("start").GetString()} ~ {r.GetProperty("end").GetString()}"+(swaps>0?$" · 교체 신청 {swaps}건 승인·게시":""),"Muted",12));line.Children.Add(text);list.Children.Add(line);
+        }
+        body.Children.Add(AdminUi.Card(list,16));
     }
+    // Who may publish the timetable, and the homeroom teacher of each class. Each choice is saved as it is made.
     async Task Administration()
     {
-        var users=await api.Get<JsonElement[]>("api/admin/timetable-managers");ResetBody();body.Children.Add(Text("시간표 담당자 · 담임 연결",24));body.Children.Add(Text("담임은 시간표의 자율활동 담당 선생님으로 자동 연결됩니다. 다르면 여기에서 바꾸세요.",13));body.Children.Add(feedback);Action("조회 화면으로",Load);
-        foreach(var user in users){var check=new CheckBox{Content=TeacherLabel(user)+" · 시간표 관리",IsChecked=user.GetProperty("enabled").GetBoolean(),IsEnabled=!user.GetProperty("isAdmin").GetBoolean(),Margin=new Thickness(0,0,0,8)};body.Children.Add(check);Action("이 담당자 권한 저장",()=>api.Send<JsonElement>(HttpMethod.Post,"api/admin/timetable-managers",new{userId=user.GetProperty("id").GetString(),enabled=check.IsChecked==true}));}
+        var users=await api.Get<JsonElement[]>("api/admin/timetable-managers");SchedulePage("시간표 담당자 · 담임 연결");
+        var people=new StackPanel();people.Children.Add(AdminUi.Heading("시간표 담당자",15));var who=AdminUi.Label("켜 둔 선생님이 시간표를 올리고 수업 교체를 승인합니다. 누르면 바로 저장됩니다.","Muted",12);who.Margin=new Thickness(0,6,0,10);people.Children.Add(who);
+        foreach(var user in users)
+        {
+            var admin=user.GetProperty("isAdmin").GetBoolean();var id=user.GetProperty("id").GetString();
+            var check=new CheckBox{Content=TeacherLabel(user)+(admin?" · 관리자는 항상 담당":""),IsChecked=user.GetProperty("enabled").GetBoolean(),IsEnabled=!admin,Margin=new Thickness(0,5,0,5)};people.Children.Add(check);
+            check.Click+=async(_,_)=>await Run(async()=>{await api.Send<JsonElement>(HttpMethod.Post,"api/admin/timetable-managers",new{userId=id,enabled=check.IsChecked==true});feedback.Text="저장했습니다.";});
+        }
+        var managers=AdminUi.Card(people,16);managers.Margin=new Thickness(0,0,0,12);body.Children.Add(managers);
         var teachers=setup.GetProperty("teachers").EnumerateArray().Select(t=>new Choice(t.GetProperty("id").GetString()!,TeacherLabel(t))).ToArray();
-        foreach(var room in setup.GetProperty("classes").EnumerateArray()){body.Children.Add(Text(room.GetProperty("name").GetString()+" 담임"));var box=new ComboBox{ItemsSource=teachers};var id=room.GetProperty("id").GetString();var home=setup.GetProperty("homerooms").EnumerateArray().FirstOrDefault(h=>h.GetProperty("classId").GetString()==id);if(home.ValueKind==JsonValueKind.Object)box.SelectedItem=teachers.FirstOrDefault(t=>t.Id==home.GetProperty("teacherId").GetString());body.Children.Add(box);Action("이 학급 담임 저장",async()=>{if(box.SelectedItem is not Choice teacher)throw new InvalidOperationException("담임을 선택하세요.");await api.Send<JsonElement>(HttpMethod.Post,"api/admin/timetable-homerooms",new{classId=id,teacherId=teacher.Id});feedback.Text="담임 연결을 저장했습니다.";});}
+        var homes=new StackPanel();homes.Children.Add(AdminUi.Heading("학급 담임",15));var how=AdminUi.Label("담임은 시간표의 자율활동 담당 선생님으로 자동 연결됩니다. 다르면 여기에서 골라 주세요. 고르면 바로 저장됩니다.","Muted",12);how.Margin=new Thickness(0,6,0,10);homes.Children.Add(how);
+        var rooms=setup.GetProperty("classes").EnumerateArray().ToArray();if(rooms.Length==0)homes.Children.Add(AdminUi.Label("기초시간표를 올리면 학급이 여기에 나옵니다.","Muted",13));
+        foreach(var room in rooms)
+        {
+            var line=new Grid{Margin=new Thickness(0,4,0,4)};line.ColumnDefinitions.Add(new ColumnDefinition{Width=new GridLength(110)});line.ColumnDefinitions.Add(new ColumnDefinition{MaxWidth=360});
+            var name=AdminUi.Label(room.GetProperty("name").GetString()??"","Ink",13);name.VerticalAlignment=VerticalAlignment.Center;line.Children.Add(name);
+            var box=new ComboBox{ItemsSource=teachers};Grid.SetColumn(box,1);line.Children.Add(box);System.Windows.Automation.AutomationProperties.SetName(box,room.GetProperty("name").GetString()+" 담임");
+            var id=room.GetProperty("id").GetString();var home=setup.GetProperty("homerooms").EnumerateArray().FirstOrDefault(h=>h.GetProperty("classId").GetString()==id);if(home.ValueKind==JsonValueKind.Object)box.SelectedItem=teachers.FirstOrDefault(t=>t.Id==home.GetProperty("teacherId").GetString());
+            box.SelectionChanged+=async(_,_)=>{if(box.SelectedItem is Choice teacher)await Run(async()=>{await api.Send<JsonElement>(HttpMethod.Post,"api/admin/timetable-homerooms",new{classId=id,teacherId=teacher.Id});feedback.Text="담임 연결을 저장했습니다.";});};
+            homes.Children.Add(line);
+        }
+        body.Children.Add(AdminUi.Card(homes,16));
     }
 }

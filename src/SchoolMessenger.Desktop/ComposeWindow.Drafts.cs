@@ -88,7 +88,8 @@ public partial class ComposeWindow
             var remove = new Button { Content = "선택 삭제", Margin = new Thickness(0, 0, 8, 0) }; var open = new Button { Content = "불러오기", Style = (Style)FindResource("PrimaryButton") }; buttons.Children.Add(remove); buttons.Children.Add(open);
             var label = new FrameworkElementFactory(typeof(TextBlock)); label.SetBinding(TextBlock.TextProperty, new Binding("Label"));
             label.SetValue(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis); label.SetValue(TextBlock.TextWrappingProperty, TextWrapping.NoWrap);
-            var list = new ListBox { Name = "SavedDrafts", ItemTemplate = new DataTemplate { VisualTree = label } }; list.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled); dock.Children.Add(list);
+            var list = new ListBox { Name = "SavedDrafts", ItemTemplate = new DataTemplate { VisualTree = label } }; list.SetValue(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled);
+            var empty = AdminUi.Empty("임시저장한 메시지가 없습니다", "작성 창에서 ‘임시저장’을 누르면 여기에 모입니다."); var content = new Grid(); content.Children.Add(list); content.Children.Add(empty); dock.Children.Add(content);
             void Refresh()
             {
                 var rows = new List<SavedDraftRow>(); var failed = 0;
@@ -103,6 +104,7 @@ public partial class ComposeWindow
                     catch (Exception error) when (error is IOException or JsonException or CryptographicException or ArgumentException) { failed++; }
                 }
                 list.ItemsSource = rows; open.IsEnabled = remove.IsEnabled = false;
+                var none = rows.Count == 0 && failed == 0; empty.Visibility = none ? Visibility.Visible : Visibility.Collapsed; list.Visibility = note.Visibility = buttons.Visibility = none ? Visibility.Collapsed : Visibility.Visible;
                 note.Text = rows.Count == 0 ? "임시저장한 메시지가 없습니다. 작성 창에서 임시저장을 눌러 주세요." : "선택한 메시지를 이어서 작성하세요. 현재 작성 중인 내용도 따로 보관됩니다.";
                 if (failed > 0) note.Text += $"\n읽지 못한 파일 {failed}개는 삭제하지 않고 보관했습니다.";
                 UpdateDraftCount();

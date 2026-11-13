@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Windows;
@@ -9,43 +7,35 @@ using SchoolMessenger.Contracts;
 
 namespace SchoolMessenger.Desktop;
 
+// The first sign-in with the initial password: the person sets a password of their own before anything else opens.
 public sealed class StaffActivationWindow:Window
 {
     public StaffActivationWindow(Api api)
     {
-        Title="교직원 계정 · 첫 설정";Width=480;Height=620;WindowStartupLocation=WindowStartupLocation.CenterOwner;
-        var stack=new StackPanel{Margin=new Thickness(24)};AdminUi.Page(this,new ScrollViewer{Content=stack,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});
-        stack.Children.Add(new TextBlock{Text="처음 로그인하셨습니다. 앞으로 쓸 개인 비밀번호를 정하고 안내를 확인하세요. 마치기 전에는 업무 자료를 열 수 없습니다.",TextWrapping=TextWrapping.Wrap});
-        var password=new PasswordBox();var confirm=new PasswordBox();
-        {stack.Children.Add(new TextBlock{Text="새 개인 비밀번호 · 12~128자",Margin=new Thickness(0,16,0,5)});stack.Children.Add(password);stack.Children.Add(new TextBlock{Text="비밀번호 확인",Margin=new Thickness(0,12,0,5)});stack.Children.Add(confirm);}
-        var feedback=new TextBlock{TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,12,0,12)};var save=new Button{Content="첫 설정 마치기",IsEnabled=false};bool busy=false;
-        Closed+=(_,_)=>{password.Clear();confirm.Clear();};
-        Loaded+=async(_,_)=>
+        Title="교무톡 · 첫 설정";Width=420;SizeToContent=SizeToContent.Height;ResizeMode=ResizeMode.NoResize;WindowStartupLocation=WindowStartupLocation.CenterOwner;
+        var stack=new StackPanel{Margin=new Thickness(24)};AdminUi.Page(this,stack);
+        stack.Children.Add(AdminUi.Heading("개인 비밀번호 정하기",22));
+        var intro=AdminUi.Label("처음 로그인하셨습니다. 앞으로 쓸 비밀번호를 정하면 교무톡을 쓸 수 있습니다.","Muted",13);intro.Margin=new Thickness(0,8,0,18);stack.Children.Add(intro);
+        PasswordBox Field(string label)
         {
+            var caption=AdminUi.Label(label,"Muted",12);caption.Margin=new Thickness(0,0,0,6);stack.Children.Add(caption);
+            var box=new PasswordBox{MaxLength=128,Margin=new Thickness(0,0,0,14)};System.Windows.Automation.AutomationProperties.SetName(box,label);stack.Children.Add(box);return box;
+        }
+        var password=Field("새 비밀번호 · 8~128자");var confirm=Field("비밀번호 확인");
+        var feedback=AdminUi.Label("","Danger",12);feedback.Margin=new Thickness(0,0,0,12);feedback.Visibility=Visibility.Collapsed;stack.Children.Add(feedback);
+        var save=new Button{Content="첫 설정 마치기",IsDefault=true};save.SetResourceReference(StyleProperty,"PrimaryButton");stack.Children.Add(save);
+        var busy=false;Closed+=(_,_)=>{password.Clear();confirm.Clear();};Loaded+=(_,_)=>password.Focus();
+        save.Click+=async(_,_)=>
+        {
+            if(busy)return;busy=true;save.IsEnabled=false;feedback.Visibility=Visibility.Collapsed;
             try
             {
-                var policy=await api.Get<RegistrationPolicySet>("api/registration/policy");var choices=new Dictionary<string,CheckBox>();
-                stack.Children.Add(new TextBlock{Text=policy.Message,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,16,0,8)});
-                foreach(var document in policy.Documents)
-                {
-                    var check=new CheckBox{IsEnabled=false,Content=new TextBlock{Text=(document.Required?"필수 · ":"선택 · ")+document.Title,TextWrapping=TextWrapping.Wrap},Margin=new Thickness(0,8,0,4)};choices[document.Id]=check;stack.Children.Add(check);
-                    var open=new Button{Content="전문 보기 · "+document.Title};open.Click+=(_,_)=>{RegistrationWindow.ShowDocument(this,policy,document);check.IsEnabled=policy.CanRegister;};stack.Children.Add(open);
-                }
-                stack.Children.Add(feedback);stack.Children.Add(save);save.IsEnabled=policy.CanRegister;
-                save.Click+=async(_,_)=>
-                {
-                    if(busy)return;busy=true;save.IsEnabled=false;
-                    try
-                    {
-                        if(password.Password!=confirm.Password)throw new InvalidOperationException("비밀번호 확인이 일치하지 않습니다.");
-                        if(policy.Documents.Any(d=>d.Required&&choices[d.Id].IsChecked!=true))throw new InvalidOperationException("필수 안내의 전문을 확인하고 체크하세요.");
-                        await api.Send<JsonElement>(HttpMethod.Post,"api/activate",new StaffActivation(password.Password,new RegistrationAcceptance(policy.Revision,choices.Where(p=>p.Value.IsChecked==true).Select(p=>p.Key).ToArray())));
-                        Notice.Show(this,"설정을 마쳤습니다. 방금 정한 비밀번호로 다시 로그인하세요.","첫 설정");DialogResult=true;
-                    }
-                    catch(Exception e){feedback.Text=e.Message;}finally{password.Clear();confirm.Clear();busy=false;save.IsEnabled=policy.CanRegister;}
-                };
+                if(password.Password!=confirm.Password)throw new InvalidOperationException("비밀번호 확인이 일치하지 않습니다.");
+                var agreement=await RegistrationWindow.OlderServerAgreement(api,this);
+                await api.Send<JsonElement>(HttpMethod.Post,"api/activate",new{newPassword=password.Password,agreement});
+                Notice.Show(this,"설정을 마쳤습니다. 방금 정한 비밀번호로 다시 로그인하세요.","첫 설정");DialogResult=true;
             }
-            catch(Exception e){stack.Children.Add(feedback);feedback.Text=e.Message;}
+            catch(Exception e){feedback.Text=Api.Explain(e);feedback.Visibility=Visibility.Visible;}finally{password.Clear();confirm.Clear();busy=false;save.IsEnabled=true;}
         };
     }
 }

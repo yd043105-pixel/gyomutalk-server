@@ -118,7 +118,6 @@ public sealed partial class LocalServerWindow
                 "rooms"=>new OfficeWindow(this,source,true,"rooms"),
                 "calendar"=>new OfficeWindow(this,source,true,"calendar"),
                 "audit"=>new OfficeWindow(this,source,true,"audit"),
-                "policy"=>new SchoolPolicyWindow(this,source),
                 "feedback"=>new FeedbackWindow(this,source,true),
                 _=>new ServerManagementWindow(this,source,role=="office")
             };

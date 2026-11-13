@@ -8,13 +8,6 @@ function Read-OperationsConfig([string]$Path,[bool]$ExternalOnly=$false,[bool]$M
     $config=Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
     if($config.PSObject.Properties['resourceProfile'] -and $config.resourceProfile -notin @('low-memory','balanced')){throw '부하 설정은 low-memory 또는 balanced입니다.'}
     if($config.schema -ne 1 -or $config.service -ne 'office'){throw '운영 설정의 형식과 서버 종류를 확인하세요.'}
-    if(-not $ExternalOnly -and -not $MailOnly -and $config.PSObject.Properties['registrationPolicyFile'] -and $config.registrationPolicyFile){
-        $policyPath=[string]$config.registrationPolicyFile
-        if(-not [IO.Path]::IsPathRooted($policyPath) -or $policyPath -ne [IO.Path]::GetFullPath($policyPath) -or -not(Test-Path -LiteralPath $policyPath -PathType Leaf)){throw '학교별 약관 파일에는 존재하는 파일의 절대 경로가 필요합니다.'}
-        if((Get-Item -LiteralPath $policyPath).Length -gt 131072){throw '학교별 약관 파일은 128KB 이하여야 합니다.'}
-        $policy=Get-Content -LiteralPath $policyPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        if($policy.approvedForProduction -isnot [bool] -or -not $policy.operator -or -not $policy.contact){throw '학교별 약관의 운영 주체·문의처·확정 상태를 확인하세요.'}
-    }
     foreach($name in @('tunnelOnly','attachmentBackup','networkIsolationVerified','upsInstalledAndTested','backupDeviceAndEncryptionVerified')){if($config.$name -isnot [bool]){throw '운영 확인 항목은 true/false로 입력하세요.'}}
     if($config.alerts.enabled -isnot [bool]){throw '메일 활성화 항목은 true/false로 입력하세요.'}
     if($config.alerts.deliveryVerified -isnot [bool]){throw '메일 수신 확인 항목은 true/false로 입력하세요.'}
@@ -110,8 +103,6 @@ function Test-OperationsDeploymentReview($Config){
 function Set-OperationsEnvironment($Config,$Secrets){
     $prefix=if($Config.service -eq 'office'){'School'}else{'Portal'}
     $values=@{ASPNETCORE_ENVIRONMENT='Production';Operations__MonitorKey=(Unprotect-OperationsValue $Secrets.monitorKey);ASPNETCORE_FORWARDEDHEADERS_ENABLED='false';DOTNET_FORWARDEDHEADERS_ENABLED='false'}
-    # Explicitly override the operator's ambient setting, including when no school policy is selected.
-    $values['Registration__PolicyFile']=if($Config.PSObject.Properties['registrationPolicyFile']){[string]$Config.registrationPolicyFile}else{''}
     $values['Operations__SecurityReviewFile']=[string]$Config.securityReviewFile
     $values['Operations__SchoolId']=[string]$Config.schoolId
     $values['Operations__AlertMailEnabled']=[string][bool]$Config.alerts.enabled

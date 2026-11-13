@@ -157,9 +157,7 @@ public partial class MainWindow : Window
         if(Api?.Session?.User?.ActivationRequired==true){savedLogin.Clear();new StaffActivationWindow(Api){Owner=this}.ShowDialog();throw new InvalidOperationException("첫 설정을 마쳤으면 방금 정한 비밀번호로 다시 로그인하세요.");}
         if(Api?.Session?.User?.PasswordChangeRequired==true){savedLogin.Clear();ShowPasswordChange(true);throw new InvalidOperationException("개인 비밀번호로 변경한 뒤 다시 로그인하세요.");}
         var user = Api!.Session!.User!; IdentityLabel.Text = user.Name + " 선생님"; IdentityDepartment.Text = string.Join(" · ",new[]{user.Department,user.Position}.Where(s=>s.Length>0)); archive=null; ShowOwnPresence(false,false);
-        schoolName=(await Api.Get<SchoolMessenger.Contracts.RegistrationPolicySet>("api/registration/policy")).Operator;
-        // An unconfirmed policy still says "[운영 학교명]"; the server's own school name reads better in the title and roster.
-        if(schoolName.Contains('[')){try{schoolName=(await Api.Get<JsonElement>("server-info")).GetProperty("schoolName").GetString() is {Length:>0} name?name:"학교";}catch(Exception error)when(error is HttpRequestException or InvalidOperationException or KeyNotFoundException){schoolName="학교";}}Title=schoolName+" · 교무톡";
+        try{schoolName=(await Api.Get<JsonElement>("server-info")).GetProperty("schoolName").GetString() is {Length:>0} name?name:"학교";}catch(Exception error)when(error is HttpRequestException or InvalidOperationException or KeyNotFoundException){schoolName="학교";}Title=schoolName+" · 교무톡";
         AdminButton.Visibility = user.IsAdmin ? Visibility.Visible : Visibility.Collapsed;
         Workspace.Visibility = Visibility.Visible; LoginPanel.Visibility = Visibility.Collapsed;
         knownTimetables.Clear();
@@ -445,19 +443,13 @@ public partial class MainWindow : Window
         administratorWindow=new ServerManagementWindow(this,Api);administratorWindow.Closed+=(_,_)=>administratorWindow=null;administratorWindow.Show();
     }
     void OpenOfficeClick(object sender,RoutedEventArgs e){if(Api is not null&&(Feature("calendar")||Feature("rooms")))new OfficeWindow(this).Show();}
-    async void OpenPolicies(object sender,RoutedEventArgs e)
-    {
-        if(Api is null)return;
-        try
-        {
-            var policy=await Api.Get<SchoolMessenger.Contracts.RegistrationPolicySet>("api/registration/policy");
-            var panel=new StackPanel{Margin=new Thickness(20)};panel.Children.Add(new TextBlock{Text=policy.Message,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,0,0,14)});
-            var window=new Window{Owner=this,Title="약관·개인정보 안내",Width=420,SizeToContent=SizeToContent.Height,MaxHeight=560,ResizeMode=ResizeMode.NoResize,WindowStartupLocation=WindowStartupLocation.CenterOwner,Content=new ScrollViewer{Content=panel,VerticalScrollBarVisibility=ScrollBarVisibility.Auto},Resources=Resources,Style=(Style)Application.Current.FindResource("SchoolWindow")};
-            panel.Children.Add(new TextBlock{Text="처리 주체: "+policy.Operator+"\n문의: "+policy.Contact,TextWrapping=TextWrapping.Wrap});
-            foreach(var document in policy.Documents){var button=new System.Windows.Controls.Button{Content=document.Title,Margin=new Thickness(0,4,0,4)};button.Click+=(_,_)=>RegistrationWindow.ShowDocument(window,policy,document);panel.Children.Add(button);}window.ShowDialog();
-        }
-        catch(Exception error){Notice.Show(this,error.Message,"약관 안내");}
-    }
+    // There are no terms to agree to: the school runs this for its own staff. This says what is kept and who looks after it.
+    void OpenPrivacyNotice(object sender,RoutedEventArgs e)=>Notice.Show(this,string.Join("\n\n",
+        schoolName+" 교무톡은 학교가 직접 운영하는 교직원 전용 메신저입니다.",
+        "자료는 학교 서버 PC와 선생님 PC에만 저장합니다. 프로그램 업데이트 확인(GitHub)과 학교가 설정한 오류 신고 메일 말고는 학교 밖으로 보내지 않습니다.",
+        "저장하는 것은 이름·부서·직책·로그인 기록과 교무톡에서 쓰신 메시지·첨부·채팅·설문·할 일·일정·예약입니다. 주민등록번호는 받지 않습니다.",
+        "메시지 본문은 전달된 뒤 서버에서 지우고(전달하지 못한 것은 최대 30일), 첨부파일은 30일 뒤 지웁니다.",
+        "관리는 학교 정보관리자 선생님이 맡습니다. 내 정보를 보거나 고치거나 지우려면 설정의 ‘개인정보 열람·정정·삭제 요청’을 쓰거나 정보관리자 선생님께 말씀하세요."),"개인정보 안내");
     void ChangePassword(object sender, RoutedEventArgs e)=>ShowPasswordChange();
     void ShowPasswordChange(bool required=false)
     {
@@ -467,10 +459,10 @@ public partial class MainWindow : Window
         var panel = new StackPanel { Margin = new Thickness(24) };
         if(required)panel.Children.Add(new TextBlock{Text="초기 비밀번호 12345678을 개인 비밀번호로 변경해야 업무 자료를 열 수 있습니다.",TextWrapping=TextWrapping.Wrap});
         panel.Children.Add(new TextBlock { Text = "현재 비밀번호" }); panel.Children.Add(old);
-        panel.Children.Add(new TextBlock { Text = "새 비밀번호 · 12~128자" }); panel.Children.Add(next);
+        panel.Children.Add(new TextBlock { Text = "새 비밀번호 · 8~128자" }); panel.Children.Add(next);
         var confirm=new System.Windows.Controls.PasswordBox{Margin=new Thickness(0,5,0,14)};panel.Children.Add(new TextBlock{Text="새 비밀번호 확인"});panel.Children.Add(confirm);
         var save = new System.Windows.Controls.Button { Content = "변경 후 다시 로그인", Style = (Style)FindResource("PrimaryButton") }; panel.Children.Add(save);
-        var dialog = new Window { Title = "비밀번호 변경", Owner = this, Width = 380, Height = required?440:390, Content = panel, Resources = Resources, ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterOwner, Style=(Style)Application.Current.FindResource("SchoolWindow") };
+        var dialog = new Window { Title = "비밀번호 변경", Owner = this, Width = 380, SizeToContent = SizeToContent.Height, Content = panel, Resources = Resources, ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterOwner, Style=(Style)Application.Current.FindResource("SchoolWindow") };
         save.Click += async (_, _) => { save.IsEnabled = false; try {if(next.Password!=confirm.Password)throw new InvalidOperationException("새 비밀번호 확인이 일치하지 않습니다.");await Api.Send<JsonElement>(HttpMethod.Post, "api/password", new { currentPassword = old.Password, newPassword = next.Password }); dialog.Close(); await Disconnect(); } catch (Exception error) { Notice.Show(dialog, error.Message); } finally { save.IsEnabled = true; } };
         dialog.Closed+=(_,_)=>{old.Clear();next.Clear();confirm.Clear();};
         dialog.ShowDialog();
@@ -535,6 +527,12 @@ public partial class MainWindow : Window
             UsernameBox.Text = Environment.GetEnvironmentVariable("SCHOOL_UI_USER") ?? "admin";
             RememberLogin.IsChecked = true;
             PasswordBox.Password = Environment.GetEnvironmentVariable("SCHOOL_UI_PASSWORD") ?? ""; await SignIn();
+            if(Environment.GetEnvironmentVariable("YY_SCREEN_TOUR") is{Length:>0} tour)
+            {
+                // The two windows a signed-in person never sees again are opened so that they are pictured as well.
+                new RegistrationWindow(ServerAddress.Text){Owner=this}.Show();new StaffActivationWindow(Api!){Owner=this}.Show();
+                await new ScreenTour(tour).Run(this);exiting=true;System.Windows.Application.Current.Shutdown(0);return;
+            }
             if(Environment.GetEnvironmentVariable("YY_WINDOW_ORDER_UI_ONLY")=="1")
             {
                 await VerifyWindowOrder();return;
@@ -661,8 +659,6 @@ public partial class MainWindow : Window
             if (!(await Api.Get<MessageItem[]>("api/messages?box=sent")).Any(m => m.Title == "학년 협의회 일정 안내" || Archive.Load(m.Id)?.Message.Title == "학년 협의회 일정 안내")) throw new InvalidOperationException("전송 기록 없음");
             var recallCheck=OpenMailbox("sent");await recallCheck.VerifyRecallState();recallCheck.Close();
             var registration = new RegistrationWindow(ServerAddress.Text) { Owner = this }; registration.Show();
-            await registration.PolicyReady;
-            foreach(var choice in registration.PolicyChoices.Values){choice.IsEnabled=true;choice.IsChecked=true;}
             registration.NameBox.Text = "가입신청교사"; registration.DepartmentBox.Text = "교무기획부";
             registration.PasswordBox.Password = registration.ConfirmBox.Password = Environment.GetEnvironmentVariable("SCHOOL_UI_PASSWORD")!;
             registration.SubmitButton.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Button.ClickEvent));

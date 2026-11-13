@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import path from 'node:path';
-import {acceptRequiredPoliciesForFixture} from './registration-fixture.mjs';
 
 export async function officeChecks({Client,admin,password,address,data,check,start,stop,ready}){
  const id=()=>randomUUID().replaceAll('-',''),personal='Personal-'+randomUUID();
@@ -13,19 +12,17 @@ export async function officeChecks({Client,admin,password,address,data,check,sta
  assert.ok(!teacher.loginCookieHeaders.some(h=>h.startsWith('SchoolMessenger.Session=')&&/expires=/i.test(h)));
  for(const route of ['/api/messages','/api/attachments/not-real/download','/api/office/setup','/api/external-announcements/setup','/api/password','/hub/negotiate?negotiateVersion=1','/remote/negotiate?negotiateVersion=1']){const post=route.includes('negotiate')||route==='/api/password';await teacher.request(route,post?'POST':'GET',post?{}:undefined,403);}
  check('temporary account cannot persist login or access messages, files, password bypass, office APIs or realtime transports');
- const agreement=await acceptRequiredPoliciesForFixture(address);
- await teacher.request('/api/activate','POST',{newPassword:personal},400);
- await teacher.request('/api/activate','POST',{newPassword:password,agreement},400);
+ await teacher.request('/api/activate','POST',{newPassword:password},400);
  // An account nobody signed in to stops accepting its first password once the period is over.
  const db=new DatabaseSync(path.join(data,'school.db')); db.exec('PRAGMA busy_timeout=5000');
  const due=db.prepare('SELECT ExpiresAt FROM StaffProfiles WHERE UserId=?').get(registered.id).ExpiresAt;
  db.prepare('UPDATE StaffProfiles SET ExpiresAt=? WHERE UserId=?').run(Date.now()-1,registered.id);
- await teacher.request('/api/activate','POST',{newPassword:personal,agreement},410);
+ await teacher.request('/api/activate','POST',{newPassword:personal},410);
  const late=new Client();late.csrf=(await late.request('/api/session')).csrfToken;assert.ok((await late.request('/api/login','POST',{username:request.loginName,password},401)).error.includes('계정 초기화'));
  db.prepare('UPDATE StaffProfiles SET ExpiresAt=? WHERE UserId=?').run(due,registered.id);db.close();
  const old=new Client();old.cookies=new Map(teacher.cookies);old.csrf=teacher.csrf;
  // A number from an earlier program is ignored, whatever it says.
- await teacher.request('/api/activate','POST',{code:'X'.repeat(20),newPassword:personal,agreement});
+ await teacher.request('/api/activate','POST',{code:'X'.repeat(20),newPassword:personal});
  await old.request('/api/messages','GET',undefined,401);
  teacher.csrf=(await teacher.request('/api/session')).csrfToken;
  await teacher.request('/api/login','POST',{username:request.loginName,password},401);
@@ -91,24 +88,23 @@ export async function officeChecks({Client,admin,password,address,data,check,sta
  await admin.request(rosterPath,'PUT',{revision:1,folders:[]});
  assert.deepEqual(await admin.request(readRoster),{revision:2,folders:[]});
  check('roster folders enforce authorization, two levels and revisions; changes are audited and persist across restarts');
- await teacher.request('/api/activate','POST',{newPassword:password,agreement},400);
- await teacher.request('/api/activate','POST',{newPassword:personal+'-again',agreement});await teacher.login(request.loginName,false,personal+'-again');
- const ledger=new DatabaseSync(path.join(data,'school.db')); ledger.exec('PRAGMA busy_timeout=5000');assert.equal(ledger.prepare('SELECT COUNT(*) AS count FROM StaffActivationAgreements WHERE UserId=?').get(registered.id).count,2);ledger.close();
- check('seat reassignment preserves identity; reset revokes all sessions and asks for the first setup again; each setup keeps its own agreement record');
+ await teacher.request('/api/activate','POST',{newPassword:password},400);
+ await teacher.request('/api/activate','POST',{newPassword:personal+'-again'});await teacher.login(request.loginName,false,personal+'-again');
+ check('seat reassignment preserves identity; reset revokes all sessions and asks for the first setup again; a first setup needs no agreement to terms');
 
  const sharedRequest={loginName:'김초기',name:'김초기',department:'검증부',seatIp:null,temporaryPassword:'12345678',useSharedPassword:true};
  const shared=await admin.request('/api/admin/staff','POST',sharedRequest);const common=new Client();await common.login('김초기',true,'12345678');assert.equal(common.user.sharedPassword,true);assert.equal(common.user.activationRequired,true);
  assert.ok(!common.loginCookieHeaders.some(h=>h.startsWith('SchoolMessenger.Session=')&&/expires=/i.test(h)));
- await common.request('/api/messages','GET',undefined,403);await common.request('/api/activate','POST',{code:shared.activationCode,newPassword:'',agreement},400);await common.request('/api/activate','POST',{code:shared.activationCode,newPassword:'12345678',agreement},400);
+ await common.request('/api/messages','GET',undefined,403);await common.request('/api/activate','POST',{code:shared.activationCode,newPassword:''},400);await common.request('/api/activate','POST',{code:shared.activationCode,newPassword:'12345678'},400);await common.request('/api/activate','POST',{newPassword:'Seven-7'},400);
  await admin.request('/api/admin/users/'+shared.id,'PATCH',{name:'김초기',department:'검증부',password:'',isAdmin:true,canBroadcast:false,active:true},400);
  const original=new Client();original.cookies=new Map(common.cookies);original.csrf=common.csrf;
- await common.request('/api/activate','POST',{code:shared.activationCode,newPassword:personal,agreement});await original.request('/api/messages','GET',undefined,401);
+ await common.request('/api/activate','POST',{code:shared.activationCode,newPassword:personal});await original.request('/api/messages','GET',undefined,401);
  common.csrf=(await common.request('/api/session')).csrfToken;await common.request('/api/login','POST',{username:'김초기',password:'12345678'},401);await common.login('김초기',true,personal);
  assert.equal(common.user.sharedPassword,false);assert.equal(common.user.passwordChangeRequired,false);assert.equal(common.user.activationRequired,false);assert.ok(common.loginCookieHeaders.some(h=>h.startsWith('SchoolMessenger.Session=')&&/expires=/i.test(h)));
  await common.request('/api/messages');await common.request('/api/admin/staff','GET',undefined,403);
- const changedPersonal=personal+'-changed';await common.request('/api/password','POST',{currentPassword:personal,newPassword:changedPersonal});await common.login('김초기',true,changedPersonal);
+ const changedPersonal='Eight-88';await common.request('/api/password','POST',{currentPassword:personal,newPassword:changedPersonal});await common.login('김초기',true,changedPersonal);
  await admin.request('/api/admin/staff','POST',{...sharedRequest,temporaryPassword:'87654321'},400);await admin.request('/api/admin/users','POST',{username:'weak.admin',name:'검증관리자',department:'검증',password:'12345678',isAdmin:true,canBroadcast:false},400);
- check('Name IDs start with 12345678, require the first setup and a personal password, revoke initial sessions and enable persistent login only afterward; later password changes stay available');
+ check('Name IDs start with 12345678, require the first setup and a personal password of 8 characters or more that is not 12345678, revoke initial sessions and enable persistent login only afterward; later password changes stay available');
  const renamed=await admin.request('/api/admin/staff/'+other.id+'/reset','POST',{...sharedRequest,loginName:'다른교사',name:'다른교사'});assert.ok(renamed.expiresAt>Date.now());await peer.request('/api/messages','GET',undefined,401);await peer.login('다른교사',false,'12345678');assert.equal(peer.user.id,other.id);assert.equal(peer.user.activationRequired,true);
  check('Administrator name-ID reset preserves identity, revokes sessions and requires a fresh personal password');
  // Reconstruct an already activated account from the previous common-password policy.

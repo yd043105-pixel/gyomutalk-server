@@ -45,26 +45,6 @@ Assert ([string][Environment]::GetEnvironmentVariable('DOTNET_GCHeapHardLimit','
 Check 'Low-memory profile and 512MiB managed heap budget apply only to the launched process and restore afterward'
 Assert ([string][Environment]::GetEnvironmentVariable('Operations__MonitorKey','Process') -eq [string]$before) 'Secret environment left behind'
 Check 'DPAPI key storage and temporary secret environment restored'
-$policyFile=Join-Path $FixtureRoot 'registration-policy.local.json'
-$schoolPolicy=Get-Content -LiteralPath (Join-Path $root 'config\registration-policy.draft.json') -Raw -Encoding UTF8|ConvertFrom-Json
-$schoolPolicy.operator='Synthetic School A';$schoolPolicy.contact='Synthetic school office';$schoolPolicy|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $policyFile -Encoding UTF8
-$policyConfig=$config|ConvertTo-Json -Depth 8|ConvertFrom-Json;$policyConfig.registrationPolicyFile=$policyFile
-$policyConfig|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $configPath -Encoding UTF8
-$loadedPolicy=Read-OperationsConfig $configPath
-$policyBefore=[Environment]::GetEnvironmentVariable('Registration__PolicyFile','Process')
-try{
-    [Environment]::SetEnvironmentVariable('Registration__PolicyFile','OTHER-SCHOOL-SHOULD-NOT-LEAK','Process')
-    $policyEnvironment=Set-OperationsEnvironment $loadedPolicy $secrets
-    Assert ([Environment]::GetEnvironmentVariable('Registration__PolicyFile','Process') -eq $policyFile) 'Selected school policy not passed'
-    Restore-OperationsEnvironment $policyEnvironment
-    $blankEnvironment=Set-OperationsEnvironment $config $secrets
-    Assert ([string][Environment]::GetEnvironmentVariable('Registration__PolicyFile','Process') -eq '') 'Another school policy was inherited'
-    Restore-OperationsEnvironment $blankEnvironment
-    $policyConfig.registrationPolicyFile=Join-Path $FixtureRoot 'missing-policy.json';$policyConfig|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $configPath -Encoding UTF8
-    $rejected=$false;try{Read-OperationsConfig $configPath|Out-Null}catch{$rejected=$true};Assert $rejected 'Missing policy path accepted'
-    Read-OperationsConfig $configPath $false $true|Out-Null
-}finally{[Environment]::SetEnvironmentVariable('Registration__PolicyFile',$policyBefore,'Process');$config|ConvertTo-Json -Depth 8|Set-Content -LiteralPath $configPath -Encoding UTF8}
-Check 'School policy uses an existing explicit path; blank config prevents cross-school ambient inheritance and parent environment is restored'
 $mailConfig=$config|ConvertTo-Json -Depth 8|ConvertFrom-Json
 $mailConfig.feedbackEmailEnabled=$true;$mailConfig.automaticBugReportsEnabled=$true
 $mailConfig.alerts.sender='sender@example.invalid';$mailConfig.alerts.recipient='recipient@example.invalid'

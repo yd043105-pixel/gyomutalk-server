@@ -71,7 +71,6 @@ try {
     Copy-Item -LiteralPath 'docs\policies' -Destination $packageDocs -Recurse -Force
     $packageConfig=Join-Path $packageDirectory 'config'
     New-Item -ItemType Directory -Path $packageConfig -Force | Out-Null
-    Copy-Item -LiteralPath 'config\registration-policy.draft.json' -Destination $packageConfig
     Copy-Item -LiteralPath 'config\deployment-review.draft.json' -Destination $packageConfig
     Copy-Item -LiteralPath 'config\server-operations.example.json' -Destination $packageConfig
     & (Join-Path $PSScriptRoot 'Test-DeploymentReviewPackage.ps1') -PackageDirectory $packageDirectory

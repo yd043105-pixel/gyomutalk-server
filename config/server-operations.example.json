@@ -2,7 +2,6 @@
   "schema": 1,
   "schoolId": "",
   "resourceProfile": "low-memory",
-  "registrationPolicyFile": "",
   "securityReviewFile": "",
   "service": "office",
   "executable": "C:\\SchoolMessenger\\server\\SchoolMessenger.Server.exe",

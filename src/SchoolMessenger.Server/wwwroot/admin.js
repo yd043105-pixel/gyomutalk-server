@@ -78,7 +78,7 @@ $('user-form').addEventListener('submit', event => {
     const form = event.currentTarget, data = {};
     for (const key of ['username', 'name', 'department', 'password']) data[key] = form.elements[key].value;
     for (const key of ['isAdmin', 'canBroadcast', 'active']) data[key] = form.elements[key].checked;
-    if (!editing && data.password.length < 12) throw new Error('등록 비밀번호는 12자 이상입니다.');
+    if (!editing && data.password.length < 8) throw new Error('등록 비밀번호는 8자 이상입니다.');
     await request(editing ? 'admin/users/' + editing : 'admin/users', editing ? 'PATCH' : 'POST', data);
     resetForm(); await initialize(); notice('저장했습니다. 수정된 계정은 다시 로그인해야 합니다.');
   });

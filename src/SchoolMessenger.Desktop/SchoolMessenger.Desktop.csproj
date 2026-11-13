@@ -28,7 +28,6 @@
     <Compile Include="../SchoolMessenger.Contracts/RosterFolders.cs" Link="Contracts/RosterFolders.cs" />
     <Compile Include="../SchoolMessenger.Contracts/MessageFormatting.cs" Link="Contracts/MessageFormatting.cs" />
     <Compile Include="../SchoolMessenger.Contracts/Feedback.cs" Link="Contracts/Feedback.cs" />
-    <Compile Include="../SchoolMessenger.Contracts/RegistrationPolicies.cs" Link="Contracts/RegistrationPolicies.cs" />
     <Compile Include="../SchoolMessenger.Shared/ReleaseNotice.cs" Link="ReleaseNotice.cs" />
     <Compile Include="../SchoolMessenger.Shared/FilePolicy.cs" Link="FilePolicy.cs" />
     <Compile Include="../SchoolMessenger.Shared/AttachmentDownload.cs" Link="AttachmentDownload.cs" />
@@ -37,6 +36,5 @@
     <Compile Include="../SchoolMessenger.Shared/MessageText.cs" Link="MessageText.cs" />
     <Compile Include="../SchoolMessenger.Shared/SchoolDiscovery.cs" Link="SchoolDiscovery.cs" /><Compile Include="../SchoolMessenger.Shared/SchoolList.cs" Link="SchoolList.cs" /><Compile Include="../SchoolMessenger.Shared/Backend/SchoolAppSettings.cs" Link="SchoolAppSettings.cs" /><EmbeddedResource Include="../SchoolMessenger.Shared/schools.tsv.gz" LogicalName="SchoolMessenger.Schools.tsv.gz" />
     <EmbeddedResource Include="../SchoolMessenger.Shared/updates.json" LogicalName="SchoolMessenger.UpdateNotes.json" />
-    <EmbeddedResource Include="../../config/registration-policy.draft.json" LogicalName="SchoolMessenger.RegistrationDraft.json" /><EmbeddedResource Include="../../config/registration-policy.school.json" LogicalName="SchoolMessenger.RegistrationSchool.json" />
   </ItemGroup>
 </Project>

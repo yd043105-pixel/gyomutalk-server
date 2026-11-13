@@ -23,13 +23,14 @@ public static class StaffAccounts
           NeedsActivation INTEGER NOT NULL,ActivationHash TEXT,ExpiresAt INTEGER NOT NULL,Failures INTEGER NOT NULL DEFAULT 0,LockedUntil INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS OfficeAudit(Id INTEGER PRIMARY KEY AUTOINCREMENT,ActorId TEXT NOT NULL REFERENCES Users(Id),
           Action TEXT NOT NULL,ResourceId TEXT NOT NULL,CreatedAt INTEGER NOT NULL);
-        CREATE TABLE IF NOT EXISTS StaffActivationAgreements(Id TEXT PRIMARY KEY,UserId TEXT NOT NULL REFERENCES Users(Id),Revision TEXT NOT NULL REFERENCES RegistrationPolicies(Revision),AcceptedIds TEXT NOT NULL,AcceptedAt INTEGER NOT NULL);
         """);
         if(!store.Query("PRAGMA table_info(StaffProfiles)",r=>r.GetString(1)).Contains("SharedPassword"))store.Execute("ALTER TABLE StaffProfiles ADD COLUMN SharedPassword INTEGER NOT NULL DEFAULT 0");
     }
     public static Profile? Get(Store store, string id) => store.Query("SELECT UserId,SeatIp,NeedsActivation,ExpiresAt,SharedPassword FROM StaffProfiles WHERE UserId=$id",
         r=>new Profile(r.GetString(0),r.IsDBNull(1)?null:r.GetString(1),r.GetBoolean(2),r.GetInt64(3),r.GetBoolean(4)),("$id",id)).SingleOrDefault();
-    public static bool PasswordValid(StaffAccountRequest r)=>r.UseSharedPassword?r.TemporaryPassword==SharedPassword:r.TemporaryPassword is{Length:>=12 and <=128}&&!string.IsNullOrWhiteSpace(r.TemporaryPassword);
+    // One rule for every password a person chooses: 8 to 128 characters, and not the initial password everyone knows.
+    public static bool PersonalPassword(string? password)=>password is{Length:>=8 and <=128}&&!string.IsNullOrWhiteSpace(password)&&password!=SharedPassword;
+    public static bool PasswordValid(StaffAccountRequest r)=>r.UseSharedPassword?r.TemporaryPassword==SharedPassword:PersonalPassword(r.TemporaryPassword);
     public static bool Pending(Store store, string id) => Get(store,id) is{NeedsActivation:true}or{SharedPassword:true};
     public static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
     public static bool LoginName(string? value) => value is {Length:>=2 and <=50} && Regex.IsMatch(value,"^[\\p{L}\\p{N}._-]+$");
@@ -40,12 +41,12 @@ public static class StaffAccounts
     static IResult Error(string message,int status=400)=>Results.Json(new{error=message},statusCode:status);
     // The first password is known to everyone, so an account nobody has signed in to stops accepting it after this long.
     public const int FirstSignInDays=30;
-    public static void Map(WebApplication app, RouteGroupBuilder admin, Store store, PasswordHasher<User> hasher, RegistrationPolicy policy)
+    public static void Map(WebApplication app, RouteGroupBuilder admin, Store store, PasswordHasher<User> hasher)
     {
         admin.MapGet("/staff",()=>store.Users().Select(u=>new{u.Id,u.Username,u.Name,u.Department,u.Position,u.Active,profile=Get(store,u.Id)}));
         admin.MapPost("/staff",IResult(StaffAccountRequest request,HttpContext context)=>
         {
-            if(!LoginName(request.LoginName)||string.IsNullOrWhiteSpace(request.Name)||request.Name.Length>50||string.IsNullOrWhiteSpace(request.Department)||request.Department.Length>50||!Position(request.Position)||!PasswordValid(request))return Error("로그인 이름(2~50자), 이름·부서·직책(50자)을 확인하세요. 공통 비밀번호는 12345678, 개별 임시 비밀번호는 12~128자입니다.");
+            if(!LoginName(request.LoginName)||string.IsNullOrWhiteSpace(request.Name)||request.Name.Length>50||string.IsNullOrWhiteSpace(request.Department)||request.Department.Length>50||!Position(request.Position)||!PasswordValid(request))return Error("로그인 이름(2~50자), 이름·부서·직책(50자)을 확인하세요. 공통 비밀번호는 12345678, 개별 임시 비밀번호는 8~128자입니다.");
             string? ip=null;
             if(!string.IsNullOrWhiteSpace(request.SeatIp)){if(!IPAddress.TryParse(request.SeatIp,out var address)||address.AddressFamily!=System.Net.Sockets.AddressFamily.InterNetwork||IPAddress.IsLoopback(address)||address.Equals(IPAddress.Any)||address.Equals(IPAddress.Broadcast))return Error("좌석에는 유효한 IPv4 주소를 입력하세요.");ip=address.ToString();}
             var id=Guid.NewGuid().ToString("N");var expires=Maintenance.Now+FirstSignInDays*86_400_000L;
@@ -83,10 +84,9 @@ public static class StaffAccounts
         app.MapPost("/api/activate",async Task<IResult>(StaffActivation request,HttpContext context)=>
         {
             var id=Actor(context);var user=store.GetUser(id)!;
-            if(policy.Validate(request.Agreement) is{} policyError)return Error(policyError,policy.Current.CanRegister?400:503);
-            if(request.NewPassword is not{Length:>=12 and <=128}||string.IsNullOrWhiteSpace(request.NewPassword))return Error("개인 비밀번호는 12~128자입니다.");
+            if(!PersonalPassword(request.NewPassword))return Error("개인 비밀번호는 8~128자이고, 초기 비밀번호와 달라야 합니다.");
             using var db=store.Open();using var tx=db.BeginTransaction(deferred:false);
-            // The first sign-in needs no separate number: the person agrees to the terms and sets a password of their own.
+            // The first sign-in needs no separate number: the person sets a password of their own.
             using var read=Store.Command(db,"SELECT ExpiresAt FROM StaffProfiles WHERE UserId=$id AND NeedsActivation=1",tx,("$id",id));
             if(read.ExecuteScalar() is not long expires)return Error("초기 설정 대상이 아닙니다.",409);
             if(expires<=Maintenance.Now)return Error("초기 비밀번호를 쓸 수 있는 기간이 지났습니다. 관리자에게 계정 초기화를 요청하세요.",410);
@@ -95,8 +95,6 @@ public static class StaffAccounts
             var passwordHash=hasher.HashPassword(user,request.NewPassword);
             using(var update=Store.Command(db,"UPDATE Users SET PasswordHash=$hash,SessionVersion=SessionVersion+1 WHERE Id=$id AND Active=1 AND SessionVersion=$version AND PasswordHash=$old",tx,("$hash",passwordHash),("$id",id),("$version",context.User.FindFirstValue("version")),("$old",user.PasswordHash)))if(update.ExecuteNonQuery()!=1)return Error("계정 상태가 변경되었습니다. 다시 로그인하세요.",409);
             using(var finish=Store.Command(db,"UPDATE StaffProfiles SET NeedsActivation=0,SharedPassword=0,ActivationHash=NULL,Failures=0,LockedUntil=0 WHERE UserId=$id",tx,("$id",id)))finish.ExecuteNonQuery();
-            using(var previous=Store.Command(db,"SELECT 1 FROM RegistrationAgreements WHERE SubjectId=$id AND Revision=$revision",tx,("$id",id),("$revision",request.Agreement!.Revision)))if(previous.ExecuteScalar() is null)policy.Record(db,tx,id,request.Agreement!);
-            using(var agreement=Store.Command(db,"INSERT INTO StaffActivationAgreements VALUES($activation,$id,$revision,$ids,$now)",tx,("$activation",Guid.NewGuid().ToString("N")),("$id",id),("$revision",request.Agreement!.Revision),("$ids",System.Text.Json.JsonSerializer.Serialize(request.Agreement.AcceptedIds)),("$now",Maintenance.Now)))agreement.ExecuteNonQuery();
             Audit(db,tx,id,"staff.activate",id);tx.Commit();await context.SignOutAsync();return Results.Ok(new{message="초기 설정 완료. 개인 비밀번호로 다시 로그인하세요."});
         }).RequireAuthorization().RequireRateLimiting("credentials");
     }

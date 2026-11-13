@@ -18,10 +18,10 @@
     <Border x:Name="Frame" Background="{TemplateBinding Background}">
      <Grid><Grid.RowDefinitions><RowDefinition Height="38"/><RowDefinition/></Grid.RowDefinitions>
       <Border Background="{DynamicResource Glass}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1">
-       <Grid Margin="13,0,6,0"><Grid.ColumnDefinitions><ColumnDefinition Width="35"/><ColumnDefinition/><ColumnDefinition Width="96"/></Grid.ColumnDefinitions>
+       <Grid Margin="13,0,6,0"><Grid.ColumnDefinitions><ColumnDefinition Width="35"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
         <Image Width="27" Height="27" Source="{StaticResource ProductMark}" HorizontalAlignment="Left" AutomationProperties.Name="교무톡"/>
         <TextBlock Grid.Column="1" Text="{TemplateBinding Title}" Foreground="{DynamicResource Ink}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
-        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+        <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" shell:WindowChrome.IsHitTestVisibleInChrome="True">
          <Button x:Name="MinimizeAction" Style="{StaticResource ChromeButton}" ToolTip="최소화" AutomationProperties.Name="최소화" Click="MinimizeWindow"><Path Data="M0,0 L10,0" Stroke="{DynamicResource Muted}" StrokeThickness="1" Width="10"/></Button>
          <Button x:Name="MaximizeAction" Style="{StaticResource ChromeButton}" ToolTip="최대화 · 복원" AutomationProperties.Name="최대화 또는 복원" Click="MaximizeWindow"><Rectangle Width="9" Height="9" Stroke="{DynamicResource Muted}" StrokeThickness="1"/></Button>
          <Button x:Name="CloseAction" Style="{StaticResource ChromeButton}" ToolTip="닫기" AutomationProperties.Name="닫기" Click="CloseWindow"><Path Data="M0,0 L8,8 M8,0 L0,8" Stroke="{DynamicResource Muted}" StrokeThickness="1" Width="9" Height="9"/></Button>

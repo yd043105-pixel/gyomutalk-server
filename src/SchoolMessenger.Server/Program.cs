@@ -125,13 +125,11 @@ scheduled.Deliver=async(request,sender)=>
 StaffAccounts.Initialize(store);
 var roster = new RosterFolderStore(store);
 OfficeFeatures.Initialize(store);
-var registrationPolicy=new RegistrationPolicy(builder.Configuration["Registration:PolicyFile"],builder.Environment.IsDevelopment(),builder.Environment.ContentRootPath);
-using(var policyDatabase=store.Open())RegistrationPolicy.EnsureSchema(policyDatabase);
 var hasher = app.Services.GetRequiredService<PasswordHasher<User>>();
 if (store.Users().Count == 0)
 {
     var password = builder.Configuration["School:AdminPassword"];
-    if (!ValidPassword(password)) throw new InvalidOperationException("첫 실행: School__AdminPassword에 12~128자 관리자 비밀번호를 지정하세요.");
+    if (!ValidPassword(password)) throw new InvalidOperationException("첫 실행: School__AdminPassword에 8~128자 관리자 비밀번호를 지정하세요.");
     var username = builder.Configuration["School:AdminUsername"] ?? "admin";
     if (!Regex.IsMatch(username, "^[A-Za-z0-9._-]{3,32}$")) throw new InvalidOperationException("관리자 아이디는 영문·숫자·._- 3~32자입니다.");
     var admin = new User(Guid.NewGuid().ToString("N"), username, "정보담당", "관리", "", true, true, true, 1, 0, 0);
@@ -141,7 +139,7 @@ if (store.Users().Count == 0)
 // already reach its data folder, so the old password is not asked; sessions signed in with it end.
 if (builder.Configuration["School:ResetAdminPassword"] is { Length: > 0 } newPassword)
 {
-    if (!ValidPassword(newPassword)) throw new InvalidOperationException("새 관리자 비밀번호는 12~128자로 입력하세요.");
+    if (!ValidPassword(newPassword)) throw new InvalidOperationException("새 관리자 비밀번호는 8~128자로 입력하세요.");
     var username = builder.Configuration["School:AdminUsername"] ?? "admin";
     var admin = store.Users().FirstOrDefault(u => u.IsAdmin && u.Username.Equals(username, StringComparison.OrdinalIgnoreCase))
         ?? throw new InvalidOperationException("관리자 아이디 '" + username + "'를 찾지 못해 비밀번호를 바꾸지 않았습니다.");
@@ -217,7 +215,7 @@ app.Use(async (context, next) =>
     if(profile?.NeedsActivation==true &&
        (context.Request.Path.StartsWithSegments("/api")||context.Request.Path.StartsWithSegments("/hub")||context.Request.Path.StartsWithSegments("/remote")) &&
        context.Request.Path.Value is not("/api/session" or "/api/activate" or "/api/logout" or "/api/registration/policy"))
-    { context.Response.StatusCode=403;context.Response.Headers.CacheControl="no-store";await context.Response.WriteAsJsonAsync(new{error="처음 로그인하면 약관 확인과 개인 비밀번호 설정을 먼저 마쳐야 합니다.",activationRequired=true});return; }
+    { context.Response.StatusCode=403;context.Response.Headers.CacheControl="no-store";await context.Response.WriteAsJsonAsync(new{error="처음 로그인하면 개인 비밀번호 설정을 먼저 마쳐야 합니다.",activationRequired=true});return; }
     if(profile is{SharedPassword:true,NeedsActivation:false}&&
        (context.Request.Path.StartsWithSegments("/api")||context.Request.Path.StartsWithSegments("/hub")||context.Request.Path.StartsWithSegments("/remote"))&&
        context.Request.Path.Value is not("/api/session" or "/api/password" or "/api/logout" or "/api/registration/policy"))
@@ -295,14 +293,15 @@ app.MapPost("/api/login", async Task<IResult> (Login request, HttpContext c, Pre
         new AuthenticationProperties { IsPersistent = request.RememberLogin && !initial, ExpiresUtc = expires });
     return Results.Ok(PublicUser(user));
 }).RequireRateLimiting("login");
-app.MapGet("/api/registration/policy",()=>registrationPolicy.Current).RequireRateLimiting("login");
+// Staff no longer agree to terms. Programs up to 0.1.2 still read them here before a sign-up or a first setup,
+// so they get the school's name and no documents.
+app.MapGet("/api/registration/policy",()=>new{revision="none",canRegister=true,draft=false,message="",@operator=builder.Configuration["School:Name"] is{Length:>0} school?school:"학교",contact="학교 정보관리자",documents=Array.Empty<object>()}).RequireRateLimiting("login");
 app.MapPost("/api/register", IResult (RegistrationRequest request) =>
 {
     // The name is the login name. Two people of one name are told apart by a trailing ".2", which is not shown as their name.
     var username = (string.IsNullOrWhiteSpace(request.Username) ? request.Name : request.Username)?.Trim();
     var displayName = string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim() == username ? Regex.Replace(username ?? "", @"\.\d+$", "") : request.Name.Trim();
-    if (!ValidProfile(username, displayName, request.Department) || !ValidPassword(request.Password)) return Error("이름은 띄어쓰기 없이 2~50자(한글·영문·숫자·._-), 부서는 1~50자, 비밀번호는 12~128자입니다.");
-    if(registrationPolicy.Validate(request.Agreement) is{} policyError)return Error(policyError,registrationPolicy.Current.CanRegister?400:503);
+    if (!ValidProfile(username, displayName, request.Department) || !ValidPassword(request.Password)) return Error("이름은 띄어쓰기 없이 2~50자(한글·영문·숫자·._-), 부서는 1~50자, 비밀번호는 8~128자입니다.");
     if (store.FindUser(username!) is not null) return Error("이미 사용 중인 이름입니다. 같은 이름이 있으면 이름 뒤에 .2처럼 숫자를 붙여 신청하세요.", 409);
     var user = new User(Guid.NewGuid().ToString("N"), username!, displayName, request.Department!.Trim(), "", false, false, false, 1, 0, 0);
     using var registrationDatabase=store.Open();using var registrationTransaction=registrationDatabase.BeginTransaction();
@@ -311,7 +310,7 @@ app.MapPost("/api/register", IResult (RegistrationRequest request) =>
         ON CONFLICT(Username) DO UPDATE SET Id=excluded.Id,Name=excluded.Name,Department=excluded.Department,PasswordHash=excluded.PasswordHash,Status='pending',CreatedAt=excluded.CreatedAt WHERE Registrations.Status='rejected'
         """,registrationTransaction, ("$id", user.Id), ("$username", username), ("$name", user.Name), ("$department", user.Department), ("$hash", hasher.HashPassword(user, request.Password!)), ("$now", Maintenance.Now));
     var saved=registrationCommand.ExecuteNonQuery();
-    if(saved!=0){registrationPolicy.Record(registrationDatabase,registrationTransaction,user.Id,request.Agreement!);registrationTransaction.Commit();}
+    if(saved!=0)registrationTransaction.Commit();
     return saved == 0 ? Error("이미 신청한 이름입니다. 관리자 승인 후 로그인하세요.", 409) : Results.Ok(new { status = "pending", message = "계정 신청 완료. 관리자 승인 후 로그인할 수 있습니다." });
 }).RequireRateLimiting("login");
 app.MapPost("/api/logout", async (HttpContext c, RemoteSessions sessions) =>
@@ -325,7 +324,7 @@ app.MapPost("/api/password", async Task<IResult> (PasswordChange request, HttpCo
 {
     var user = store.GetUser(UserId(c))!;
     if (!ValidPassword(request.NewPassword) || string.IsNullOrEmpty(request.CurrentPassword) || request.CurrentPassword.Length > 128)
-        return Error("새 비밀번호는 12~128자입니다.");
+        return Error("새 비밀번호는 8~128자이고, 초기 비밀번호와 달라야 합니다.");
     if (hasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword) == PasswordVerificationResult.Failed)
         return Error("현재 비밀번호가 일치하지 않습니다.");
     // A reset, deactivation or other password change may finish during password verification.
@@ -634,7 +633,7 @@ api.MapGet("/attachments/{id}/download", (string id, HttpContext c) =>
 
 var adminApi = app.MapGroup("/api/admin").RequireAuthorization("Admin");
 AttachmentPolicy.Map(api,adminApi,attachmentPolicy);
-StaffAccounts.Map(app,adminApi,store,hasher,registrationPolicy);
+StaffAccounts.Map(app,adminApi,store,hasher);
 OfficeFeatures.Map(api,adminApi,store);
 CollaborationFeatures.Map(api, store);
 TaskFeatures.Map(api, store);
@@ -669,7 +668,7 @@ adminApi.MapPut("/roster-folders", (RosterFolders request, HttpContext c) => ros
 adminApi.MapPost("/users", IResult (CreateUser request,HttpContext c) =>
 {
     if(request.IsAdmin&&!Root(c))return Error("관리자 권한 부여는 최고관리자만 할 수 있습니다.",403);
-    if (!ValidProfile(request.Username, request.Name, request.Department) || !ValidPassword(request.Password)) return Error("로그인 이름은 띄어쓰기 없이 2~50자(한글·영문·숫자·._-), 이름·부서는 1~50자, 비밀번호는 12~128자입니다.");
+    if (!ValidProfile(request.Username, request.Name, request.Department) || !ValidPassword(request.Password)) return Error("로그인 이름은 띄어쓰기 없이 2~50자(한글·영문·숫자·._-), 이름·부서는 1~50자, 비밀번호는 8~128자입니다.");
     if (store.FindUser(request.Username!) is not null) return Error("이미 사용 중인 로그인 이름입니다.", 409);
     var user = new User(Guid.NewGuid().ToString("N"), request.Username!, request.Name!.Trim(), request.Department!.Trim(), "", request.IsAdmin, request.CanBroadcast, true, 1, 0, 0);
     try { InsertUser(store, user, hasher.HashPassword(user, request.Password!)); }
@@ -719,13 +718,13 @@ static string UserId(HttpContext c) => c.User.FindFirstValue(ClaimTypes.NameIden
 object PublicUser(User u)
 {var profile=StaffAccounts.Get(store,u.Id);return new { u.Id, u.Username, u.Name, u.Department,u.Position, u.IsAdmin, u.CanBroadcast, u.Active, activationRequired=profile?.NeedsActivation==true,seatIp=profile?.SeatIp,sharedPassword=profile?.SharedPassword==true,passwordChangeRequired=profile is{SharedPassword:true,NeedsActivation:false} };}
 static IResult Error(string message, int status = 400) => Results.Json(new { error = message }, statusCode: status);
-static bool ValidPassword(string? password) => password is { Length: >= 12 and <= 128 } && !string.IsNullOrWhiteSpace(password);
+static bool ValidPassword(string? password) => StaffAccounts.PersonalPassword(password);
 static bool ValidProfile(string? username, string? name, string? department) => StaffAccounts.LoginName(username) &&
     !string.IsNullOrWhiteSpace(name) && name.Length <= 50 && !string.IsNullOrWhiteSpace(department) && department.Length <= 50;
 static void InsertUser(Store store, User u, string hash) => store.Execute("INSERT INTO Users(Id,Username,Name,Department,PasswordHash,IsAdmin,CanBroadcast) VALUES($id,$username,$name,$department,$hash,$admin,$broadcast)",
     ("$id", u.Id), ("$username", u.Username), ("$name", u.Name), ("$department", u.Department), ("$hash", hash), ("$admin", u.IsAdmin), ("$broadcast", u.CanBroadcast));
 record Login(string? Username, string? Password, bool RememberLogin = false);
-record RegistrationRequest(string? Username, string? Name, string? Department, string? Password,SchoolMessenger.Contracts.RegistrationAcceptance? Agreement=null);
+record RegistrationRequest(string? Username, string? Name, string? Department, string? Password);
 record PasswordChange(string? CurrentPassword, string? NewPassword);
 record SendMessage(string? ClientId, string? Title, string? Body, string[]? RecipientIds, string[]? AttachmentIds, bool All, string? Department, long? SubmissionDeadline = null,long? ScheduledAt=null,[property: System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] MessageFormat? Format=null);
 record CreateUser(string? Username, string? Name, string? Department, string? Password, bool IsAdmin, bool CanBroadcast);

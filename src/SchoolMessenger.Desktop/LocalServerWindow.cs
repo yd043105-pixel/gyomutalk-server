@@ -95,7 +95,7 @@ public sealed partial class LocalServerWindow:Window
             {
                 c.PasswordLabel.Text=initialized?"새 관리자 비밀번호 · 바꿀 때만":"최초 관리자 비밀번호";
                 c.PasswordNote.Text=initialized?"비워 두면 지금 비밀번호를 그대로 씁니다. 입력하고 서버를 시작하면 새 비밀번호로 바뀌고, 로그인해 있던 관리자는 다시 로그인합니다."
-                    :"12~128자 · 서버를 처음 만들 때 정합니다. 서버를 다시 켜거나 Windows를 재시작해도 그대로 유지됩니다.";
+                    :"8~128자 · 서버를 처음 만들 때 정합니다. 서버를 다시 켜거나 Windows를 재시작해도 그대로 유지됩니다.";
                 System.Windows.Automation.AutomationProperties.SetName(c.Password,c.PasswordLabel.Text);
             }
             c.AdminUsername.IsEnabled=!Initialized(c);

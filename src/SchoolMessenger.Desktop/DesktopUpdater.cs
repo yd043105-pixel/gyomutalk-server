@@ -53,7 +53,9 @@ internal static class DesktopUpdater
             Native.win_sparkle_set_error_callback(failed);
             Native.win_sparkle_init();initialized=true;
             var timer=new DispatcherTimer{Interval=TimeSpan.FromSeconds(20)};
-            timer.Tick+=(_,_)=>{timer.Interval=TimeSpan.FromHours(1);if(enabled&&DateTimeOffset.UtcNow-LastCheck()>TimeSpan.FromDays(1))_=Check(owner,false);};timer.Start();
+            // Every start looks for a new version once; a program left running looks again a day after the last look.
+            var started=true;
+            timer.Tick+=(_,_)=>{timer.Interval=TimeSpan.FromHours(1);if(enabled&&(started||DateTimeOffset.UtcNow-LastCheck()>TimeSpan.FromDays(1)))_=Check(owner,false);started=false;};timer.Start();
             var result=Path.Combine(Path.GetDirectoryName(setting)!,"last-result.json");
             if(File.Exists(result))
             {
@@ -73,7 +75,7 @@ internal static class DesktopUpdater
         var dialog=new Window{Title="프로그램 업데이트",Owner=window,Width=420,SizeToContent=SizeToContent.Height,ResizeMode=ResizeMode.NoResize,WindowStartupLocation=WindowStartupLocation.CenterOwner,Style=(Style)Application.Current.FindResource("SchoolWindow")};
         var panel=new StackPanel{Margin=new Thickness(24)};
         panel.Children.Add(new TextBlock{Text="GitHub의 정식 공개 릴리즈를 확인합니다. 설치파일은 게시자 서명을 검증한 뒤 실행합니다.",TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,0,0,16)});
-        var automatic=new CheckBox{Content="하루에 한 번 새 버전 자동 확인",IsChecked=enabled};
+        var automatic=new CheckBox{Content="시작할 때와 하루에 한 번 새 버전 자동 확인",IsChecked=enabled};
         automatic.Click+=(_,_)=>{try{Directory.CreateDirectory(Path.GetDirectoryName(setting)!);File.WriteAllText(setting,automatic.IsChecked==true?"true":"false");enabled=automatic.IsChecked==true;}catch(IOException e){automatic.IsChecked=enabled;Notice.Show(dialog,e.Message,"설정 저장 실패");}};panel.Children.Add(automatic);
         panel.Children.Add(new TextBlock{Text="학교 네트워크에서 GitHub 연결을 허용해야 합니다.",TextWrapping=TextWrapping.Wrap,FontSize=12,Margin=new Thickness(0,16,0,16)});
         var check=new Button{Content="지금 업데이트 확인",Padding=new Thickness(14,9,14,9)};check.Click+=async(_,_)=>{check.IsEnabled=false;check.Content="확인하는 중…";await Check(dialog,true,dialog.Close);};panel.Children.Add(check);dialog.Content=panel;dialog.ShowDialog();

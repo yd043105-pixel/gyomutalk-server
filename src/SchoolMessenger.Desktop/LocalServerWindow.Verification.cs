@@ -44,7 +44,7 @@ public sealed partial class LocalServerWindow
             Width=760;Height=560;UpdateLayout();
             Check(new[]{cards[0].Start,cards[0].Stop,cards[0].Admin}.All(b=>b.IsVisible&&b.TransformToAncestor(this).Transform(new Point()).Y+b.ActualHeight<ActualHeight),"all primary server controls remain visible at the minimum window size");
             Capture("server-manager-compact.png");Width=1060;Height=780;SelectCard(cards[0]);UpdateLayout();
-            await Start(cards[0]);Check(!cards[0].Host.Running&&cards[0].Host.Output.Contains("12~128"),"missing first password is shown inside the window without launching a server");
+            await Start(cards[0]);Check(!cards[0].Host.Running&&cards[0].Host.Output.Contains("8~128"),"missing first password is shown inside the window without launching a server");
             var password="Synthetic-"+Guid.NewGuid().ToString("N");
             foreach(var c in cards)
             {

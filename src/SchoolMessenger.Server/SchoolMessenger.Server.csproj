@@ -4,9 +4,7 @@
   <ItemGroup><Compile Include="../SchoolMessenger.Shared/SchoolDiscovery.cs" Link="SchoolDiscovery.cs" /></ItemGroup>
   <ItemGroup><ProjectReference Include="../SchoolMessenger.Contracts/SchoolMessenger.Contracts.csproj" /><Compile Include="../SchoolMessenger.Shared/FilePolicy.cs;../SchoolMessenger.Shared/TimetableWorkbook.cs;../SchoolMessenger.Shared/TimetableData.cs" Link="%(Filename)%(Extension)" /></ItemGroup>
   <ItemGroup>
-    <Compile Include="../SchoolMessenger.Shared/RegistrationPolicy.cs" Link="RegistrationPolicy.cs" />
     <Compile Include="../SchoolMessenger.Shared/MessageText.cs" Link="MessageText.cs" />
-    <EmbeddedResource Include="../../config/registration-policy.draft.json" LogicalName="SchoolMessenger.RegistrationDraft.json" />
     <Content Include="../SchoolMessenger.Shared/updates.json;../SchoolMessenger.Shared/update-notice.js;../SchoolMessenger.Shared/update-notice.css;../SchoolMessenger.Shared/timetable.js;../SchoolMessenger.Shared/timetable.css" Link="wwwroot/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup><Compile Include="../SchoolMessenger.Shared/Backend/*.cs" Link="Backend/%(Filename)%(Extension)" /></ItemGroup>
