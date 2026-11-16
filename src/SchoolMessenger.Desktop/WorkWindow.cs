@@ -203,17 +203,17 @@ public sealed class WorkWindow : Window
         }
         var targetGrid=new System.Windows.Controls.Primitives.UniformGrid{Columns=1,HorizontalAlignment=HorizontalAlignment.Stretch,Tag="submission-targets"};targetsPanel=targetGrid;
         // Cells follow the panel width, so a narrower window narrows the cards instead of pushing them past the edge.
-        targetGrid.SizeChanged+=(_,e)=>{if(e.NewSize.Width<=0)return;var columns=mine?Math.Clamp((int)(e.NewSize.Width/170),1,4):1;if(targetGrid.Columns!=columns)targetGrid.Columns=columns;};
+        targetGrid.SizeChanged+=(_,e)=>{if(e.NewSize.Width<=0)return;var columns=mine?Math.Clamp((int)(e.NewSize.Width/126),1,4):1;if(targetGrid.Columns!=columns)targetGrid.Columns=columns;};
         detail.Children.Add(targetGrid);
         foreach (var target in targets)
         {
             var exempt = target.GetProperty("exempt").GetBoolean(); var submitted = target.GetProperty("submittedAt").ValueKind != JsonValueKind.Null;
             var name=String(target,"name");var state=exempt?"면제":submitted?target.GetProperty("late").GetBoolean()?"지각 제출":"제출 완료":"미제출";
-            var targetDetails=new StackPanel();var header=new Grid{ColumnDefinitions={new(){Width=new GridLength(30)},new(),new(){Width=GridLength.Auto}}};
-            var indicator=Avatar.Create(name,22);indicator.HorizontalAlignment=HorizontalAlignment.Left;header.Children.Add(indicator);
+            var targetDetails=new StackPanel();var header=new Grid{ColumnDefinitions={new(){Width=new GridLength(24)},new(),new(){Width=GridLength.Auto}}};
+            var indicator=Avatar.Create(name,20);indicator.HorizontalAlignment=HorizontalAlignment.Left;header.Children.Add(indicator);
             var label=Text(name,12);label.SetResourceReference(TextBlock.ForegroundProperty,"Ink");label.FontWeight=FontWeights.SemiBold;label.TextWrapping=TextWrapping.NoWrap;label.TextTrimming=TextTrimming.CharacterEllipsis;label.Margin=new Thickness(0);label.VerticalAlignment=VerticalAlignment.Center;Grid.SetColumn(label,1);header.Children.Add(label);targetDetails.Children.Add(header);
             {// The state comes first so a long department name never pushes it out of sight.
-                var unit=new TextBlock{FontSize=11,Margin=new Thickness(30,2,0,0),TextTrimming=TextTrimming.CharacterEllipsis,TextWrapping=TextWrapping.NoWrap};
+                var unit=new TextBlock{FontSize=11,Margin=new Thickness(24,2,0,0),TextTrimming=TextTrimming.CharacterEllipsis,TextWrapping=TextWrapping.NoWrap};
                 var status=new System.Windows.Documents.Run(state){FontWeight=FontWeights.SemiBold};status.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty,exempt?"Muted":submitted?"Success":"Danger");unit.Inlines.Add(status);
                 if(String(target,"department") is {Length:>0} department){var place=new System.Windows.Documents.Run(" · "+department);place.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty,"Faint");unit.Inlines.Add(place);}
                 targetDetails.Children.Add(unit);}
@@ -230,13 +230,13 @@ public sealed class WorkWindow : Window
                 }
             }
             // Green for handed in, red for not yet; an exempted person stays grey.
-            var card=Card(targetDetails,exempt?"Soft":submitted?"SuccessTint":"DangerTint");card.SetResourceReference(Border.BorderBrushProperty,exempt?"Line":submitted?"SuccessLine":"DangerLine");card.Padding=new Thickness(8);card.CornerRadius=new CornerRadius(9);card.Margin=new Thickness(0,0,8,8);card.MinHeight=48;card.ToolTip=name+" · "+state;card.Tag=String(target,"id");
+            var card=Card(targetDetails,exempt?"Soft":submitted?"SuccessTint":"DangerTint");card.SetResourceReference(Border.BorderBrushProperty,exempt?"Line":submitted?"SuccessLine":"DangerLine");card.Padding=new Thickness(7);card.CornerRadius=new CornerRadius(9);card.Margin=new Thickness(0,0,6,8);card.MinHeight=48;card.ToolTip=name+" · "+state;card.Tag=String(target,"id");
             System.Windows.Automation.AutomationProperties.SetName(card,name);System.Windows.Automation.AutomationProperties.SetHelpText(card,state);
             if(mine&&!closed)
             {
                 var menu=new ContextMenu();var exemption=new MenuItem{Header=exempt?"면제 해제":"제출 면제"};menu.Items.Add(exemption);card.ContextMenu=menu;
                 exemption.Click+=async(_,_)=>{if(busy)return;busy=true;try{await Run(async()=>{await api.Send<JsonElement>(HttpMethod.Patch,$"api/submission-requests/{id}/targets/{String(target,"id")}",new{exempt=!exempt});await Submission(id);});}finally{busy=false;}};
-                var more=new Button{Content="…",Width=20,Height=22,Padding=new Thickness(0),Margin=new Thickness(2,0,0,0),BorderThickness=new Thickness(0),Background=Brushes.Transparent,ToolTip=name+" 제출 관리"};more.SetResourceReference(Control.ForegroundProperty,"Muted");System.Windows.Automation.AutomationProperties.SetName(more,name+" 제출 관리");
+                var more=new Button{Content="…",Width=16,Height=22,Padding=new Thickness(0),Margin=new Thickness(0),BorderThickness=new Thickness(0),Background=Brushes.Transparent,ToolTip=name+" 제출 관리"};more.SetResourceReference(Control.ForegroundProperty,"Muted");System.Windows.Automation.AutomationProperties.SetName(more,name+" 제출 관리");
                 more.Click+=(_,_)=>{if(busy)return;menu.PlacementTarget=more;menu.Placement=System.Windows.Controls.Primitives.PlacementMode.Bottom;menu.IsOpen=true;};Grid.SetColumn(more,2);header.Children.Add(more);
             }
             targetGrid.Children.Add(card);
