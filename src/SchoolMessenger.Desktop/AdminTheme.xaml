@@ -7,7 +7,7 @@
  <SolidColorBrush x:Key="Glass" Color="#FFFFFF"/><SolidColorBrush x:Key="GlassLine" Color="#E2E7EE"/>
  <SolidColorBrush x:Key="Success" Color="#18794A"/><SolidColorBrush x:Key="SuccessTint" Color="#E4F4EA"/>
  <SolidColorBrush x:Key="Warning" Color="#94540A"/><SolidColorBrush x:Key="WarningTint" Color="#FDF1DB"/>
- <SolidColorBrush x:Key="Danger" Color="#B42318"/><SolidColorBrush x:Key="DangerTint" Color="#FDECEA"/><SolidColorBrush x:Key="DangerLine" Color="#F1B8B2"/>
+ <SolidColorBrush x:Key="Danger" Color="#B42318"/><SolidColorBrush x:Key="DangerTint" Color="#FDECEA"/><SolidColorBrush x:Key="DangerLine" Color="#F1B8B2"/><SolidColorBrush x:Key="SuccessLine" Color="#A6DDB8"/>
  <SolidColorBrush x:Key="News" Color="#17745D"/><SolidColorBrush x:Key="NewsTint" Color="#E3F1EB"/>
  <!-- 20-unit stroke icons, same artwork as the Figma icon set -->
  <Geometry x:Key="AdminServerIcon">M4.5,3 H15.5 A1.5,1.5 0 0 1 17,4.5 V7 A1.5,1.5 0 0 1 15.5,8.5 H4.5 A1.5,1.5 0 0 1 3,7 V4.5 A1.5,1.5 0 0 1 4.5,3 Z M4.5,11.5 H15.5 A1.5,1.5 0 0 1 17,13 V15.5 A1.5,1.5 0 0 1 15.5,17 H4.5 A1.5,1.5 0 0 1 3,15.5 V13 A1.5,1.5 0 0 1 4.5,11.5 Z M6,5.75 H6.2 M6,14.25 H6.2</Geometry>

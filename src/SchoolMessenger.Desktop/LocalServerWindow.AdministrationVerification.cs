@@ -71,9 +71,9 @@ public sealed partial class LocalServerWindow
         check(saved.GetProperty("department").GetString()=="수정된 가상 부서"&&saved.GetProperty("position").GetString()=="가상부장"&&duty.GetProperty("calendarManager").GetBoolean()&&(await source.Get<JsonElement>("api/admin/timetable-managers")).EnumerateArray().Single(e=>e.GetProperty("id").GetString()==teacherId).GetProperty("enabled").GetBoolean(),"the member panel saves department, position and school duties, including the timetable, together through the authenticated API");
         await Click(Action("조직도 폴더 관리"));await Wait(()=>HasText("학교 아래 두 단계"),"조직도 폴더 관리가 열리지 않았습니다.");
         Input("폴더 이름").Text="가상 프로젝트";await Click(Action("폴더 추가"));
-        Input("폴더 이름").Text="가상 준비팀";await Click(Action("하위 폴더 추가"));
+        Input("폴더 이름").Text="가상 준비팀";await Click(Action("하위 폴더"));
         await Wait(()=>HasText("가상 준비팀 · 교직원"),"하위 폴더가 선택되지 않았습니다.");
-        check(!Action("하위 폴더 추가").IsEnabled,"the folder editor allows exactly two folder levels below the school");
+        check(!Action("하위 폴더").IsEnabled,"the folder editor allows exactly two folder levels below the school");
         ViewControls<CheckBox>(administrationView).Single(box=>box.Content?.ToString()?.StartsWith(name+" · ",StringComparison.Ordinal)==true).IsChecked=true;
         await Click(Action("변경 저장"));await Wait(()=>HasText("조직도 폴더를 저장했습니다."),"조직도 저장에 실패했습니다.");
         var folders=(await source.Get<SchoolMessenger.Contracts.RosterFolders>("api/admin/roster-folders")).Folders;

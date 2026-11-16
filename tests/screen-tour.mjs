@@ -21,8 +21,8 @@ const pause=ms=>new Promise(r=>setTimeout(r,ms));
 class Client{
  cookies=new Map();
  async request(route,method='GET',body){
-  const headers={Cookie:[...this.cookies].map(([k,v])=>k+'='+v).join('; ')};if(method!=='GET')headers['X-CSRF-TOKEN']=this.csrf;if(body!==undefined)headers['Content-Type']='application/json';
-  const response=await fetch(address+'/api/'+route,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
+  const headers={Cookie:[...this.cookies].map(([k,v])=>k+'='+v).join('; ')};if(method!=='GET')headers['X-CSRF-TOKEN']=this.csrf;const form=body instanceof FormData;if(body!==undefined&&!form)headers['Content-Type']='application/json';
+  const response=await fetch(address+'/api/'+route,{method,headers,body:body===undefined?undefined:form?body:JSON.stringify(body)});
   for(const cookie of response.headers.getSetCookie()){const p=cookie.split(';')[0],i=p.indexOf('=');this.cookies.set(p.slice(0,i),p.slice(i+1));}
   const text=await response.text();if(!response.ok)throw Error(method+' '+route+' '+response.status+' '+text);return text&&response.headers.get('Content-Type')?.includes('json')?JSON.parse(text):text;
  }
@@ -41,13 +41,17 @@ try{
   const ids=staff.map(s=>s.id);
   await seed('sent messages',async()=>{for(const [title,body] of [['11월 교직원 회의 안내','11월 교직원 회의를 수요일 16시에 시청각실에서 엽니다. 안건이 있으면 화요일까지 알려 주세요.'],['2학기 2차 지필평가 원안 제출','원안은 다음 주 금요일까지 교육연구부로 제출해 주세요. 서술형 채점 기준표를 함께 내 주세요.'],['학부모 상담 주간 운영 계획','상담 주간 동안 학급별 상담 시간표를 작성해 공유해 주세요.']])await admin.request('messages','POST',{clientId:randomUUID(),title,body,recipientIds:ids.slice(0,6),attachmentIds:[],all:false});});
   await seed('received messages',async()=>{for(const [title,body] of [['교과 협의회 일정 조정 부탁드립니다','목요일 7교시 교과 협의회를 금요일로 옮길 수 있을지 확인 부탁드립니다.'],['체험학습 인솔 교사 명단','다음 달 체험학습 인솔 교사 명단을 보내 드립니다. 확인 후 수정할 부분을 알려 주세요.'],['방송실 사용 신청','금요일 조회 시간에 방송실을 사용하려고 합니다.'],['아주 긴 제목이 목록에서 어떻게 보이는지 확인하기 위한 가상의 메시지 제목입니다 2026학년도 2학기 교육과정 운영 평가 설문 결과 공유','본문입니다.']])await colleague.request('messages','POST',{clientId:randomUUID(),title,body,recipientIds:[admin.user.id],attachmentIds:[],all:false});});
+  // A file request with one person who handed in and one who has not, so both card colours are shown.
+  await seed('submission',async()=>{const request=await admin.request('messages','POST',{clientId:randomUUID(),title:'학년말 업무 보고서 제출',body:'보고서 파일을 올려 주세요.',recipientIds:ids.slice(0,2),attachmentIds:[],all:false,submissionDeadline:Date.now()+3*86400000});
+    const form=new FormData();form.append('file',new Blob(['가상 보고서']),'업무보고서.txt');const file=await colleague.request('attachments','POST',form);
+    await colleague.request('submission-requests/'+request.id+'/submit','POST',{clientId:randomUUID(),attachmentIds:[file.id]});});
   await seed('chat',async()=>{const room=await admin.request('chats','POST',{memberIds:ids.slice(0,3),name:'1학년 담임 협의'});const roomId=room.id??room;for(const body of ['내일 조회 때 가정통신문 나눠 주세요.','네, 확인했습니다.'])await admin.request('chats/'+roomId+'/messages','POST',{clientId:randomUUID(),body,attachmentIds:[]});});
   await seed('survey',async()=>{await admin.request('surveys','POST',{title:'교직원 연수 희망 날짜 조사',description:'가능한 날짜를 골라 주세요.',deadline:Date.now()+5*86400000,targetIds:[admin.user.id,...ids.slice(0,5)],all:false,questions:[{text:'가능한 날짜',kind:'choice',required:true,options:['11월 18일(수)','11월 20일(금)']},{text:'바라는 연수 주제',kind:'text',required:false,options:[]}]});});
   // All-day events run from Korean midnight to a later Korean midnight.
   const day=n=>new Date(Date.now()+9*3600000+n*86400000).toISOString().slice(0,10)+'T00:00:00+09:00';
   await seed('events',async()=>{for(const [title,from,to] of [['2학기 2차 지필평가',6,9],['학교운영위원회',2,2],['교직원 연수',1,1]])await admin.request('office/events','POST',{clientId:randomUUID().replaceAll('-',''),title,description:'가상 일정',start:day(from),end:day(to+1),allDay:true});});
   await seed('rooms',async()=>{for(const [name,location] of [['과학실 1','본관 2층'],['컴퓨터실','본관 3층'],['시청각실','별관 1층']])await admin.request('office/rooms','POST',{name,location});});
-  const db=new DatabaseSync(path.join(fixture,'server','school.db'));
+  const db=new DatabaseSync(path.join(fixture,'server','school.db'));let bundles=[];
   try {
     const {Id:owner,Name:teacherName}=db.prepare("SELECT Id,Name FROM Users WHERE Username='admin'").get();
     const id=()=>randomUUID().replaceAll('-',''),batch=id(),client=id();
@@ -60,7 +64,11 @@ try{
     for(const room of rooms)db.prepare('INSERT INTO TimetableClasses VALUES(?,?,?)').run(room.id,room.name,room.grade);
     const payload={id:batch,revision:1,owner,clientId:client,kind:'base',year:monday.getUTCFullYear(),semester:2,start:date(0),end:date(6),date:null,fileName:'가상시간표.xlsx',publishedAt:Date.now(),withdrawn:false,cells};
     db.prepare('INSERT INTO TimetableBatches(Revision,Id,Owner,ClientId,Payload,Delivered) VALUES(1,?,?,?,?,1)').run(batch,owner,client,JSON.stringify(payload));
+    // Three bundles of two classes each, taught at the same time, so the board shows three bundle colours.
+    const lesson=(c,i)=>({classId:rooms[c].id,subject:subjects[((c+i*5)%48)%subjects.length]});
+    bundles=[['1학년 선택 A',[lesson(0,0),lesson(1,0)]],['1학년 선택 B',[lesson(2,3),lesson(3,3)]],['2학년 선택 A',[lesson(6,1),lesson(7,1)]]];
   } finally { db.close(); }
+  await seed('bundles',async()=>{for(const [name,members] of bundles)await admin.request('timetable/bundle-rules','POST',{id:randomUUID().replaceAll('-',''),name,members});});
   ui=spawn(sdk,[path.join(root,'src/SchoolMessenger.Desktop/bin/Debug/net10.0-windows/SchoolMessenger.dll'),'--verify-ui'],{cwd:root,windowsHide:true,env:{...process.env,SCHOOL_UI_SERVER:address,SCHOOL_UI_USER:'admin',SCHOOL_UI_PASSWORD:password,SCHOOL_UI_OUTPUT:path.join(output,'client-preview.png'),SCHOOL_UI_LOCALDIR:path.join(fixture,'client'),YY_SCREEN_TOUR:output}});
   let timeout;const code=await Promise.race([new Promise((resolve,reject)=>{ui.once('error',reject);ui.once('exit',resolve);}),new Promise(resolve=>{timeout=setTimeout(()=>resolve(-1),17*60000);})]);clearTimeout(timeout);
   const report=existsSync(path.join(output,'report.txt'))?readFileSync(path.join(output,'report.txt'),'utf8'):'';

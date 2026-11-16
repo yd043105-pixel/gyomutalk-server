@@ -35,7 +35,7 @@ public partial class MainWindow
             var first=administratorWindow;OpenAdministrator();if(!ReferenceEquals(first,administratorWindow)||SessionWindows.OfType<ServerManagementWindow>().Count()!=1)throw new InvalidOperationException("관리 창이 중복되었습니다.");
             checks.Add("관리 메뉴 재실행 시 기존 창 활성화");
             AdminControls<ComboBox>(first).Single().SelectedIndex=0;
-            AdminControls<Button>(first).Single(b=>b.Content?.ToString()=="부하 설정 적용").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            AdminControls<Button>(first).Single(b=>b.Content?.ToString()=="적용").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             for(var i=0;i<100&&(!first.Ready||(await Api!.Get<JsonElement>("api/admin/server-resources")).GetProperty("profile").GetString()!="low-memory");i++)await Task.Delay(50);
             await first.Refresh(true);if((await Api!.Get<JsonElement>("api/admin/server-resources")).GetProperty("profile").GetString()!="low-memory")throw new InvalidOperationException("관리 창에서 부하 설정 저장 실패");
             await Task.Delay(10500);await first.Refresh(true);

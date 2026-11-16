@@ -203,7 +203,7 @@ public sealed class WorkWindow : Window
         }
         var targetGrid=new System.Windows.Controls.Primitives.UniformGrid{Columns=1,HorizontalAlignment=HorizontalAlignment.Stretch,Tag="submission-targets"};targetsPanel=targetGrid;
         // Cells follow the panel width, so a narrower window narrows the cards instead of pushing them past the edge.
-        targetGrid.SizeChanged+=(_,e)=>{if(e.NewSize.Width<=0)return;var columns=mine?Math.Clamp((int)(e.NewSize.Width/126),1,4):1;if(targetGrid.Columns!=columns)targetGrid.Columns=columns;};
+        targetGrid.SizeChanged+=(_,e)=>{if(e.NewSize.Width<=0)return;var columns=mine?Math.Clamp((int)(e.NewSize.Width/170),1,4):1;if(targetGrid.Columns!=columns)targetGrid.Columns=columns;};
         detail.Children.Add(targetGrid);
         foreach (var target in targets)
         {
@@ -212,8 +212,11 @@ public sealed class WorkWindow : Window
             var targetDetails=new StackPanel();var header=new Grid{ColumnDefinitions={new(){Width=new GridLength(30)},new(),new(){Width=GridLength.Auto}}};
             var indicator=Avatar.Create(name,22);indicator.HorizontalAlignment=HorizontalAlignment.Left;header.Children.Add(indicator);
             var label=Text(name,12);label.SetResourceReference(TextBlock.ForegroundProperty,"Ink");label.FontWeight=FontWeights.SemiBold;label.TextWrapping=TextWrapping.NoWrap;label.TextTrimming=TextTrimming.CharacterEllipsis;label.Margin=new Thickness(0);label.VerticalAlignment=VerticalAlignment.Center;Grid.SetColumn(label,1);header.Children.Add(label);targetDetails.Children.Add(header);
-            {var unit=new TextBlock{FontSize=11,Margin=new Thickness(30,2,0,0),TextTrimming=TextTrimming.CharacterEllipsis,TextWrapping=TextWrapping.NoWrap};if(String(target,"department") is {Length:>0} department){var place=new System.Windows.Documents.Run(department+" · ");place.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty,"Faint");unit.Inlines.Add(place);}
-                var status=new System.Windows.Documents.Run(state){FontWeight=FontWeights.SemiBold};status.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty,exempt?"Muted":submitted?"Success":"Warning");unit.Inlines.Add(status);targetDetails.Children.Add(unit);}
+            {// The state comes first so a long department name never pushes it out of sight.
+                var unit=new TextBlock{FontSize=11,Margin=new Thickness(30,2,0,0),TextTrimming=TextTrimming.CharacterEllipsis,TextWrapping=TextWrapping.NoWrap};
+                var status=new System.Windows.Documents.Run(state){FontWeight=FontWeights.SemiBold};status.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty,exempt?"Muted":submitted?"Success":"Danger");unit.Inlines.Add(status);
+                if(String(target,"department") is {Length:>0} department){var place=new System.Windows.Documents.Run(" · "+department);place.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty,"Faint");unit.Inlines.Add(place);}
+                targetDetails.Children.Add(unit);}
             foreach (var file in target.GetProperty("files").EnumerateArray())
             {
                 var attachment = file.Deserialize<Attachment>(new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
@@ -226,7 +229,8 @@ public sealed class WorkWindow : Window
                     System.Windows.Automation.AutomationProperties.SetName(download,attachment.Description);targetDetails.Children.Add(download);
                 }
             }
-            var card=Card(targetDetails);card.Padding=new Thickness(8);card.CornerRadius=new CornerRadius(9);card.Margin=new Thickness(0,0,8,8);card.MinHeight=48;card.ToolTip=name+" · "+state;card.Tag=String(target,"id");
+            // Green for handed in, red for not yet; an exempted person stays grey.
+            var card=Card(targetDetails,exempt?"Soft":submitted?"SuccessTint":"DangerTint");card.SetResourceReference(Border.BorderBrushProperty,exempt?"Line":submitted?"SuccessLine":"DangerLine");card.Padding=new Thickness(8);card.CornerRadius=new CornerRadius(9);card.Margin=new Thickness(0,0,8,8);card.MinHeight=48;card.ToolTip=name+" · "+state;card.Tag=String(target,"id");
             System.Windows.Automation.AutomationProperties.SetName(card,name);System.Windows.Automation.AutomationProperties.SetHelpText(card,state);
             if(mine&&!closed)
             {

@@ -72,13 +72,13 @@ internal static class DesktopUpdater
     internal static void Settings(Window window)
     {
         if(!initialized){Notice.Show(window,"업데이트 확인을 시작할 수 없습니다.\n"+error,"프로그램 업데이트");return;}
-        var dialog=new Window{Title="프로그램 업데이트",Owner=window,Width=420,SizeToContent=SizeToContent.Height,ResizeMode=ResizeMode.NoResize,WindowStartupLocation=WindowStartupLocation.CenterOwner,Style=(Style)Application.Current.FindResource("SchoolWindow")};
-        var panel=new StackPanel{Margin=new Thickness(24)};
-        panel.Children.Add(new TextBlock{Text="GitHub의 정식 공개 릴리즈를 확인합니다. 설치파일은 게시자 서명을 검증한 뒤 실행합니다.",TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,0,0,16)});
+        var dialog=new Window{Title="프로그램 업데이트",Owner=window,Width=460,SizeToContent=SizeToContent.Height,ResizeMode=ResizeMode.NoResize,WindowStartupLocation=WindowStartupLocation.CenterOwner,Style=(Style)Application.Current.FindResource("SchoolWindow")};
+        var page=new StackPanel{Margin=new Thickness(24)};var heading=AdminUi.PageTitle("프로그램 업데이트","지금 버전 "+typeof(App).Assembly.GetName().Version!.ToString(3)+" · GitHub의 정식 릴리즈를 확인하고, 설치파일은 서명을 검증한 뒤 실행합니다.");heading.Margin=new Thickness(0,0,0,16);page.Children.Add(heading);
+        var panel=new StackPanel();page.Children.Add(AdminUi.Card(panel));dialog.SetResourceReference(Window.BackgroundProperty,"Soft");
         var automatic=new CheckBox{Content="시작할 때와 하루에 한 번 새 버전 자동 확인",IsChecked=enabled};
         automatic.Click+=(_,_)=>{try{Directory.CreateDirectory(Path.GetDirectoryName(setting)!);File.WriteAllText(setting,automatic.IsChecked==true?"true":"false");enabled=automatic.IsChecked==true;}catch(IOException e){automatic.IsChecked=enabled;Notice.Show(dialog,e.Message,"설정 저장 실패");}};panel.Children.Add(automatic);
-        panel.Children.Add(new TextBlock{Text="학교 네트워크에서 GitHub 연결을 허용해야 합니다.",TextWrapping=TextWrapping.Wrap,FontSize=12,Margin=new Thickness(0,16,0,16)});
-        var check=new Button{Content="지금 업데이트 확인",Padding=new Thickness(14,9,14,9)};check.Click+=async(_,_)=>{check.IsEnabled=false;check.Content="확인하는 중…";await Check(dialog,true,dialog.Close);};panel.Children.Add(check);dialog.Content=panel;dialog.ShowDialog();
+        var note=AdminUi.Label("학교 네트워크에서 GitHub 연결을 허용해야 합니다.","Muted",12);note.Margin=new Thickness(0,8,0,0);panel.Children.Add(note);
+        var check=new Button{Content="지금 확인",HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,16,0,0)};check.SetResourceReference(FrameworkElement.StyleProperty,"PrimaryButton");check.Click+=async(_,_)=>{check.IsEnabled=false;check.Content="확인하는 중…";await Check(dialog,true,dialog.Close);};panel.Children.Add(check);dialog.Content=page;dialog.ShowDialog();
     }
     static string Folder=>Path.GetDirectoryName(setting)!;
     static DateTimeOffset LastCheck(){try{return DateTimeOffset.FromUnixTimeSeconds(long.Parse(File.ReadAllText(Path.Combine(Folder,"last-check.txt"))));}catch(Exception e)when(e is IOException or FormatException or OverflowException or ArgumentException){return DateTimeOffset.MinValue;}}

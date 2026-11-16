@@ -14,6 +14,11 @@ namespace SchoolMessenger.Desktop;
 
 public sealed partial class LocalServerWindow
 {
+    static bool HasButton(Window window,string row)
+    {
+        static System.Collections.Generic.IEnumerable<DependencyObject> All(DependencyObject node){yield return node;for(var i=0;i<System.Windows.Media.VisualTreeHelper.GetChildrenCount(node);i++)foreach(var child in All(System.Windows.Media.VisualTreeHelper.GetChild(node,i)))yield return child;}
+        window.UpdateLayout();return All(window).OfType<DockPanel>().Any(d=>d.Children.OfType<Button>().Any()&&d.Children.OfType<StackPanel>().Any(t=>t.Children.OfType<TextBlock>().Any(b=>b.Text==row)));
+    }
     internal async Task Verify(string outputDirectory,bool ownerExit)
     {
         var checks=new List<string>();Directory.CreateDirectory(outputDirectory);
@@ -63,7 +68,7 @@ public sealed partial class LocalServerWindow
                     try
                     {
                         for(var i=0;i<60&&!operations.Ready;i++)await Task.Delay(100);
-                        Check(operations.Ready&&((DockPanel)operations.Content).Children.OfType<TabControl>().Single().Items.Count==3,"authenticated operations loads real resource measurements and separates status, school and connection settings");
+                        Check(operations.Ready&&!System.Windows.LogicalTreeHelper.GetChildren((DockPanel)operations.Content).OfType<TabControl>().Any()&&HasButton(operations,"교내 서버 자동검색")&&HasButton(operations,"서버 PC 자동 구동"),"authenticated operations loads real resource measurements on one page, with each setting as a row of its own");
                         Capture("server-operations.png",operations);
                     }finally{operations.Close();}
                 }

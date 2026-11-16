@@ -36,7 +36,7 @@ public sealed partial class TimetableWindow
         Add("교체 신청 현황", SwapQueue, null);
         if (CanManageSchedule) { Add("기초시간표 · 묶음수업", BaseEditor); Add("시간표 생성기", OpenGenerator); }
         if (printDays.Any(day => day.PublishedAt > 0))
-            Add("게시 시간표 인쇄", () => { PrintTimetable(); return Task.CompletedTask; });
+            Add("보고 있는 시간표 인쇄", () => { PrintTimetable(); return Task.CompletedTask; });
         scheduleFooter.Child=tools;
         scheduleFooter.Visibility=Visibility.Visible;
     }

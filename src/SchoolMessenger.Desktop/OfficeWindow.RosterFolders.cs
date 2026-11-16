@@ -55,9 +55,9 @@ public sealed partial class OfficeWindow
             return button;
         }
         var add = FolderAction("폴더 추가");
-        var child = FolderAction("하위 폴더 추가");
+        var child = FolderAction("하위 폴더");
         var rename = FolderAction("이름 변경");
-        var delete = FolderAction("폴더 삭제");
+        var delete = FolderAction("삭제"); delete.SetResourceReference(StyleProperty, "DangerButton");
         var caption = AdminUi.Heading("폴더의 교직원", 16);
         right.Children.Add(caption);
         var searchLabel = AdminUi.Label("이름 또는 부서로 검색", "Muted", 12);

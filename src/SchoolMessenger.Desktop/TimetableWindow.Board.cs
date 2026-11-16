@@ -62,8 +62,45 @@ public sealed partial class TimetableWindow
     // The size the window had before the board widened it; it goes back to that when the board is left.
     Rect? boardRestore;
 
+    // Twenty pastels chosen far apart from each other (CIE Lab: every pair at least 9 apart) and ordered so that
+    // neighbouring entries differ most. Greens are left out because green means "you can swap here", and so are the
+    // yellows of a changed cell.
+    static readonly string[] BundlePalette =
+    [
+        "#9DEDF1", "#EAB6ED", "#F4AFB6", "#9DE0F1", "#F4AFF4", "#F4B9AF", "#AECCE0", "#F1C6EF", "#F1D1C6", "#9DC7F1",
+        "#F4AFD5", "#F1BA9D", "#AFC0F4", "#F9D2E6", "#E0CCAE", "#D2CBEB", "#EDB6CC", "#9DF1E0", "#D1C1F6", "#E6BCC1",
+    ];
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Border, System.Windows.Media.Brush> BundleTint = new();
+    Dictionary<string, System.Windows.Media.Brush> boardBundleTints = new();
+    // Bundles take the palette in the order of their names, the order the bundle list shows them in, so the first
+    // bundles of a school get the colours that differ most. More than twenty bundles share colours again.
+    static Dictionary<string, System.Windows.Media.Brush> BundleTints(IEnumerable<string> names)
+    {
+        var map = new Dictionary<string, System.Windows.Media.Brush>();
+        foreach (var name in names.Distinct().Order(StringComparer.Create(System.Globalization.CultureInfo.GetCultureInfo("ko-KR"), false)))
+        {
+            var brush = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(BundlePalette[map.Count % BundlePalette.Length])); brush.Freeze();
+            map[name] = brush;
+        }
+        return map;
+    }
+
+    // Both kinds of bundle a server may hold, by name; the Mac program colours them the same way.
+    async Task<string[]> BundleNames()
+    {
+        var names = new List<string>();
+        foreach (var path in new[] { "api/timetable/bundle-rules", "api/timetable/bundles" })
+        {
+            // A server without one of the two lists simply gives no names from it.
+            try { names.AddRange((await api.Get<JsonElement[]>(path)).Select(b => b.GetProperty("name").GetString() ?? "").Where(n => n.Length > 0)); }
+            catch (Exception error) when (error is HttpRequestException or InvalidOperationException or JsonException or KeyNotFoundException) { }
+        }
+        return names.ToArray();
+    }
+
     async Task Board()
     {
+        boardBundleTints = BundleTints(await BundleNames());
         var requests = await api.Get<TimetableSwap[]>("api/timetable/swaps");
         var pending = requests.Where(s => s.Status == "pending").ToArray();
         boardDependencies = boardAssume ? pending.Select(s => s.Id).Order(StringComparer.Ordinal).ToArray() : [];
@@ -89,7 +126,7 @@ public sealed partial class TimetableWindow
             legend.Children.Add(chip); legend.Children.Add(text);
         }
         Key("내 수업", "Pale"); Key("바꿀 수 있는 수업", "SuccessTint"); Key("이번 신청으로 바뀐 칸", "ChangeTint");
-        var bundleKey = AdminUi.Label("◆ 묶음수업", "Muted", 12); bundleKey.TextWrapping = TextWrapping.NoWrap; legend.Children.Add(bundleKey);
+        var bundleKey = AdminUi.Label("◆ 묶음수업 · 같은 색은 같은 묶음", "Muted", 12); bundleKey.TextWrapping = TextWrapping.NoWrap; legend.Children.Add(bundleKey);
 
         var tools = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
         Button Step(string label, int days, string name)
@@ -210,6 +247,7 @@ public sealed partial class TimetableWindow
                         cell.Cursor = Cursors.Hand;
                         if (string.CompareOrdinal(dates[d], today) < 0) cell.Opacity = 0.45;
                         foreach (var lesson in lessons) boardCells[lesson.Position] = cell;
+                        if (lessons.FirstOrDefault(l => l.BundleName is not null)?.BundleName is { } bundle && boardBundleTints.TryGetValue(bundle, out var tint)) BundleTint.AddOrUpdate(cell, tint);
                         System.Windows.Automation.AutomationProperties.SetName(cell, $"{teacher.Name} {DayLabel(dates[d])} {p}교시 {first.Lesson.ClassName} {first.Lesson.Subject}");
                     }
                     BoardPaint(cell, p == 1);
@@ -270,6 +308,8 @@ public sealed partial class TimetableWindow
     {
         var kind = overlay ?? (string)cell.Tag;
         if (kind == "empty") cell.Background = System.Windows.Media.Brushes.Transparent;
+        // A lesson of a bundle wears its bundle's colour; picking, options and changes still show over it.
+        else if (kind is "lesson" or "mine" && BundleTint.TryGetValue(cell, out var tint)) cell.Background = tint;
         else cell.SetResourceReference(Border.BackgroundProperty, kind switch { "option" => "SuccessTint", "changed" => "ChangeTint", "mine" or "pick" => "Pale", _ => "Surface" });
         cell.SetResourceReference(Border.BorderBrushProperty, kind switch { "option" => "Success", "pick" => "Blue", _ => dayStart ? "LineStrong" : "Line" });
         cell.BorderThickness = kind is "option" or "pick" ? new Thickness(2) : new Thickness(dayStart ? 2 : 1, 0, 0, 1);
@@ -474,9 +514,12 @@ public sealed partial class TimetableWindow
         var about = AdminUi.Label("여러 반이 같은 시간에 나뉘어 듣는 수업을 묶어 두면, 수업을 교체할 때 그 시간의 수업이 모두 함께 움직입니다.", "Muted", 12);
         about.Margin = new Thickness(0, 6, 0, 10); bundlePanel.Children.Add(about);
         var names = lessons.ToDictionary(l => new TimetableBundleMember(l.ClassId, l.Subject), l => l.ClassName + " " + l.Subject);
+        var tints = BundleTints(await BundleNames());
         foreach (var rule in rules.OrderBy(r => r.Name, StringComparer.CurrentCulture))
         {
             var row = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };
+            var swatch = new Border { Width = 14, Height = 14, CornerRadius = new CornerRadius(4), BorderThickness = new Thickness(1), Margin = new Thickness(0, 3, 8, 0), VerticalAlignment = VerticalAlignment.Top, Background = tints.GetValueOrDefault(rule.Name) };
+            swatch.SetResourceReference(Border.BorderBrushProperty, "LineStrong"); DockPanel.SetDock(swatch, Dock.Left); row.Children.Add(swatch);
             var remove = new Button { Content = "삭제", Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Top }; remove.SetResourceReference(StyleProperty, "DangerButton");
             System.Windows.Automation.AutomationProperties.SetName(remove, rule.Name + " 묶음 삭제");
             remove.Click += async (_, _) => await Run(async () =>
@@ -486,7 +529,7 @@ public sealed partial class TimetableWindow
                 await BaseEditor();
             });
             DockPanel.SetDock(remove, Dock.Right); row.Children.Add(remove);
-            var text = new StackPanel(); text.Children.Add(AdminUi.Label("◆ " + rule.Name, "Ink", 13, true));
+            var text = new StackPanel(); text.Children.Add(AdminUi.Label(rule.Name, "Ink", 13, true));
             var members = AdminUi.Label(string.Join(", ", rule.Members.Select(m => names.GetValueOrDefault(m, m.Subject + " (지금 시간표에 없음)"))), "Muted", 12); members.TextWrapping = TextWrapping.Wrap;
             text.Children.Add(members); row.Children.Add(text); bundlePanel.Children.Add(row);
         }
