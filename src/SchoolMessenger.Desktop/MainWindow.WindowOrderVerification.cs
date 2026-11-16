@@ -38,7 +38,8 @@ public partial class MainWindow
             await Task.Delay(120);
             await Dispatcher.InvokeAsync(()=>window.UpdateLayout(),DispatcherPriority.ApplicationIdle);
             var visual=(FrameworkElement)VisualTreeHelper.GetChild(window,0);
-            var bitmap=new RenderTargetBitmap((int)Math.Ceiling(visual.ActualWidth),(int)Math.Ceiling(visual.ActualHeight),96,96,PixelFormats.Pbgra32);
+            // SCHOOL_UI_SCALE=2 gives the sharp pictures the download site shows at half size.
+            var bitmap=new RenderTargetBitmap((int)Math.Ceiling(visual.ActualWidth*CaptureScale),(int)Math.Ceiling(visual.ActualHeight*CaptureScale),96*CaptureScale,96*CaptureScale,PixelFormats.Pbgra32);
             bitmap.Render(visual);
             var encoder=new PngBitmapEncoder();encoder.Frames.Add(BitmapFrame.Create(bitmap));
             using var file=File.Create(Path.Combine(preview,name+".png"));encoder.Save(file);

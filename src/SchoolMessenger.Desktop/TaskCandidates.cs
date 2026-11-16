@@ -13,7 +13,7 @@ public static class TaskCandidates
     static readonly Regex Ended = new(@"취소|철회|제출\s*완료|제출했|제출하셨|제출하지\s*마|참석하지\s*마|참고\s*(하시기|바랍|해\s*주)|양해", RegexOptions.NonBacktracking);
     static readonly Regex Dates = new(@"(?:(\d{4})\s*년\s*)?(\d{1,2})\s*월\s*(\d{1,2})\s*일|\d{4}-\d{2}-\d{2}|오늘|내일|모레|(?:다음|이번)\s*주(?:\s*[월화수목금토일]요일)?|[월화수목금토일]요일", RegexOptions.NonBacktracking);
     // The date goes together with its weekday, time and particle, wherever it sits ("11월 7일(금) 오후 3시까지 제출" -> "제출").
-    static readonly Regex DateWithSuffix = new($@"(?:{Dates})(?:\s*\([월화수목금토일]\))?(?:\s*(?:오전|오후)?\s*\d{{1,2}}\s*시(?:\s*\d{{1,2}}\s*분|\s*반)?)?\s*(?:까지|에)?\s*", RegexOptions.NonBacktracking);
+    static readonly Regex DateWithSuffix = new($@"(?:{Dates})(?:\s*\([월화수목금토일]\))?(?:\s*(?:오전|오후)?\s*\d{{1,2}}\s*시(?:\s*\d{{1,2}}\s*분|\s*반)?)?\s*(?:까지|에|으로|로)?\s*", RegexOptions.NonBacktracking);
     // The hour a request is due by. "오전까지" means by noon and "퇴근 전" by the end of the school day at 17:00.
     const string TimePattern = @"(?<ap>오전|오후)\s*(?<h>\d{1,2})\s*시(?:\s*(?<m>\d{1,2})\s*분|\s*(?<half>반))?|(?<h>\d{1,2})\s*시(?:\s*(?<m>\d{1,2})\s*분|\s*(?<half>반))?\s*(?:까지|에)|(?<noon>정오)|(?<part>오전|오후)\s*(?:중|까지)|(?<end>퇴근\s*(?:시간\s*)?전)";
     static readonly Regex Times = new(TimePattern, RegexOptions.None, TimeSpan.FromSeconds(1));

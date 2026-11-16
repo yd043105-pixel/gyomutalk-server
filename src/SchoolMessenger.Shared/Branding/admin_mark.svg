@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- The 교무톡 mark (brand_mark.svg) with a server badge at the bottom right: the administrator and server program. -->
+  <rect width="128" height="128" rx="29" fill="#245BC6"/>
+  <path d="M57 25h32c11 0 18 7 18 18v16c0 10-6 17-16 18l-12 10V75H57c-11 0-18-7-18-18V43c0-11 7-18 18-18Z" fill="#A9D9EC"/>
+  <path d="M38 44h34c11 0 19 8 19 19v17c0 11-8 19-19 19H53l-18 13V98c-10-1-16-8-16-18V63c0-11 8-19 19-19Z" fill="#FFFFFF"/>
+  <path d="M38 64h33M38 78h21" fill="none" stroke="#245BC6" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="100" cy="100" r="27" fill="#FFFFFF"/>
+  <circle cx="100" cy="100" r="22" fill="#12306B"/>
+  <rect x="88" y="87" width="24" height="10.5" rx="3" fill="#FFFFFF"/>
+  <rect x="88" y="102.5" width="24" height="10.5" rx="3" fill="#FFFFFF"/>
+  <circle cx="94" cy="92.25" r="2" fill="#12306B"/>
+  <circle cx="94" cy="107.75" r="2" fill="#12306B"/>
+</svg>

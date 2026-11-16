@@ -66,6 +66,8 @@ public sealed partial class LocalServerWindow:Window
     {
         root=Path.GetFullPath(installedRoot);directory=settingsDirectory;Directory.CreateDirectory(directory);startup=Startup(registry);
         Title="교무톡 관리자";Width=Math.Min(1280,SystemParameters.WorkArea.Width-40);Height=Math.Min(820,SystemParameters.WorkArea.Height-25);MinWidth=760;MinHeight=560;MaxHeight=SystemParameters.WorkArea.Height-25;
+        // The administrator program wears the mark with the server badge, in its title bar and its sidebar.
+        Resources["ProductMark"]=FindResource("AdminMark");
         Style=(Style)FindResource("SchoolWindow");
         BuildDashboard();
         autoProgram.IsChecked=startup.Enabled;

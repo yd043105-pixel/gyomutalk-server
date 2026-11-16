@@ -40,16 +40,23 @@ try{
   await seed('colleague',async()=>{await colleague.login('가상교사01','12345678');await colleague.request('activate','POST',{newPassword:personal});await colleague.login('가상교사01',personal);});
   const ids=staff.map(s=>s.id);
   await seed('sent messages',async()=>{for(const [title,body] of [['11월 교직원 회의 안내','11월 교직원 회의를 수요일 16시에 시청각실에서 엽니다. 안건이 있으면 화요일까지 알려 주세요.'],['2학기 2차 지필평가 원안 제출','원안은 다음 주 금요일까지 교육연구부로 제출해 주세요. 서술형 채점 기준표를 함께 내 주세요.'],['학부모 상담 주간 운영 계획','상담 주간 동안 학급별 상담 시간표를 작성해 공유해 주세요.']])await admin.request('messages','POST',{clientId:randomUUID(),title,body,recipientIds:ids.slice(0,6),attachmentIds:[],all:false});});
-  await seed('received messages',async()=>{for(const [title,body] of [['교과 협의회 일정 조정 부탁드립니다','목요일 7교시 교과 협의회를 금요일로 옮길 수 있을지 확인 부탁드립니다.'],['체험학습 인솔 교사 명단','다음 달 체험학습 인솔 교사 명단을 보내 드립니다. 확인 후 수정할 부분을 알려 주세요.'],['방송실 사용 신청','금요일 조회 시간에 방송실을 사용하려고 합니다.'],['아주 긴 제목이 목록에서 어떻게 보이는지 확인하기 위한 가상의 메시지 제목입니다 2026학년도 2학기 교육과정 운영 평가 설문 결과 공유','본문입니다.']])await colleague.request('messages','POST',{clientId:randomUUID(),title,body,recipientIds:[admin.user.id],attachmentIds:[],all:false});});
+  // The newest message asks for something by a deadline, so the inbox opens on a to-do suggestion; the long title checks trimming.
+  await seed('received messages',async()=>{for(const [title,body] of [['아주 긴 제목이 목록에서 어떻게 보이는지 확인하기 위한 가상의 메시지 제목입니다 2026학년도 2학기 교육과정 운영 평가 설문 결과 공유','본문입니다.'],['방송실 사용 신청','금요일 조회 시간에 방송실을 사용하려고 합니다.'],['교과 협의회 일정 조정 부탁드립니다','목요일 7교시 교과 협의회를 금요일로 옮길 수 있을지 확인 부탁드립니다.'],['체험학습 인솔 명단 제출','다음 달 현장체험학습 인솔 교사를 정하려고 합니다. 금요일 퇴근 전까지 학급별 인솔 명단을 제출해 주세요.']])await colleague.request('messages','POST',{clientId:randomUUID(),title,body,recipientIds:[admin.user.id],attachmentIds:[],all:false});});
   // A file request with one person who handed in and one who has not, so both card colours are shown.
   await seed('submission',async()=>{const request=await admin.request('messages','POST',{clientId:randomUUID(),title:'학년말 업무 보고서 제출',body:'보고서 파일을 올려 주세요.',recipientIds:ids.slice(0,2),attachmentIds:[],all:false,submissionDeadline:Date.now()+3*86400000});
     const form=new FormData();form.append('file',new Blob(['가상 보고서']),'업무보고서.txt');const file=await colleague.request('attachments','POST',form);
     await colleague.request('submission-requests/'+request.id+'/submit','POST',{clientId:randomUUID(),attachmentIds:[file.id]});});
+  // Folders as a school would set them up: two grade teams and the office, with a project team under it.
+  await seed('folders',async()=>{const byDept=d=>staff.filter((_,k)=>departments[(k+1)%departments.length]===d).map(s=>s.id);const f=()=>randomUUID().replaceAll('-','');const office=f();
+    const revision=(await admin.request('admin/roster-folders')).revision;
+    await admin.request('admin/roster-folders','PUT',{revision,folders:[{id:f(),parentId:null,name:'1학년부',memberIds:byDept('1학년부')},{id:f(),parentId:null,name:'2학년부',memberIds:byDept('2학년부')},{id:office,parentId:null,name:'교무기획부',memberIds:[admin.user.id,...byDept('교무기획부')]},{id:f(),parentId:office,name:'학교 행사 준비팀',memberIds:ids.slice(0,3)}]});});
   await seed('chat',async()=>{const room=await admin.request('chats','POST',{memberIds:ids.slice(0,3),name:'1학년 담임 협의'});const roomId=room.id??room;for(const body of ['내일 조회 때 가정통신문 나눠 주세요.','네, 확인했습니다.'])await admin.request('chats/'+roomId+'/messages','POST',{clientId:randomUUID(),body,attachmentIds:[]});});
   await seed('survey',async()=>{await admin.request('surveys','POST',{title:'교직원 연수 희망 날짜 조사',description:'가능한 날짜를 골라 주세요.',deadline:Date.now()+5*86400000,targetIds:[admin.user.id,...ids.slice(0,5)],all:false,questions:[{text:'가능한 날짜',kind:'choice',required:true,options:['11월 18일(수)','11월 20일(금)']},{text:'바라는 연수 주제',kind:'text',required:false,options:[]}]});});
   // All-day events run from Korean midnight to a later Korean midnight.
-  const day=n=>new Date(Date.now()+9*3600000+n*86400000).toISOString().slice(0,10)+'T00:00:00+09:00';
-  await seed('events',async()=>{for(const [title,from,to] of [['2학기 2차 지필평가',6,9],['학교운영위원회',2,2],['교직원 연수',1,1]])await admin.request('office/events','POST',{clientId:randomUUID().replaceAll('-',''),title,description:'가상 일정',start:day(from),end:day(to+1),allDay:true});});
+  // Days counted from this week's Monday in Korea, so school events fall on weekdays.
+  const korea=new Date(Date.now()+9*3600000);korea.setUTCDate(korea.getUTCDate()-(korea.getUTCDay()+6)%7);
+  const day=n=>new Date(korea.getTime()+n*86400000).toISOString().slice(0,10)+'T00:00:00+09:00';
+  await seed('events',async()=>{for(const [title,from,to] of [['2학기 2차 지필평가',7,10],['학교운영위원회',3,3],['교직원 연수',1,1],['학부모 상담 주간',14,18]])await admin.request('office/events','POST',{clientId:randomUUID().replaceAll('-',''),title,description:'가상 일정',start:day(from),end:day(to+1),allDay:true});});
   await seed('rooms',async()=>{for(const [name,location] of [['과학실 1','본관 2층'],['컴퓨터실','본관 3층'],['시청각실','별관 1층']])await admin.request('office/rooms','POST',{name,location});});
   const db=new DatabaseSync(path.join(fixture,'server','school.db'));let bundles=[];
   try {

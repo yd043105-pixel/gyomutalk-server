@@ -239,7 +239,7 @@ sealed class ScreenTour(string folder)
     static RenderTargetBitmap? Picture(FrameworkElement visual)
     {
         visual.UpdateLayout();if(visual.ActualWidth<2||visual.ActualHeight<2)return null;
-        var bitmap=new RenderTargetBitmap((int)Math.Ceiling(visual.ActualWidth),(int)Math.Ceiling(visual.ActualHeight),96,96,PixelFormats.Pbgra32);bitmap.Render(visual);return bitmap;
+        var s=MainWindow.CaptureScale;var bitmap=new RenderTargetBitmap((int)Math.Ceiling(visual.ActualWidth*s),(int)Math.Ceiling(visual.ActualHeight*s),96*s,96*s,PixelFormats.Pbgra32);bitmap.Render(visual);return bitmap;
     }
     static string Look(FrameworkElement visual)
     {

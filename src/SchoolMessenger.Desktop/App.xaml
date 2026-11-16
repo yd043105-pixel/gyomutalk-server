@@ -9,6 +9,19 @@
    <GeometryDrawing Brush="White" Geometry="M38 44h34c11 0 19 8 19 19v17c0 11-8 19-19 19H53l-18 13V98c-10-1-16-8-16-18V63c0-11 8-19 19-19Z"/>
    <GeometryDrawing Geometry="M38 64h33M38 78h21"><GeometryDrawing.Pen><Pen Brush="#2463EB" Thickness="7" StartLineCap="Round" EndLineCap="Round"/></GeometryDrawing.Pen></GeometryDrawing>
   </DrawingGroup></DrawingImage.Drawing></DrawingImage>
+  <!-- The administrator and server program: the same mark with a server badge (Shared/Branding/admin_mark.svg). -->
+  <DrawingImage x:Key="AdminMark"><DrawingImage.Drawing><DrawingGroup ClipGeometry="M0,0 H128 V128 H0 Z">
+   <GeometryDrawing Brush="#2463EB"><GeometryDrawing.Geometry><RectangleGeometry Rect="0,0,128,128" RadiusX="29" RadiusY="29"/></GeometryDrawing.Geometry></GeometryDrawing>
+   <GeometryDrawing Brush="#A9D9EC" Geometry="M57 25h32c11 0 18 7 18 18v16c0 10-6 17-16 18l-12 10V75H57c-11 0-18-7-18-18V43c0-11 7-18 18-18Z"/>
+   <GeometryDrawing Brush="White" Geometry="M38 44h34c11 0 19 8 19 19v17c0 11-8 19-19 19H53l-18 13V98c-10-1-16-8-16-18V63c0-11 8-19 19-19Z"/>
+   <GeometryDrawing Geometry="M38 64h33M38 78h21"><GeometryDrawing.Pen><Pen Brush="#2463EB" Thickness="7" StartLineCap="Round" EndLineCap="Round"/></GeometryDrawing.Pen></GeometryDrawing>
+   <GeometryDrawing Brush="White"><GeometryDrawing.Geometry><EllipseGeometry Center="100,100" RadiusX="27" RadiusY="27"/></GeometryDrawing.Geometry></GeometryDrawing>
+   <GeometryDrawing Brush="#12306B"><GeometryDrawing.Geometry><EllipseGeometry Center="100,100" RadiusX="22" RadiusY="22"/></GeometryDrawing.Geometry></GeometryDrawing>
+   <GeometryDrawing Brush="White"><GeometryDrawing.Geometry><RectangleGeometry Rect="88,87,24,10.5" RadiusX="3" RadiusY="3"/></GeometryDrawing.Geometry></GeometryDrawing>
+   <GeometryDrawing Brush="White"><GeometryDrawing.Geometry><RectangleGeometry Rect="88,102.5,24,10.5" RadiusX="3" RadiusY="3"/></GeometryDrawing.Geometry></GeometryDrawing>
+   <GeometryDrawing Brush="#12306B"><GeometryDrawing.Geometry><EllipseGeometry Center="94,92.25" RadiusX="2" RadiusY="2"/></GeometryDrawing.Geometry></GeometryDrawing>
+   <GeometryDrawing Brush="#12306B"><GeometryDrawing.Geometry><EllipseGeometry Center="94,107.75" RadiusX="2" RadiusY="2"/></GeometryDrawing.Geometry></GeometryDrawing>
+  </DrawingGroup></DrawingImage.Drawing></DrawingImage>
   <Style x:Key="SchoolWindow" TargetType="Window">
    <Setter Property="Icon" Value="/Assets/brand_mark.ico"/>
    <Setter Property="FontFamily" Value="Malgun Gothic"/><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="{DynamicResource Ink}"/><Setter Property="Background" Value="{DynamicResource Surface}"/>
@@ -19,7 +32,7 @@
      <Grid><Grid.RowDefinitions><RowDefinition Height="38"/><RowDefinition/></Grid.RowDefinitions>
       <Border Background="{DynamicResource Glass}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1">
        <Grid Margin="13,0,6,0"><Grid.ColumnDefinitions><ColumnDefinition Width="35"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-        <Image Width="27" Height="27" Source="{StaticResource ProductMark}" HorizontalAlignment="Left" AutomationProperties.Name="교무톡"/>
+        <Image Width="27" Height="27" Source="{DynamicResource ProductMark}" HorizontalAlignment="Left" AutomationProperties.Name="교무톡"/>
         <TextBlock Grid.Column="1" Text="{TemplateBinding Title}" Foreground="{DynamicResource Ink}" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="0,0,8,0"/>
         <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" shell:WindowChrome.IsHitTestVisibleInChrome="True">
          <Button x:Name="MinimizeAction" Style="{StaticResource ChromeButton}" ToolTip="최소화" AutomationProperties.Name="최소화" Click="MinimizeWindow"><Path Data="M0,0 L10,0" Stroke="{DynamicResource Muted}" StrokeThickness="1" Width="10"/></Button>
