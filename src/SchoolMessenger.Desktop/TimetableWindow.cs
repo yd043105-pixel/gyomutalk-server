@@ -14,7 +14,7 @@ namespace SchoolMessenger.Desktop;
 
 public sealed partial class TimetableWindow:Window
 {
-    readonly Api api;
+    readonly Api api;readonly Func<string,bool> feature;readonly MainWindow main;
     readonly StackPanel body=new(){Margin=new Thickness(16)};
     readonly TextBlock feedback=new(){TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,12,0,12)};
 
@@ -28,16 +28,17 @@ public sealed partial class TimetableWindow:Window
     string? candidate,requestId;
     readonly Dictionary<string,ComboBox> classLinks=[],teacherLinks=[];
     DatePicker? start,end;
-    public TimetableWindow(MainWindow main,string? selectedDate=null)
+    public TimetableWindow(MainWindow main,string? selectedDate=null,bool swapQueue=false)
     { StatusTone.Watch(feedback);
-        api=main.Api!;main.RegisterWorkWindow(this);Resources=main.Resources;Title="교무톡 · 시간표";Width=960;Height=740;MinWidth=700;MinHeight=520;FontSize=13;
+        api=main.Api!;this.main=main;feature=main.Feature;main.RegisterWorkWindow(this);Resources=main.Resources;Title="교무톡 · 시간표";Width=960;Height=740;MinWidth=700;MinHeight=520;FontSize=13;
         Style=(Style)FindResource("SchoolWindow");WindowStartupLocation=WindowStartupLocation.CenterOwner;
         var page=new DockPanel();page.SetResourceReference(Panel.BackgroundProperty,"Surface");
         scheduleFooter.SetResourceReference(Border.BackgroundProperty,"Subtle");scheduleFooter.SetResourceReference(Border.BorderBrushProperty,"Line");
         DockPanel.SetDock(scheduleFooter,Dock.Bottom);page.Children.Add(scheduleFooter);pageScroll.Content=body;var stage=new Grid();stage.Children.Add(pageScroll);stage.Children.Add(fixedPage);page.Children.Add(stage);Content=page;
         feedback.IsVisibleChanged+=(_,_)=>{if(boardHint is not null)boardHint.Visibility=feedback.Visibility==Visibility.Visible?Visibility.Collapsed:Visibility.Visible;};
         if(DateTime.TryParse(selectedDate,out var day)){selected=day;weekly=false;}
-        Loaded+=async(_,_)=>await Run(Load);
+        // A swap reminder opens straight onto the requests page.
+        Loaded+=async(_,_)=>await Run(async()=>{await Load();if(swapQueue)await SwapQueue();});
     }
     record Choice(string Id,string Name){public override string ToString()=>Name;}
     static string TeacherLabel(JsonElement value)=>value.GetProperty("name").GetString()+" · "+value.GetProperty("department").GetString()+" · "+value.GetProperty("username").GetString();
@@ -112,6 +113,16 @@ public sealed partial class TimetableWindow:Window
             var day=await api.Get<TimetableDay>("api/timetable/day?date="+first.AddDays(i).ToString("yyyy-MM-dd")+(mine?"&mine=true":"&classId="+choice.Id));
             if(revision is not null&&revision!=day.Revision)throw new InvalidOperationException("조회 중 시간표가 갱신되었습니다. 다시 조회하세요.");revision=day.Revision;days.Add(day);
         }
+        // School events that take lessons, shown in those lessons. The timetable works without them.
+        JsonElement[] events=[];
+        if(feature("calendar"))try{events=(await api.Get<JsonElement>("api/office/events?from="+first.ToString("yyyy-MM-dd")+"&to="+first.AddDays(count).ToString("yyyy-MM-dd"))).EnumerateArray().Where(e=>OfficeWindow.Periods(e).Length>0).ToArray();}catch(Exception e)when(e is InvalidOperationException or HttpRequestException or TaskCanceledException or JsonException){}
+        JsonElement[] At(DateTime date,int period)=>events.Where(e=>OfficeWindow.Covers(e,date)&&OfficeWindow.Periods(e).Contains(period)).ToArray();
+        Border EventTag(JsonElement e,bool lessons)
+        {
+            var title=e.GetProperty("title").GetString()??"";var text=new TextBlock{FontSize=lessons?12:11,FontWeight=FontWeights.SemiBold,TextTrimming=TextTrimming.CharacterEllipsis,Foreground=Avatar.Ink(title)};
+            text.Inlines.Add(new System.Windows.Documents.Run((lessons?SchoolDay.PeriodText(OfficeWindow.Periods(e)):"행사")+" "){FontWeight=FontWeights.Normal});text.Inlines.Add(new System.Windows.Documents.Run(title));
+            return new Border{Child=text,Background=Avatar.Back(title),CornerRadius=new CornerRadius(6),Padding=new Thickness(5,1,5,1),Margin=new Thickness(0,0,0,1),ToolTip=title+" · "+SchoolDay.PeriodText(OfficeWindow.Periods(e))+" · "+e.GetProperty("ownerName").GetString()+" 등록"+(e.GetProperty("description").GetString() is{Length:>0} about?"\n"+about:"")};
+        }
         printDays = days.ToArray();
         printTitle = choice.Name + " 시간표";
         var lessons=days.SelectMany(d=>d.Slots).Where(s=>s.Subject.Length>0).ToArray();var published=days.Max(d=>d.PublishedAt);
@@ -156,6 +167,7 @@ public sealed partial class TimetableWindow:Window
                 for(var c=0;c<shown.Length;c++)
                 {
                     var slots=shown[c].Day.Slots.Where(s=>s.Period==periods[r].Number&&s.Subject.Length>0).ToArray();var cell=new StackPanel{Margin=new Thickness(3,0,3,0)};
+                    foreach(var e in At(shown[c].Date,periods[r].Number))cell.Children.Add(EventTag(e,false));
                     foreach(var s in slots)
                     {
                         var content=new StackPanel();content.Children.Add(Lesson(s,13));if(mine||s.Changed)content.Children.Add(AdminUi.Label((mine?s.ClassName:"")+(s.Changed?(mine?" · ":"")+"변경":""),s.Changed?"ChangeInk":"Muted",11));
@@ -169,6 +181,7 @@ public sealed partial class TimetableWindow:Window
         else
         {
             var today=days[0].Slots.Where(s=>s.Subject.Length>0).OrderBy(s=>s.Period).ToArray();
+            foreach(var e in events.Where(e=>OfficeWindow.Covers(e,first))){var tag=EventTag(e,true);tag.Padding=new Thickness(10,6,10,6);tag.Margin=new Thickness(0,0,0,8);view.Children.Add(tag);}
             if(today.Length==0)view.Children.Add(AdminUi.Empty(mine?"이 날은 내 수업이 없습니다":"이 날은 수업이 없습니다","다른 날짜로 이동하거나 한 주 보기로 확인하세요."));
             foreach(var s in today)
             {

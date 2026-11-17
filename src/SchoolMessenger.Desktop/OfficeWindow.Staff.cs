@@ -128,7 +128,7 @@ public sealed partial class OfficeWindow
             }
             var admin=Switch("시스템 관리자","관리자 프로그램에 로그인하고 계정을 관리합니다.",s.Admin);
             var broadcast=Switch("학교 전체 공지","전 교직원에게 공지 메시지를 보낼 수 있습니다.",s.Broadcast);
-            var calendar=Switch("학사일정 담당","학사일정을 등록하고 변경합니다.",s.Calendar);
+            var calendar=Switch("학사일정 담당","다른 교직원이 등록한 학사일정도 바꾸거나 취소합니다.",s.Calendar);
             var rooms=Switch("특별실 운영 담당","특별실을 추가하고 예약을 조정합니다.",s.Rooms);
             var timetable=Switch("시간표 담당",s.Admin?"관리자는 기본으로 시간표를 올릴 수 있습니다.":"나이스에서 받은 시간표를 올려 선생님들의 시간표에 반영합니다.",s.Timetable||s.Admin);timetable.IsEnabled=!s.Admin;
             var actions=new DockPanel{Margin=new Thickness(0,18,0,0)};

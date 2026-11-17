@@ -8,7 +8,7 @@ namespace SchoolMessenger.Server;
 
 public static class OfficeFeatures
 {
-    record Event(string Id,string OwnerId,string OwnerName,string Title,string Description,long Start,long End,bool AllDay,int Revision,bool Cancelled);
+    record Event(string Id,string OwnerId,string OwnerName,string Title,string Description,long Start,long End,bool AllDay,int Revision,bool Cancelled,int[] Periods);
     record Room(string Id,string Name,string Location,bool Active,int Revision);
     record Booking(string Id,string OwnerId,string OwnerName,string ClientId,string RoomId,string RoomName,string Title,long Start,long End,int Revision,bool Cancelled,int Grade);
     static string User(HttpContext c)=>c.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -28,6 +28,8 @@ public static class OfficeFeatures
         CREATE INDEX IF NOT EXISTS IX_OfficeBookings_Overlap ON OfficeBookings(RoomId,Cancelled,Start,End);
         """);
         if(!store.Query("PRAGMA table_info(OfficeBookings)",r=>r.GetString(1)).Contains("Grade"))store.Execute("ALTER TABLE OfficeBookings ADD COLUMN Grade INTEGER NOT NULL DEFAULT 1");
+        // "3,4": the lessons an all-day event takes. Empty for an event without lessons.
+        if(!store.Query("PRAGMA table_info(OfficeEvents)",r=>r.GetString(1)).Contains("Periods"))store.Execute("ALTER TABLE OfficeEvents ADD COLUMN Periods TEXT NOT NULL DEFAULT ''");
     }
     static bool Granted(SqliteConnection db,SqliteTransaction? tx,string id,string permission)
     {
@@ -50,9 +52,9 @@ public static class OfficeFeatures
         if(!DateOnly.TryParseExact(from,"yyyy-MM-dd",CultureInfo.InvariantCulture,DateTimeStyles.None,out var a)||!DateOnly.TryParseExact(to,"yyyy-MM-dd",CultureInfo.InvariantCulture,DateTimeStyles.None,out var b)||b<=a||b.DayNumber-a.DayNumber>366)return false;
         start=new DateTimeOffset(a.ToDateTime(TimeOnly.MinValue),TimeSpan.FromHours(9)).ToUnixTimeMilliseconds();end=new DateTimeOffset(b.ToDateTime(TimeOnly.MinValue),TimeSpan.FromHours(9)).ToUnixTimeMilliseconds();return true;
     }
-    static Event ReadEvent(SqliteDataReader r)=>new(r.GetString(0),r.GetString(1),r.GetString(2),r.GetString(3),r.GetString(4),r.GetInt64(5),r.GetInt64(6),r.GetBoolean(7),r.GetInt32(8),r.GetBoolean(9));
+    static Event ReadEvent(SqliteDataReader r)=>new(r.GetString(0),r.GetString(1),r.GetString(2),r.GetString(3),r.GetString(4),r.GetInt64(5),r.GetInt64(6),r.GetBoolean(7),r.GetInt32(8),r.GetBoolean(9),r.GetString(10).Split(',',StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToArray());
     static Booking ReadBooking(SqliteDataReader r)=>new(r.GetString(0),r.GetString(1),r.GetString(2),r.GetString(3),r.GetString(4),r.GetString(5),r.GetString(6),r.GetInt64(7),r.GetInt64(8),r.GetInt32(9),r.GetBoolean(10),r.GetInt32(11));
-    const string Events="SELECT e.Id,e.OwnerId,u.Name,e.Title,e.Description,e.Start,e.End,e.AllDay,e.Revision,e.Cancelled FROM OfficeEvents e JOIN Users u ON u.Id=e.OwnerId";
+    const string Events="SELECT e.Id,e.OwnerId,u.Name,e.Title,e.Description,e.Start,e.End,e.AllDay,e.Revision,e.Cancelled,e.Periods FROM OfficeEvents e JOIN Users u ON u.Id=e.OwnerId";
     const string Bookings="SELECT b.Id,b.OwnerId,u.Name,b.ClientId,b.RoomId,r.Name,b.Title,b.Start,b.End,b.Revision,b.Cancelled,b.Grade FROM OfficeBookings b JOIN Users u ON u.Id=b.OwnerId JOIN OfficeRooms r ON r.Id=b.RoomId";
     public static void Map(RouteGroupBuilder api,RouteGroupBuilder admin,Store store)
     {
@@ -84,18 +86,25 @@ public static class OfficeFeatures
     {
         if(!Guid.TryParseExact(request.ClientId,"N",out _)||string.IsNullOrWhiteSpace(request.Title)||request.Title.Length>200||request.Description is null||request.Description.Length>10000||!Time(request.Start,out var start)||!Time(request.End,out var end)||end<=start||end-start>366*86_400_000L)return Error("일정 제목·설명과 시작/종료 시간을 확인하세요.");
         if(request.AllDay&&(start%86_400_000!=54_000_000||end%86_400_000!=54_000_000))return Error("종일 일정은 한국 시간 자정부터 다음 날 자정까지 지정하세요.");
+        if(request.Periods is{} chosen&&(chosen.Length>10||chosen.Any(p=>p is <1 or >10)||chosen.Distinct().Count()!=chosen.Length||chosen.Length>0&&!request.AllDay))return Error("교시는 날짜만 쓰는 일정에 1~10교시에서 한 번씩 고르세요.");
+        var periods=request.Periods is{} picked?string.Join(',',picked.Order()):null;
         using var db=store.Open();using var tx=db.BeginTransaction(deferred:false);
         if(!Current(db,tx,c))return Error("계정 상태가 변경되었습니다. 다시 로그인하세요.",401);
-        if(!Granted(db,tx,User(c),"CalendarManager"))return Error("학사일정 담당 권한이 필요합니다.",403);
+        // Every teacher registers events; an event is changed by whoever registered it or by the calendar manager.
+        if(id is not null)
+        {
+            using var owner=Store.Command(db,"SELECT OwnerId FROM OfficeEvents WHERE Id=$id",tx,("$id",id));var ownerId=owner.ExecuteScalar() as string;if(ownerId is null)return Results.NotFound();
+            if(ownerId!=User(c)&&!Granted(db,tx,User(c),"CalendarManager"))return Error("본인이 등록한 일정만 바꿀 수 있습니다.",403);
+        }
         if(id is null)
         {
             using var previous=Store.Command(db,Events+" WHERE e.OwnerId=$user AND e.ClientId=$client",tx,("$user",User(c)),("$client",request.ClientId));
-            using(var reader=previous.ExecuteReader())if(reader.Read()){var value=ReadEvent(reader);return value.Title==request.Title.Trim()&&value.Description==request.Description&&value.Start==start&&value.End==end&&value.AllDay==request.AllDay&&!value.Cancelled?Results.Ok(new{id=value.Id,revision=value.Revision,duplicate=true}):Error("같은 요청 번호의 내용을 바꿀 수 없습니다.",409);}
-            id=Guid.NewGuid().ToString("N");using var add=Store.Command(db,"INSERT INTO OfficeEvents(Id,OwnerId,ClientId,Title,Description,Start,End,AllDay) VALUES($id,$user,$client,$title,$description,$start,$end,$all)",tx,("$id",id),("$user",User(c)),("$client",request.ClientId),("$title",request.Title.Trim()),("$description",request.Description),("$start",start),("$end",end),("$all",request.AllDay));add.ExecuteNonQuery();
+            using(var reader=previous.ExecuteReader())if(reader.Read()){var value=ReadEvent(reader);return value.Title==request.Title.Trim()&&value.Description==request.Description&&value.Start==start&&value.End==end&&value.AllDay==request.AllDay&&string.Join(',',value.Periods)==(periods??"")&&!value.Cancelled?Results.Ok(new{id=value.Id,revision=value.Revision,duplicate=true}):Error("같은 요청 번호의 내용을 바꿀 수 없습니다.",409);}
+            id=Guid.NewGuid().ToString("N");using var add=Store.Command(db,"INSERT INTO OfficeEvents(Id,OwnerId,ClientId,Title,Description,Start,End,AllDay,Periods) VALUES($id,$user,$client,$title,$description,$start,$end,$all,$periods)",tx,("$id",id),("$user",User(c)),("$client",request.ClientId),("$title",request.Title.Trim()),("$description",request.Description),("$start",start),("$end",end),("$all",request.AllDay),("$periods",periods??""));add.ExecuteNonQuery();
         }
         else
         {
-            using var update=Store.Command(db,"UPDATE OfficeEvents SET Title=$title,Description=$description,Start=$start,End=$end,AllDay=$all,Revision=Revision+1 WHERE Id=$id AND Revision=$version AND Cancelled=0",tx,("$title",request.Title.Trim()),("$description",request.Description),("$start",start),("$end",end),("$all",request.AllDay),("$id",id),("$version",request.Revision));if(update.ExecuteNonQuery()!=1)return Error("일정이 변경 또는 취소되었습니다. 다시 조회하세요.",409);
+            using var update=Store.Command(db,"UPDATE OfficeEvents SET Title=$title,Description=$description,Start=$start,End=$end,AllDay=$all,Periods=CASE WHEN $all=0 THEN '' ELSE COALESCE($periods,Periods) END,Revision=Revision+1 WHERE Id=$id AND Revision=$version AND Cancelled=0",tx,("$title",request.Title.Trim()),("$description",request.Description),("$start",start),("$end",end),("$all",request.AllDay),("$periods",periods),("$id",id),("$version",request.Revision));if(update.ExecuteNonQuery()!=1)return Error("일정이 변경 또는 취소되었습니다. 다시 조회하세요.",409);
         }
         StaffAccounts.Audit(db,tx,User(c),"event.save",id);tx.Commit();return Results.Ok(new{id,revision=request.Revision+1});
     }
@@ -136,7 +145,7 @@ public static class OfficeFeatures
     {
         using var db=store.Open();using var tx=db.BeginTransaction(deferred:false);if(!Current(db,tx,c))return Error("계정 상태가 변경되었습니다. 다시 로그인하세요.",401);var table=isEvent?"OfficeEvents":"OfficeBookings";
         using var owner=Store.Command(db,$"SELECT OwnerId FROM {table} WHERE Id=$id",tx,("$id",id));var ownerId=owner.ExecuteScalar() as string;if(ownerId is null)return Results.NotFound();
-        if(isEvent?!Granted(db,tx,User(c),"CalendarManager"):ownerId!=User(c)&&!Granted(db,tx,User(c),"RoomManager"))return Error("취소 권한이 없습니다.",403);
+        if(ownerId!=User(c)&&!Granted(db,tx,User(c),isEvent?"CalendarManager":"RoomManager"))return Error("취소 권한이 없습니다.",403);
         using var cancel=Store.Command(db,$"UPDATE {table} SET Cancelled=1,Revision=Revision+1 WHERE Id=$id AND Revision=$version AND Cancelled=0",tx,("$id",id),("$version",revision));if(cancel.ExecuteNonQuery()!=1)return Error("이미 변경 또는 취소되었습니다. 다시 조회하세요.",409);
         StaffAccounts.Audit(db,tx,User(c),isEvent?"event.cancel":"booking.cancel",id);tx.Commit();return Results.Ok();
     }

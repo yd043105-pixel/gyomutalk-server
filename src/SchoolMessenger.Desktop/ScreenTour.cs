@@ -94,6 +94,8 @@ sealed class ScreenTour(string folder)
     string Page(Window window)
     {
         var kind=window.GetType().Name;var heading=Tree(window).OfType<TextBlock>().FirstOrDefault(t=>t.IsVisible&&t.FontSize>=20&&t.Text.Trim().Length>0)?.Text??"";
+        // Tabs drawn as buttons keep the heading; the selected one tells the pages apart.
+        if(Tree(window).OfType<Button>().FirstOrDefault(b=>b.IsVisible&&Equals(b.Tag,"selected")) is{} tab)heading+=" · "+Label(tab);
         var known=pages.TryGetValue(kind,out var set)?set:pages[kind]=new();if(!known.Contains(heading)&&known.Count>=MostPages)heading="";else known.Add(heading);
         return kind+":"+Short(window.Title,30)+":"+Short(heading,30);
     }

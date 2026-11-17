@@ -57,10 +57,10 @@ public sealed partial class OfficeWindow:Window
         // A school that uses only the calendar or only the rooms gets that one page without tabs.
         var both=administration||feature("calendar")&&feature("rooms");if(!both)bookings=feature("rooms");
         setup=await api.Get<JsonElement>("api/office/setup");Page(false);if(!Embedded)body.Margin=new Thickness(24,16,24,16);
-        var head=new DockPanel();var canAdd=bookings?setup.GetProperty("rooms").EnumerateArray().Any(r=>r.GetProperty("active").GetBoolean()):setup.GetProperty("calendarManager").GetBoolean();
+        var head=new DockPanel();var canAdd=!bookings||setup.GetProperty("rooms").EnumerateArray().Any(r=>r.GetProperty("active").GetBoolean());
         if(canAdd){var add=new Button{Content=bookings?"특별실 예약하기":"학교 일정 등록",VerticalAlignment=VerticalAlignment.Bottom};add.SetResourceReference(StyleProperty,"PrimaryButton");add.Click+=async(_,_)=>await Run(()=>Editor(bookings,null));DockPanel.SetDock(add,Dock.Right);head.Children.Add(add);}
         if(bookings&&setup.GetProperty("roomManager").GetBoolean()){var rooms=new Button{Content="특별실 관리",Margin=new Thickness(0,0,8,0),VerticalAlignment=VerticalAlignment.Bottom};rooms.Click+=async(_,_)=>await Run(Rooms);DockPanel.SetDock(rooms,Dock.Right);head.Children.Add(rooms);}
-        head.Children.Add(Embedded?AdminUi.PageTitle(bookings?"특별실 예약":"학사일정",bookings?"교직원이 예약한 특별실을 날짜별로 확인하고 조정합니다.":"학교 일정을 등록하고 바꿉니다. 교직원 메신저의 학사일정에 표시됩니다."):AdminUi.Heading(both?"학사일정 · 특별실":bookings?"특별실 예약":"학사일정",22));body.Children.Add(head);
+        head.Children.Add(Embedded?AdminUi.PageTitle(bookings?"특별실 예약":"학사일정",bookings?"교직원이 예약한 특별실을 날짜별로 확인하고 조정합니다.":"교직원이 등록한 학교 일정을 모두 바꾸거나 취소할 수 있습니다. 교시를 고른 일정은 시간표에도 보입니다."):AdminUi.Heading(both?"학사일정 · 특별실":bookings?"특별실 예약":"학사일정",22));body.Children.Add(head);
         var rule=new Border{Height=1,Margin=new Thickness(Embedded?0:-24,0,Embedded?0:-24,12)};
         var tabs=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(-4,Embedded?10:4,0,0)};void Tab(string label,bool on,bool target){var t=new Button{Content=label,Tag=on?"selected":null};t.SetResourceReference(StyleProperty,"TabButton");t.Click+=async(_,_)=>await Run(()=>Load(target));tabs.Children.Add(t);}
         Tab("학사일정",!bookings,false);Tab("특별실 예약",bookings,true);if(both)body.Children.Add(tabs);else rule.Margin=new Thickness(Embedded?0:-24,10,Embedded?0:-24,12);rule.SetResourceReference(Border.BackgroundProperty,"Line");body.Children.Add(rule);
@@ -71,7 +71,13 @@ public sealed partial class OfficeWindow:Window
         if(bookings)await BookingGrid();else await MonthGrid();
     }
     static readonly CultureInfo Korean=CultureInfo.GetCultureInfo("ko-KR");
+    static readonly ControlTemplate Plain=new(typeof(Button)){VisualTree=new FrameworkElementFactory(typeof(ContentPresenter))};
     static DateTime KoreaTime(JsonElement row,string key)=>DateTimeOffset.FromUnixTimeMilliseconds(row.GetProperty(key).GetInt64()).ToOffset(TimeSpan.FromHours(9)).DateTime;
+    // An event's lessons; servers before 0.1.6 send none.
+    internal static int[] Periods(JsonElement row)=>row.TryGetProperty("periods",out var p)&&p.ValueKind==JsonValueKind.Array?p.EnumerateArray().Select(x=>x.GetInt32()).ToArray():[];
+    // The days an event covers: an all-day event is stored up to the midnight after its last day.
+    internal static bool Covers(JsonElement row,DateTime date){var from=KoreaTime(row,"start").Date;var end=KoreaTime(row,"end");var to=(end.TimeOfDay==TimeSpan.Zero&&end.Date>from?end.AddDays(-1):end).Date;return date>=from&&date<=to;}
+    bool CanChange(JsonElement row)=>setup.GetProperty("calendarManager").GetBoolean()||row.GetProperty("ownerId").GetString()==setup.GetProperty("userId").GetString();
     async Task MonthGrid()
     {
         var first=new DateTime(officeDate.Year,officeDate.Month,1);var rows=(await api.Get<JsonElement>("api/office/events?from="+first.ToString("yyyy-MM-dd")+"&to="+first.AddMonths(1).ToString("yyyy-MM-dd"))).EnumerateArray().ToArray();
@@ -85,17 +91,19 @@ public sealed partial class OfficeWindow:Window
             if(date==today){var number=AdminUi.Label(date.Day.ToString(),"OnAccent",12,true);number.HorizontalAlignment=HorizontalAlignment.Center;number.VerticalAlignment=VerticalAlignment.Center;
                 var circle=new Border{Width=24,Height=24,CornerRadius=new CornerRadius(12),Child=number,HorizontalAlignment=HorizontalAlignment.Left,Margin=new Thickness(-5,-4,0,0),ToolTip="오늘"};circle.SetResourceReference(Border.BackgroundProperty,"Blue");stack.Children.Add(circle);}
             else stack.Children.Add(AdminUi.Label(date.Day.ToString(),d==0?"Danger":d==6?"Blue":"Muted",12));
-            foreach(var row in rows.Where(r=>{var from=KoreaTime(r,"start").Date;var end=KoreaTime(r,"end");var to=(end.TimeOfDay==TimeSpan.Zero&&end.Date>from?end.AddDays(-1):end).Date;return date>=from&&date<=to;}))
+            foreach(var row in rows.Where(r=>Covers(r,date)))
             {
-                var title=row.GetProperty("title").GetString()??"";var text=new TextBlock{Text=title,FontSize=11,FontWeight=FontWeights.SemiBold,TextTrimming=TextTrimming.CharacterEllipsis,Foreground=Avatar.Ink(title)};
-                var tip=(row.GetProperty("allDay").GetBoolean()?"종일":Date(row,"start")+" ~ "+Date(row,"end"))+" · "+row.GetProperty("ownerName").GetString()+(row.GetProperty("description").GetString() is{Length:>0} about?"\n"+about:"");
+                var title=row.GetProperty("title").GetString()??"";var lessons=SchoolDay.PeriodText(Periods(row));var text=new TextBlock{FontSize=11,FontWeight=FontWeights.SemiBold,TextTrimming=TextTrimming.CharacterEllipsis,Foreground=Avatar.Ink(title)};
+                if(lessons.Length>0)text.Inlines.Add(new System.Windows.Documents.Run(lessons+" "){FontWeight=FontWeights.Normal});text.Inlines.Add(new System.Windows.Documents.Run(title));
+                var tip=title+"\n"+(lessons.Length>0?lessons:row.GetProperty("allDay").GetBoolean()?"종일":Date(row,"start")+" ~ "+Date(row,"end"))+" · "+row.GetProperty("ownerName").GetString()+" 등록"+(row.GetProperty("description").GetString() is{Length:>0} about?"\n"+about:"");
                 var chip=new Border{Child=text,Padding=new Thickness(6,3,6,3),Margin=new Thickness(0,4,0,0),CornerRadius=new CornerRadius(6),ToolTip=tip,Background=Avatar.Back(title)};
-                if(manager){chip.Cursor=System.Windows.Input.Cursors.Hand;var picked=row;chip.MouseLeftButtonUp+=async(_,_)=>await Run(()=>Editor(false,picked));}
-                stack.Children.Add(chip);
+                // An event its teacher may change is a button, reachable with the keyboard and by the screen tour.
+                if(CanChange(row)){var picked=row;var open=new Button{Content=chip,Template=Plain,Cursor=System.Windows.Input.Cursors.Hand,ToolTip=tip,HorizontalContentAlignment=HorizontalAlignment.Stretch};chip.ToolTip=null;System.Windows.Automation.AutomationProperties.SetName(open,title+" 일정 열기");open.Click+=async(_,_)=>await Run(()=>Editor(false,picked));stack.Children.Add(open);}
+                else stack.Children.Add(chip);
             }
         }
         var frame=new Border{Child=grid,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(10),ClipToBounds=true};frame.SetResourceReference(Border.BorderBrushProperty,"Line");frame.SetResourceReference(Border.BackgroundProperty,"Surface");body.Children.Add(frame);
-        if(manager){var note=AdminUi.Label("일정을 누르면 변경하거나 취소할 수 있습니다.","Faint",11);note.Margin=new Thickness(0,8,0,0);body.Children.Add(note);}
+        {var note=AdminUi.Label(manager?"일정을 누르면 바꾸거나 취소할 수 있습니다.":"내가 등록한 일정을 누르면 바꾸거나 취소할 수 있습니다.","Faint",11);note.Margin=new Thickness(0,8,0,0);body.Children.Add(note);}
     }
     async Task BookingGrid()
     {
@@ -136,18 +144,31 @@ public sealed partial class OfficeWindow:Window
         Pair(()=>Put("시작 날짜",first),()=>firstTime=Field("시작 시각 (예: 09:00)",start.ToString("HH:mm")));
         Pair(()=>Put("끝나는 날짜",last),()=>lastTime=Field("끝나는 시각 (예: 16:30)",end.ToString("HH:mm")));
         var allDay=new CheckBox{Content="하루 종일 (시각 없이 날짜만)",IsChecked=whole,Margin=new Thickness(0,14,0,6)};body.Children.Add(allDay);
+        // Lessons the event takes on each of its days; every teacher sees them on the timetable.
+        body.Children.Add(Text("교시 (선택)"));var saved=existing is{} withLessons?Periods(withLessons):[];
+        var lessons=new WrapPanel();var picks=Enumerable.Range(1,7).Select(p=>new CheckBox{Content=p+"교시",IsChecked=saved.Contains(p),Margin=new Thickness(0,2,16,4),Tag=p}).ToArray();foreach(var pick in picks)lessons.Children.Add(pick);body.Children.Add(lessons);
+        body.Children.Add(Text("교시를 고르면 날짜만 쓰는 일정이 되고, 모든 선생님의 시간표 그 교시에 행사 이름이 보입니다.",12));
         void Times(){firstTime.IsEnabled=lastTime.IsEnabled=allDay.IsChecked!=true;}
-        allDay.Click+=(_,_)=>Times();Times();
+        allDay.Click+=(_,_)=>{if(allDay.IsChecked!=true)foreach(var pick in picks)pick.IsChecked=false;Times();};
+        foreach(var pick in picks)pick.Click+=(_,_)=>{if(pick.IsChecked==true)allDay.IsChecked=true;Times();};Times();
         var client=Guid.NewGuid().ToString("N");
-        Button("저장",async()=>
+        var actions=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,16,0,8)};body.Children.Add(actions);
+        void Action(string label,Func<Task> run){var b=AdminUi.Tone(new Button{Content=label,Margin=new Thickness(0,0,8,0)},label);b.Click+=async(_,_)=>await Run(run);actions.Children.Add(b);}
+        Action("저장",async()=>
         {
             if(first.SelectedDate is not{} from||last.SelectedDate is not{} to)throw new InvalidOperationException("날짜를 선택하세요.");
             var day=allDay.IsChecked==true;TimeSpan startTime=default,endTime=default;
             if(!day&&(!TimeSpan.TryParseExact(firstTime.Text.Trim(),"hh\\:mm",CultureInfo.InvariantCulture,out startTime)||!TimeSpan.TryParseExact(lastTime.Text.Trim(),"hh\\:mm",CultureInfo.InvariantCulture,out endTime)))throw new InvalidOperationException("시각은 09:00처럼 적어 주세요.");
             string Stamp(DateTime date,TimeSpan time)=>new DateTimeOffset(DateTime.SpecifyKind(date.Date,DateTimeKind.Unspecified).Add(time),TimeSpan.FromHours(9)).ToString("yyyy-MM-dd'T'HH:mm:sszzz");
-            var request=new OfficeEventRequest(client,title.Text,description.Text,Stamp(from,startTime),Stamp(day?to.AddDays(1):to,endTime),day,existing?.GetProperty("revision").GetInt32()??0);
+            var request=new OfficeEventRequest(client,title.Text,description.Text,Stamp(from,startTime),Stamp(day?to.AddDays(1):to,endTime),day,existing?.GetProperty("revision").GetInt32()??0,picks.Where(p=>p.IsChecked==true).Select(p=>(int)p.Tag).ToArray());
             await api.Send<JsonElement>(HttpMethod.Post,"api/office/events"+(existing is{} old?"/"+old.GetProperty("id").GetString():""),request);await Load(false);
-        });return Task.CompletedTask;
+        });
+        if(existing is{} current)Action("일정 취소",async()=>
+        {
+            if(Notice.Show(InteractionOwner,"‘"+current.GetProperty("title").GetString()+"’ 일정을 취소할까요? 모든 선생님의 학사일정과 시간표에서 사라집니다.","일정 취소",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+            await api.Send<JsonElement>(HttpMethod.Post,"api/office/events/"+current.GetProperty("id").GetString()+"/cancel",new OfficeRevision(current.GetProperty("revision").GetInt32()));await Load(false);
+        });
+        return Task.CompletedTask;
     }
     Task Rooms()
     {

@@ -71,6 +71,9 @@ public sealed partial class TimetableWindow
     {
         var rows = await api.Get<TimetableSwap[]>("api/timetable/swaps");
         var byId = rows.ToDictionary(s => s.Id);
+        // Seeing the requests here is reading them: the five-minute reminder stops for these.
+        var waiting = rows.Where(s => s.Status is "pending" or "review").Select(s => s.Id).ToArray();
+        main.MarkSwapsSeen(waiting, waiting);
         SchedulePage("교체 신청 현황");
         // Page tools sit on one line under the heading instead of stacking full-width rows.
         var tools = new WrapPanel { Margin = new Thickness(0, 8, 0, 4) };

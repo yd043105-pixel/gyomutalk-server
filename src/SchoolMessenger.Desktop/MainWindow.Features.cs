@@ -32,6 +32,7 @@ public partial class MainWindow
         }
         else if (target == "survey" && Feature("survey")) OpenSurvey();
         else if (target == "timetable") { if (TimetableButton.IsVisible) new TimetableWindow(this, room).Show(); }
+        else if (target == "swaps") { if (TimetableButton.IsVisible) new TimetableWindow(this, swapQueue: true).Show(); }
         else OpenMailbox("unread");
     }
     // Everything unread in one number: mail and chat together, without rooms set to silent or the room being read right now.

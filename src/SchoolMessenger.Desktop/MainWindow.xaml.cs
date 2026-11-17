@@ -223,6 +223,7 @@ public partial class MainWindow : Window
             await RefreshFeatures();
             if (arrived) await NotifyUnread("message", null);
             await NotifyTimetable();
+            await RemindSwaps();
             await RefreshWindows();
             ConnectionLabel.Text = hub?.State == HubConnectionState.Connected ? "학교 서버 연결됨" : "학교 서버 연결됨 · 수신 확인 30초";
         }

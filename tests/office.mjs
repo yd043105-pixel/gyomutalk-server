@@ -48,17 +48,34 @@ export async function officeChecks({Client,admin,password,address,data,check,sta
  await teacher.request('/api/admin/office/permissions','POST',{userId:registered.id,calendarManager:true,roomManager:true},403);
  const begin=new Date(Date.now()+2*86400000);begin.setUTCHours(1,0,0,0);const iso=n=>new Date(begin.getTime()+n*3600000).toISOString();
  const event={clientId:id(),title:'학교 행사 검증',description:'가상 일정',start:iso(0),end:iso(2),allDay:false};
- await teacher.request('/api/office/events','POST',event,403);
- await admin.request('/api/admin/office/permissions','POST',{userId:registered.id,calendarManager:true,roomManager:false});
+ // Every teacher registers events and changes their own; the calendar manager changes anyone's.
  const saved=await teacher.request('/api/office/events','POST',event);assert.equal((await teacher.request('/api/office/events','POST',event)).id,saved.id);
  await teacher.request('/api/office/events/'+saved.id,'POST',{...event,title:'변경 행사',revision:1});
  await teacher.request('/api/office/events/'+saved.id,'POST',{...event,revision:1},409);
- await admin.request('/api/admin/office/permissions','POST',{userId:registered.id,calendarManager:false,roomManager:false});
- await teacher.request('/api/office/events/'+saved.id+'/cancel','POST',{revision:2},403);
- await admin.request('/api/office/events/'+saved.id+'/cancel','POST',{revision:2});
+ await peer.request('/api/office/events/'+saved.id,'POST',{...event,revision:2},403);
+ await peer.request('/api/office/events/'+saved.id+'/cancel','POST',{revision:2},403);
+ await admin.request('/api/admin/office/permissions','POST',{userId:other.id,calendarManager:true,roomManager:false});
+ await peer.request('/api/office/events/'+saved.id,'POST',{...event,title:'담당자 변경',revision:2});
+ await admin.request('/api/admin/office/permissions','POST',{userId:other.id,calendarManager:false,roomManager:false});
+ await peer.request('/api/office/events/'+saved.id,'POST',{...event,revision:3},403);
+ await teacher.request('/api/office/events/'+saved.id+'/cancel','POST',{revision:3});
+ const kept=await peer.request('/api/office/events','POST',{...event,clientId:id()});await admin.request('/api/office/events/'+kept.id+'/cancel','POST',{revision:1});
+ // Lessons: an all-day event names its periods, every teacher reads them, and an edit from an earlier program keeps them.
+ const midnight=n=>new Date(Date.UTC(begin.getUTCFullYear(),begin.getUTCMonth(),begin.getUTCDate()+n)-9*3600000).toISOString();
+ const lessons={clientId:id(),title:'교시 행사 검증',description:'',start:midnight(0),end:midnight(1),allDay:true,periods:[4,3]};
+ const timed=await teacher.request('/api/office/events','POST',lessons);
+ const range='?from='+day0(0)+'&to='+day0(2);function day0(n){return new Date(begin.getTime()+9*3600000+n*86400000).toISOString().slice(0,10);}
+ assert.deepEqual((await peer.request('/api/office/events'+range)).find(e=>e.id===timed.id).periods,[3,4]);
+ await teacher.request('/api/office/events/'+timed.id,'POST',{...lessons,title:'교시 행사 변경',revision:1,periods:undefined});
+ assert.deepEqual((await peer.request('/api/office/events'+range)).find(e=>e.id===timed.id).periods,[3,4]);
+ await teacher.request('/api/office/events/'+timed.id,'POST',{...lessons,revision:2,periods:[]});
+ assert.deepEqual((await peer.request('/api/office/events'+range)).find(e=>e.id===timed.id).periods,[]);
+ for(const periods of [[0],[11],[3,3]])await teacher.request('/api/office/events','POST',{...lessons,clientId:id(),periods},400);
+ await teacher.request('/api/office/events','POST',{...event,clientId:id(),periods:[2]},400);
+ await teacher.request('/api/office/events/'+timed.id+'/cancel','POST',{revision:3});
  await admin.request('/api/office/events','POST',{...event,clientId:id(),start:iso(2),end:iso(1)},400);
  await admin.request('/api/office/events','POST',{...event,clientId:id(),start:iso(0).replace('Z',''),end:iso(2)},400);
- check('calendar write permission, revocation, retries, concurrent revisions and explicit timezone/end validation');
+ check('every teacher registers events and changes their own, the calendar manager anyone\'s; lessons are kept and validated; retries, revisions and timezone/end validation');
  await teacher.request('/api/office/rooms','POST',{name:'검증 과학실',location:'가상 2층'},403);
  const room=await admin.request('/api/office/rooms','POST',{name:'검증 과학실',location:'가상 2층'});
  const day=begin.toISOString().slice(0,10),at=t=>day+'T'+t+':00+09:00';

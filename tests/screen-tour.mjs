@@ -56,7 +56,9 @@ try{
   // Days counted from this week's Monday in Korea, so school events fall on weekdays.
   const korea=new Date(Date.now()+9*3600000);korea.setUTCDate(korea.getUTCDate()-(korea.getUTCDay()+6)%7);
   const day=n=>new Date(korea.getTime()+n*86400000).toISOString().slice(0,10)+'T00:00:00+09:00';
-  await seed('events',async()=>{for(const [title,from,to] of [['2학기 2차 지필평가',7,10],['학교운영위원회',3,3],['교직원 연수',1,1],['학부모 상담 주간',14,18]])await admin.request('office/events','POST',{clientId:randomUUID().replaceAll('-',''),title,description:'가상 일정',start:day(from),end:day(to+1),allDay:true});});
+  await seed('events',async()=>{for(const [title,from,to] of [['2학기 2차 지필평가',7,10],['학교운영위원회',3,3],['교직원 연수',1,1],['학부모 상담 주간',14,18]])await admin.request('office/events','POST',{clientId:randomUUID().replaceAll('-',''),title,description:'가상 일정',start:day(from),end:day(to+1),allDay:true});
+    // Events that take lessons, one registered by a colleague: they show in those lessons on every timetable.
+    for(const [who,title,on,periods] of [[colleague,'진로 특강',2,[3,4]],[admin,'학급 자치회의',4,[6]]])await who.request('office/events','POST',{clientId:randomUUID().replaceAll('-',''),title,description:'가상 일정',start:day(on),end:day(on+1),allDay:true,periods});});
   await seed('rooms',async()=>{for(const [name,location] of [['과학실 1','본관 2층'],['컴퓨터실','본관 3층'],['시청각실','별관 1층']])await admin.request('office/rooms','POST',{name,location});});
   const db=new DatabaseSync(path.join(fixture,'server','school.db'));let bundles=[];
   try {
@@ -71,6 +73,12 @@ try{
     for(const room of rooms)db.prepare('INSERT INTO TimetableClasses VALUES(?,?,?)').run(room.id,room.name,room.grade);
     const payload={id:batch,revision:1,owner,clientId:client,kind:'base',year:monday.getUTCFullYear(),semester:2,start:date(0),end:date(6),date:null,fileName:'가상시간표.xlsx',publishedAt:Date.now(),withdrawn:false,cells};
     db.prepare('INSERT INTO TimetableBatches(Revision,Id,Owner,ClientId,Payload,Delivered) VALUES(1,?,?,?,?,1)').run(batch,owner,client,JSON.stringify(payload));
+    // A colleague's swap request waiting for the timetable manager, so the reminder and the requests page have one to show.
+    {const asker=db.prepare("SELECT Id,Name FROM Users WHERE Username='가상교사01'").get();const room=rooms[7],on=date(4);
+     const slot=(period,subject,teacherName)=>({classId:room.id,className:room.name,period,subject,teacherId:'',teacherName,changed:false,beforeSubject:'',beforeTeacher:'',source:'base'});
+     const swap={id:id(),owner:asker.Id,ownerName:asker.Name,status:'pending',reason:'출장',createdAt:Date.now(),dependencies:[],exchanges:[{first:{date:on,classId:room.id,period:2},second:{date:on,classId:room.id,period:5}}],
+       changes:[{position:{date:on,classId:room.id,period:2},before:slot(2,'수학','가상교사 01'),after:slot(2,'영어','가상교사 02')},{position:{date:on,classId:room.id,period:5},before:slot(5,'영어','가상교사 02'),after:slot(5,'수학','가상교사 01')}]};
+     db.prepare('INSERT INTO TimetableSwaps(Id,Owner,Status,CreatedAt,Payload) VALUES(?,?,?,?,?)').run(swap.id,swap.owner,'pending',swap.createdAt,JSON.stringify(swap));}
     // Three bundles of two classes each, taught at the same time, so the board shows three bundle colours.
     const lesson=(c,i)=>({classId:rooms[c].id,subject:subjects[((c+i*5)%48)%subjects.length]});
     bundles=[['1학년 선택 A',[lesson(0,0),lesson(1,0)]],['1학년 선택 B',[lesson(2,3),lesson(3,3)]],['2학년 선택 A',[lesson(6,1),lesson(7,1)]]];

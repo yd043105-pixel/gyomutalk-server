@@ -19,6 +19,12 @@ public static class SchoolDay
         return result.ToArray();
     }
     public static SchoolPeriod[] Lessons(int grade,int last=10)=>Schedule(grade).Where(p=>p.Lesson&&p.Number<=last).ToArray();
+    public static string PeriodText(IEnumerable<int> periods)
+    {
+        var sorted=periods.Distinct().Order().ToArray();if(sorted.Length==0)return "";var parts=new List<string>();
+        for(var i=0;i<sorted.Length;){var j=i;while(j+1<sorted.Length&&sorted[j+1]==sorted[j]+1)j++;parts.Add(j-i>=2?sorted[i]+"~"+sorted[j]:string.Join("·",sorted[i..(j+1)]));i=j+1;}
+        return string.Join("·",parts)+"교시";
+    }
     public static string Label(int grade,int period)=>grade is >=1 and <=3?Lessons(grade).FirstOrDefault(p=>p.Number==period)?.Label??$"{period}교시 · 시각 미등록":$"{period}교시 · 학년 확인 필요";
     public static string Timestamp(DateTime date,string time)=>new DateTimeOffset(DateTime.SpecifyKind(date.Date,DateTimeKind.Unspecified).Add(TimeSpan.ParseExact(time,@"hh\:mm",CultureInfo.InvariantCulture)),KoreaOffset).ToString("yyyy-MM-dd'T'HH:mm:sszzz");
     public static bool RoomRange(int grade,long start,long end)

@@ -31,11 +31,19 @@ public sealed partial class OfficeWindow
         if(period is{} chosenPeriod&&((SchoolPeriod[])first.ItemsSource).FirstOrDefault(p=>p.Number==chosenPeriod) is{} slot)first.SelectedItem=lastPeriod.SelectedItem=slot;
         body.Children.Add(Text("최종 예약 종료는 7교시 16:40입니다. 조회·점심·청소·8교시·야간은 별도 예약할 수 없습니다. 여러 교시를 선택하면 중간 쉬는 시간도 예약 구간에 포함됩니다.",12));
         var client=existing?.GetProperty("clientId").GetString()??Guid.NewGuid().ToString("N");
-        Button("특별실 예약 저장",async()=>
+        var actions=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,16,0,8)};body.Children.Add(actions);
+        void Action(string label,Func<Task> run){var b=AdminUi.Tone(new Button{Content=label,Margin=new Thickness(0,0,8,0)},label);b.Click+=async(_,_)=>await Run(run);actions.Children.Add(b);}
+        Action("특별실 예약 저장",async()=>
         {
             if(date.SelectedDate is not{} selected||room.SelectedItem is not Choice chosen||first.SelectedItem is not SchoolPeriod a||lastPeriod.SelectedItem is not SchoolPeriod b||a.Number>b.Number)throw new InvalidOperationException("날짜·특별실·교시 순서를 확인하세요.");
             var packet=new OfficeBookingRequest(client,chosen.Id,title.Text,SchoolDay.Timestamp(selected,a.Start),SchoolDay.Timestamp(selected,b.End),existing?.GetProperty("revision").GetInt32()??0,grade.SelectedIndex+1);
             await api.Send<JsonElement>(HttpMethod.Post,"api/office/bookings"+(existing is{} old?"/"+old.GetProperty("id").GetString():""),packet);await Load(true);
-        });return Task.CompletedTask;
+        });
+        if(existing is{} current)Action("예약 취소",async()=>
+        {
+            if(Notice.Show(InteractionOwner,"이 특별실 예약을 취소할까요?","예약 취소",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+            await api.Send<JsonElement>(HttpMethod.Post,"api/office/bookings/"+current.GetProperty("id").GetString()+"/cancel",new OfficeRevision(current.GetProperty("revision").GetInt32()));await Load(true);
+        });
+        return Task.CompletedTask;
     }
 }
