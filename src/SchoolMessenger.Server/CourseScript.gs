@@ -21,8 +21,8 @@ function doPost(e) {
       keep_('rounds', function (r) { return r[0] !== round.id; });
       append_('rounds', [[round.id, JSON.stringify(round)]]);
       keep_('students', function (r) { return r[1] !== round.id; });
-      if (body.students.length) append_('students', body.students.map(function (s) { return [s[0], round.id, s[1]]; }));
-      var live = {}; body.students.forEach(function (s) { live[s[0]] = true; });
+      if (body.students.length) append_('students', body.students.map(function (s) { return [s, round.id]; }));
+      var live = {}; body.students.forEach(function (s) { live[s] = true; });
       keep_('answers', function (r) { return r[1] !== round.id || live[r[0]]; });
       return reply_({ ok: true, count: body.students.length });
     }
@@ -45,7 +45,7 @@ function load(token) {
   var round = me && round_(me[1]);
   if (!round) return { error: 'gone' };
   var answer = find_('answers', token);
-  return { title: round.title, closes: round.closes, groups: round.groups, enc: me[2], picks: answer ? JSON.parse(answer[2]) : null, at: answer ? Number(answer[3]) : null, now: Date.now() };
+  return { title: round.title, closes: round.closes, groups: round.groups, picks: answer ? JSON.parse(answer[2]) : null, at: answer ? Number(answer[3]) : null, now: Date.now() };
 }
 
 function submit(token, picks) {
@@ -98,7 +98,7 @@ function finder_(name, token) {
   if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{22}$/.test(token)) return null;
   return sheet_(name).getRange('A:A').createTextFinder(token).matchCase(true).matchEntireCell(true).findNext();
 }
-function find_(name, token) { var hit = finder_(name, token); return hit ? sheet_(name).getRange(hit.getRow(), 1, 1, name === 'answers' ? 4 : 3).getValues()[0] : null; }
+function find_(name, token) { var hit = finder_(name, token); return hit ? sheet_(name).getRange(hit.getRow(), 1, 1, name === 'answers' ? 4 : 2).getValues()[0] : null; }
 function round_(id) { var hit = rows_('rounds').filter(function (r) { return r[0] === id; })[0]; return hit ? JSON.parse(hit[1]) : null; }
 
 var PAGE = String.raw`<!doctype html>
@@ -138,7 +138,7 @@ button:disabled{background:#C9D3E3}
 <body><main id="app"><div class="center"><div class="spin"></div>불러오는 중…</div></main>
 <script>
 var MARK = '<svg viewBox="0 0 128 128" aria-hidden="true"><rect width="128" height="128" rx="29" fill="#2463EB"/><path d="M64 36V14" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/><path d="M66 13H85L79.5 19L85 25H66Z" fill="#FFC94A"/><path d="M32 64H96V88Q96 98 86 98H60L42 111V98H42Q32 98 32 88Z" fill="#fff" stroke="#fff" stroke-width="8" stroke-linejoin="round"/><path d="M22 64L64 37L106 64Z" fill="#A9D9EC" stroke="#A9D9EC" stroke-width="6" stroke-linejoin="round"/><circle cx="49" cy="82" r="5.5" fill="#2463EB"/><circle cx="64" cy="82" r="5.5" fill="#2463EB"/><circle cx="79" cy="82" r="5.5" fill="#2463EB"/></svg>';
-var app = document.getElementById('app'), token = '', key = '', data = null, picks = [], saved = '';
+var app = document.getElementById('app'), token = '', me = null, data = null, picks = [], saved = '';
 function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 // A round closes at midnight Korean time, so its deadline is the day before that moment.
 function until(ms) { return new Date(ms - 1).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric', weekday: 'short' }) + ' 밤 12시까지'; }
@@ -153,19 +153,16 @@ function call(name, args, done, fail, tries) {
   run[name].apply(run, args);
 }
 google.script.url.getLocation(function (loc) {
-  token = (loc.parameter && loc.parameter.t) || ''; key = (loc.hash || '').replace(/^#/, '');
-  if (!/^[A-Za-z0-9_-]{22}$/.test(token) || !/^[A-Za-z0-9_-]{22}$/.test(key)) { stop('링크가 잘렸어요', '받은 링크 전체를 그대로 눌러 다시 열어 주세요.'); return; }
+  token = (loc.parameter && loc.parameter.t) || '';
+  try { me = JSON.parse(new TextDecoder().decode(bytes((loc.hash || '').replace(/^#/, '')))); } catch (e) { me = null; }
+  if (!/^[A-Za-z0-9_-]{22}$/.test(token) || !me || typeof me.n !== 'string') { stop('링크가 잘렸어요', '받은 링크 전체를 그대로 눌러 다시 열어 주세요.'); return; }
   call('load', [token], start, function () { stop('연결이 원활하지 않아요', '잠시 후 이 화면을 새로 고쳐 주세요.'); });
 });
 function start(r) {
   if (!r || r.error) { stop('열 수 없는 링크예요', '신청이 끝났거나 링크가 바뀌었습니다. 담당 선생님께 새 링크를 받아 주세요.'); return; }
-  data = r; var raw = bytes(r.enc);
-  crypto.subtle.importKey('raw', bytes(key), 'AES-GCM', false, ['decrypt'])
-    .then(function (k) { return crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.slice(0, 12) }, k, raw.slice(12)); })
-    .then(function (plain) { draw(JSON.parse(new TextDecoder().decode(plain))); })
-    .catch(function () { stop('링크가 잘렸어요', '받은 링크 전체를 그대로 눌러 다시 열어 주세요.'); });
+  data = r; draw();
 }
-function draw(me) {
+function draw() {
   picks = data.groups.map(function (g, i) { return data.picks && data.picks[i] ? data.picks[i].slice() : []; });
   saved = data.picks ? JSON.stringify(data.picks) : '';
   var closed = data.now >= data.closes;

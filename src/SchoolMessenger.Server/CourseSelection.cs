@@ -10,8 +10,8 @@ using SchoolMessenger.Shared;
 namespace SchoolMessenger.Server;
 
 // 수강신청: students choose electives through a personal link served by the school's own Google Apps Script web app.
-// The school server is the only side that talks to Google. Names leave encrypted with a key that travels only in each
-// student's link (after #, which browsers never send), and answers come back keyed by a random token.
+// The school server is the only side that talks to Google. Google gets random tokens and answers only: each student's
+// name rides in their own link after #, which browsers never send to a server, and the page reads it from there.
 public static class CourseSelection
 {
     public const int ScriptVersion = 1;
@@ -28,7 +28,6 @@ public static class CourseSelection
     static string User(HttpContext c) => c.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
     static long Now => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     static string Random64(int bytes) => Convert.ToBase64String(RandomNumberGenerator.GetBytes(bytes)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-    static byte[] Bytes64(string value) { var s = value.Replace('-', '+').Replace('_', '/'); return Convert.FromBase64String(s.PadRight(s.Length + (4 - s.Length % 4) % 4, '=')); }
 
     public static void Initialize(Store store)
     {
@@ -36,7 +35,7 @@ public static class CourseSelection
         CREATE TABLE IF NOT EXISTS CourseSettings(Id INTEGER PRIMARY KEY CHECK(Id=1),Secret TEXT NOT NULL,ScriptUrl TEXT NOT NULL DEFAULT '',ScriptVersion INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS CourseStudents(Id TEXT PRIMARY KEY,Grade INTEGER NOT NULL,ClassNo INTEGER NOT NULL,Number INTEGER NOT NULL,Name TEXT NOT NULL,UNIQUE(Grade,ClassNo,Number));
         CREATE TABLE IF NOT EXISTS CourseRounds(Id TEXT PRIMARY KEY,Title TEXT NOT NULL,Grade INTEGER NOT NULL,Closes INTEGER NOT NULL,Groups TEXT NOT NULL,CreatedAt INTEGER NOT NULL,PublishedAt INTEGER,PulledAt INTEGER);
-        CREATE TABLE IF NOT EXISTS CourseLinks(RoundId TEXT NOT NULL REFERENCES CourseRounds(Id) ON DELETE CASCADE,StudentId TEXT NOT NULL REFERENCES CourseStudents(Id) ON DELETE CASCADE,Token TEXT NOT NULL UNIQUE,Key TEXT NOT NULL,PRIMARY KEY(RoundId,StudentId));
+        CREATE TABLE IF NOT EXISTS CourseLinks(RoundId TEXT NOT NULL REFERENCES CourseRounds(Id) ON DELETE CASCADE,StudentId TEXT NOT NULL REFERENCES CourseStudents(Id) ON DELETE CASCADE,Token TEXT NOT NULL UNIQUE,PRIMARY KEY(RoundId,StudentId));
         CREATE TABLE IF NOT EXISTS CourseChoices(RoundId TEXT NOT NULL,StudentId TEXT NOT NULL,Picks TEXT NOT NULL,SubmittedAt INTEGER NOT NULL,PRIMARY KEY(RoundId,StudentId),FOREIGN KEY(RoundId,StudentId) REFERENCES CourseLinks(RoundId,StudentId) ON DELETE CASCADE);
         """);
         store.Execute("INSERT OR IGNORE INTO CourseSettings(Id,Secret) VALUES(1,$secret)", ("$secret", Random64(32)));
@@ -179,8 +178,8 @@ public static class CourseSelection
         api.MapGet("/courses/rounds/{id}/links", (string id, HttpContext c) => Guard(c, () =>
         {
             var url = Settings(store).Url;
-            return Task.FromResult<object?>(store.Query("SELECT s.Grade,s.ClassNo,s.Number,s.Name,l.Token,l.Key FROM CourseLinks l JOIN CourseStudents s ON s.Id=l.StudentId JOIN CourseRounds r ON r.Id=l.RoundId WHERE l.RoundId=$id AND s.Grade=r.Grade ORDER BY s.ClassNo,s.Number",
-                r => new { grade = r.GetInt32(0), classNo = r.GetInt32(1), number = r.GetInt32(2), name = r.GetString(3), link = url + "?t=" + r.GetString(4) + "#" + r.GetString(5) }, ("$id", id)));
+            return Task.FromResult<object?>(store.Query("SELECT s.Grade,s.ClassNo,s.Number,s.Name,l.Token FROM CourseLinks l JOIN CourseStudents s ON s.Id=l.StudentId JOIN CourseRounds r ON r.Id=l.RoundId WHERE l.RoundId=$id AND s.Grade=r.Grade ORDER BY s.ClassNo,s.Number",
+                r => new { grade = r.GetInt32(0), classNo = r.GetInt32(1), number = r.GetInt32(2), name = r.GetString(3), link = url + "?t=" + r.GetString(4) + "#" + Me(r.GetInt32(0), r.GetInt32(1), r.GetInt32(2), r.GetString(3)) }, ("$id", id)));
         }));
     }
 
@@ -263,24 +262,15 @@ public static class CourseSelection
         var round = Round(store, id);
         var students = store.Query("SELECT Id,Grade,ClassNo,Number,Name FROM CourseStudents WHERE Grade=$g ORDER BY ClassNo,Number", r => (Id: r.GetString(0), Row: new StudentRow(r.GetInt32(1), r.GetInt32(2), r.GetInt32(3), r.GetString(4))), ("$g", round.Grade));
         if (students.Count == 0) throw new CourseException($"{round.Grade}학년 학생 명단이 없습니다. ‘학생 명단’에서 먼저 올리세요.");
-        foreach (var s in students) store.Execute("INSERT OR IGNORE INTO CourseLinks VALUES($r,$s,$t,$k)", ("$r", id), ("$s", s.Id), ("$t", Random64(16)), ("$k", Random64(16)));
-        var keys = store.Query("SELECT StudentId,Token,Key FROM CourseLinks WHERE RoundId=$r", r => (Student: r.GetString(0), Token: r.GetString(1), Key: r.GetString(2)), ("$r", id)).ToDictionary(k => k.Student);
-        var sealedRows = students.Select(s =>
-        {
-            var link = keys[s.Id];
-            var plain = JsonSerializer.Serialize(new { n = s.Row.Name, g = s.Row.Grade, c = s.Row.ClassNo, no = s.Row.Number });
-            return new[] { link.Token, Seal(Bytes64(link.Key), plain) };
-        }).ToArray();
-        await Call(store, review, new { action = "publish", round = new { id, title = round.Title, closes = round.Closes, groups = round.Groups }, students = sealedRows });
+        foreach (var s in students) store.Execute("INSERT OR IGNORE INTO CourseLinks VALUES($r,$s,$t)", ("$r", id), ("$s", s.Id), ("$t", Random64(16)));
+        var tokens = store.Query("SELECT l.Token FROM CourseLinks l JOIN CourseStudents s ON s.Id=l.StudentId WHERE l.RoundId=$r AND s.Grade=$g", r => r.GetString(0), ("$r", id), ("$g", round.Grade));
+        await Call(store, review, new { action = "publish", round = new { id, title = round.Title, closes = round.Closes, groups = round.Groups }, students = tokens });
         store.Execute("UPDATE CourseRounds SET PublishedAt=$now WHERE Id=$id", ("$now", Now), ("$id", id));
         return students.Count;
     }
-    public static string Seal(byte[] key, string text)
-    {
-        var iv = RandomNumberGenerator.GetBytes(12); var plain = Encoding.UTF8.GetBytes(text); var cipher = new byte[plain.Length]; var tag = new byte[16];
-        using (var aes = new AesGcm(key, 16)) aes.Encrypt(iv, plain, cipher, tag);
-        return Convert.ToBase64String([.. iv, .. cipher, .. tag]).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-    }
+    // What the student page shows at the top; it lives only in the link.
+    static string Me(int grade, int classNo, int number, string name) =>
+        Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { n = name, g = grade, c = classNo, no = number }))).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
     // Google returns every answer for the round; the server checks each one again before keeping it.
     static async Task Pull(Store store, DeploymentReview review, string id)

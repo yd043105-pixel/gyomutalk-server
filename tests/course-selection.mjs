@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {randomUUID,webcrypto} from 'node:crypto';
+import {randomUUID} from 'node:crypto';
 import {mkdirSync,existsSync} from 'node:fs';
 import net from 'node:net';
 import path from 'node:path';
@@ -38,7 +38,7 @@ class Client{
  upload(bytes,name,status=200){const form=new FormData();form.set('file',new Blob([bytes]),name);return this.request('courses/students/read','POST',form,status);}
 }
 const bytes=s=>Buffer.from(s.replace(/-/g,'+').replace(/_/g,'/'),'base64');
-async function open(sealed,key){const raw=bytes(sealed),k=await webcrypto.subtle.importKey('raw',bytes(key),'AES-GCM',false,['decrypt']);return JSON.parse(Buffer.from(await webcrypto.subtle.decrypt({name:'AES-GCM',iv:raw.subarray(0,12)},k,raw.subarray(12))).toString());}
+const me=hash=>JSON.parse(bytes(hash).toString());
 const day=n=>new Date(Date.now()+9*3_600_000+n*86_400_000).toISOString().slice(0,10);
 
 const host=await startScriptHost(await port());
@@ -96,10 +96,10 @@ try{
  assert.equal((await duty.request(`courses/rounds/${id}/publish`,'POST')).students,6);
  assert.ok(!JSON.stringify([host.rows('students'),host.rows('rounds')]).includes('가상'));
  const links=await duty.request(`courses/rounds/${id}/links`);assert.equal(links.length,6);
- const link=name=>{const l=links.find(l=>l.name===name);const u=new URL(l.link);assert.equal(u.origin+u.pathname,host.url);return{token:u.searchParams.get('t'),key:u.hash.slice(1)};};
- const one=link('가상일');const opened=host.context.load(one.token);assert.deepEqual(await open(opened.enc,one.key),{n:'가상일',g:2,c:1,no:1});
- await assert.rejects(open(opened.enc,link('가상이').key));
- check('each student link carries its own key after #; Google holds the names only in a form it cannot read');
+ const link=name=>{const l=links.find(l=>l.name===name);const u=new URL(l.link);assert.equal(u.origin+u.pathname,host.url);return{token:u.searchParams.get('t'),me:me(u.hash.slice(1))};};
+ const one=link('가상일');assert.deepEqual(one.me,{n:'가상일',g:2,c:1,no:1});assert.ok(!host.context.load(one.token).error);
+ assert.ok(host.rows('students').every(r=>r.length===2&&/^[A-Za-z0-9_-]{22}$/.test(r[0])));
+ check('each student link carries the name after #; Google gets only random tokens, never a name or class');
 
  assert.equal(host.context.submit(one.token,[['물리학Ⅱ'],['경제']]).error,'invalid');
  assert.equal(host.context.submit(one.token,[['물리학Ⅱ','물리학Ⅱ'],['경제']]).error,'invalid');
