@@ -62,4 +62,41 @@ static class CourseCatalog
         .Replace('Ⅰ', '1').Replace('Ⅱ', '2').Replace("II", "2").Replace("I", "1");
 
     public static Course? Find(string name) => ByKey.GetValueOrDefault(Key(name));
+
+    // The courses whose name holds what was typed, names starting with it first. The last letter may still be in the middle of
+    // being typed in Korean ("물리ㅎ", "물리하" on the way to "물리학"), so it only has to be the start of a syllable there.
+    public static Course[] Search(string typed)
+    {
+        var q = Key(typed);
+        if (q.Length == 0) return All;
+        var head = q[..^1]; var last = q[^1];
+        int At(string key)
+        {
+            for (var i = key.IndexOf(head, StringComparison.Ordinal); i >= 0 && i + head.Length < key.Length; i = key.IndexOf(head, i + 1, StringComparison.Ordinal))
+                if (Begins(last, key, i + head.Length)) return i;
+            return -1;
+        }
+        return All.Select(c => (Course: c, At: At(Key(c.Name)))).Where(x => x.At >= 0).OrderBy(x => x.At > 0).Select(x => x.Course).ToArray();
+    }
+
+    const string Initials = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+    static bool Syllable(char c) => c is >= '가' and <= '힣';
+    const string Finals = " ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ";
+    static bool Begins(char typed, string key, int at)
+    {
+        var target = key[at];
+        if (typed == target) return true;
+        if (!Syllable(target)) return false;
+        var t = target - '가';
+        if (Initials.IndexOf(typed) is var initial and >= 0) return t / 588 == initial;                       // ㅎ → 학
+        if (!Syllable(typed)) return false;
+        var s = typed - '가';
+        if (s / 588 != t / 588) return false;
+        int vowel = s / 28 % 21, wanted = t / 28 % 21;
+        // 고 → 과, 구 → 워, 그 → 긔: the vowel may still grow.
+        if (vowel != wanted && !(s % 28 == 0 && (vowel, wanted) is (8, 9 or 10 or 11) or (13, 14 or 15 or 16) or (18, 19))) return false;
+        if (s % 28 == 0) return true;                                                                            // 하 → 학
+        // 릻 on the way to 리학: the last letter typed may still move on to start the next syllable.
+        return vowel == wanted && t % 28 == 0 && at + 1 < key.Length && Syllable(key[at + 1]) && Initials.IndexOf(Finals[s % 28]) == (key[at + 1] - '가') / 588;
+    }
 }

@@ -22,24 +22,35 @@ partial class Program
                 "every listed course has one of the 10 교과(군) and 4 유형, and no name twice");
             Check(CourseCatalog.Find("미적분 1")?.Name == "미적분Ⅰ" && CourseCatalog.Find("기술가정")?.Area == "기술가정/정보" && CourseCatalog.Find("영어II")?.Name == "영어Ⅱ" && CourseCatalog.Find("물리학Ⅱ") is null,
                 "a name is found despite spaces, 1/I/Ⅰ and the middle dot; an old-curriculum name is not");
+            string[] Names(string typed) => CourseCatalog.Search(typed).Select(c => c.Name).ToArray();
+            Check(Names("물리ㅎ").Contains("물리학") && Names("물리하").Contains("물리학") && Names("물맇").Contains("물리학") && !Names("물릴").Contains("물리학") && Names("고").Contains("과학탐구실험1") && Names("물리").Contains("물리학") && Names("ㅁ").First() == "문학" && Names("과학").First() == "과학탐구실험1" && Names("탐구").Contains("수학과제 탐구") && Names("뷁").Length == 0 && Names("").Length == CourseCatalog.All.Length,
+                "the list narrows to names holding what was typed, names starting with it first, and a Korean letter still being typed (ㅎ, 하, 맇 before 리학, 고 before 과) already matches");
 
             var rows = new CourseRows();
             var window = new Window { Content = rows, Width = 640, Height = 400, Left = -20000, Top = -20000, ShowActivated = false, ShowInTaskbar = false, WindowStyle = WindowStyle.None };
             window.Show();
             var first = rows.Add(""); var mine = rows.Add("우리학교 특강", ["교양", "융합선택"]); Settle();
+            window.Activate(); first.Focus(); Settle();
+            Check(!rows.ListOpen, "the list does not open on its own when the box is entered");
+            Type(first, "미적");
+            Check(rows.ListOpen && rows.Listed.Select(c => c.Name).SequenceEqual(["미적분Ⅰ", "미적분Ⅱ"]) && first.Text == "미적",
+                "typing opens a list narrowed to what was typed, and the box keeps exactly what was typed");
             Type(first, "미적분");
             Check(Kind(first) == "|", "a half-typed name picks nothing yet");
+            var item = (ListBoxItem)Lists(rows).ItemContainerGenerator.ContainerFromIndex(1);
+            item.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = UIElement.PreviewMouseDownEvent }); Settle();
+            Check(first.Text == "미적분Ⅱ" && Kind(first) == "수학|진로선택" && !rows.ListOpen && first.IsKeyboardFocused, "clicking a course in the list puts it in the box with its kind, closes the list and keeps typing there");
             Type(first, "미적분 1");
             Check(Kind(first) == "수학|일반선택", "typing a listed name picks its 교과(군) and 유형");
             Check(rows.Items[0].Name == "미적분Ⅰ", "a listed course is saved under its official name however it was typed");
-            window.Activate(); Inner(first).Focus(); Settle(); Inner(mine).Focus(); Settle();
+            mine.Focus(); Settle();
             Check(first.Text == "미적분Ⅰ", "leaving the box shows the official name");
             Type(first, "미적분 심화(학교 지정)");
             Check(Kind(first) == "|", "changing the name to one not on the list clears what was filled in for it");
             Type(mine, "우리학교 특강 2");
             Check(Kind(mine) == "교양|융합선택", "a kind the teacher chose for the school's own course is kept while its name changes");
 
-            var box = Inner(first);
+            var box = first;
             var paste = new DataObjectPastingEventArgs(new DataObject(DataFormats.UnicodeText, "물리학\r\n화학\r\n\r\n역학과 에너지\r\n"), false, DataFormats.UnicodeText);
             box.RaiseEvent(paste); Settle();
             var names = rows.Items.Select(i => i.Name).ToArray();
@@ -59,7 +70,7 @@ partial class Program
     }
 
     static void Settle() => System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-    static TextBox Inner(ComboBox course) { course.ApplyTemplate(); return (TextBox)course.Template.FindName("PART_EditableTextBox", course); }
-    static void Type(ComboBox course, string text) { Inner(course).Text = text; Settle(); }
-    static string Kind(ComboBox course) { var line = (Grid)course.Parent; var (_, area, type) = ((ComboBox, ComboBox, ComboBox))line.Tag; return $"{area.SelectedItem}|{type.SelectedItem}"; }
+    static void Type(TextBox course, string text) { course.Text = text; Settle(); }
+    static string Kind(TextBox course) { var line = (Grid)((Grid)course.Parent).Parent; var (_, area, type) = ((TextBox, ComboBox, ComboBox))line.Tag; return $"{area.SelectedItem}|{type.SelectedItem}"; }
+    static ListBox Lists(CourseRows rows) => (ListBox)typeof(CourseRows).GetField("list", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(rows)!;
 }

@@ -52,7 +52,7 @@
       <AdornerDecorator Grid.Row="1"><ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"/></AdornerDecorator>
      </Grid>
     </Border>
-   <ControlTemplate.Triggers><Trigger Property="ResizeMode" Value="NoResize"><Setter TargetName="MinimizeAction" Property="Visibility" Value="Collapsed"/><Setter TargetName="MaximizeAction" Property="Visibility" Value="Collapsed"/></Trigger></ControlTemplate.Triggers>
+   <ControlTemplate.Triggers><Trigger Property="WindowState" Value="Maximized"><Setter TargetName="Frame" Property="Padding" Value="8"/></Trigger><Trigger Property="ResizeMode" Value="NoResize"><Setter TargetName="MinimizeAction" Property="Visibility" Value="Collapsed"/><Setter TargetName="MaximizeAction" Property="Visibility" Value="Collapsed"/></Trigger></ControlTemplate.Triggers>
    </ControlTemplate></Setter.Value></Setter>
   </Style>
  </ResourceDictionary>
