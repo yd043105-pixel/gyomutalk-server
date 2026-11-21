@@ -36,5 +36,6 @@
     <Compile Include="../SchoolMessenger.Shared/MessageText.cs" Link="MessageText.cs" />
     <Compile Include="../SchoolMessenger.Shared/SchoolDiscovery.cs" Link="SchoolDiscovery.cs" /><Compile Include="../SchoolMessenger.Shared/SchoolList.cs" Link="SchoolList.cs" /><Compile Include="../SchoolMessenger.Shared/Backend/SchoolAppSettings.cs" Link="SchoolAppSettings.cs" /><EmbeddedResource Include="../SchoolMessenger.Shared/schools.tsv.gz" LogicalName="SchoolMessenger.Schools.tsv.gz" />
     <EmbeddedResource Include="../SchoolMessenger.Shared/updates.json" LogicalName="SchoolMessenger.UpdateNotes.json" />
+    <EmbeddedResource Include="Guide/*" LogicalName="Guide/%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

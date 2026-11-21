@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>수강신청 구글 연결 안내 - 교무톡</title>
+<style>
+:root{--ink:#17233A;--muted:#5B6B80;--faint:#8794A6;--line:#E2E7EE;--canvas:#F3F5F9;--surface:#fff;--subtle:#F7F9FC;--blue:#2463EB;--pale:#E8F0FE;--ok:#18794A;--ok-tint:#E7F6EE;--warn:#94540A;--warn-tint:#FDF1DB;--mark:#E5484D}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:16px}
+body{margin:0;background:var(--canvas);color:var(--ink);font:16px/1.65 "Malgun Gothic","Pretendard","Apple SD Gothic Neo",system-ui,sans-serif;word-break:keep-all}
+a{color:var(--blue)}
+.wrap{max-width:1140px;margin:0 auto;padding:28px 20px 80px;display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;align-items:start}
+nav{position:sticky;top:16px;font-size:14px}
+nav .brand{display:flex;align-items:center;gap:8px;font-weight:700;margin-bottom:18px}
+nav .brand svg{width:26px;height:26px}
+nav ol{list-style:none;margin:0;padding:0;border-left:2px solid var(--line)}
+nav li a{display:block;padding:6px 0 6px 14px;margin-left:-2px;border-left:2px solid transparent;color:var(--muted);text-decoration:none}
+nav li a:hover{color:var(--blue);border-left-color:var(--blue)}
+main{min-width:0}
+header{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px 30px;margin-bottom:20px}
+h1{font-size:26px;line-height:1.35;margin:0 0 8px}
+.lead{color:var(--muted);margin:0}
+.ready{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:20px}
+.ready div{background:var(--subtle);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:14px}
+.ready b{display:block;font-size:15px;margin-bottom:2px}
+section{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:26px 30px;margin-bottom:20px}
+h2{font-size:21px;margin:0 0 4px;display:flex;align-items:center;gap:12px}
+h2 .no{flex:none;width:34px;height:34px;border-radius:50%;background:var(--pale);color:var(--blue);display:grid;place-items:center;font-size:16px}
+.sub{color:var(--muted);margin:0 0 18px 46px;font-size:15px}
+.step{display:grid;grid-template-columns:46px minmax(0,1fr);margin-top:22px}
+.step>span{width:28px;height:28px;border-radius:50%;border:2px solid var(--blue);color:var(--blue);display:grid;place-items:center;font-weight:700;font-size:13px;margin-top:2px}
+.step h3{font-size:17px;margin:0 0 4px}
+.step p{margin:0 0 8px}
+kbd{font:600 13px/1 "Malgun Gothic",sans-serif;background:var(--subtle);border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:3px 7px}
+.btn{display:inline-block;font-weight:700;color:var(--blue);background:var(--pale);border-radius:6px;padding:1px 8px;white-space:nowrap}
+figure{margin:12px 0 4px}
+figure a{display:block;border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:0 1px 2px rgba(23,35,58,.06)}
+figure img{display:block;width:100%;height:auto}
+figcaption{color:var(--faint);font-size:13px;margin-top:6px}
+.note{border-radius:12px;padding:12px 16px;margin:14px 0 0 46px;font-size:15px}
+.note.warn{background:var(--warn-tint);color:var(--warn)}
+.note.ok{background:var(--ok-tint);color:var(--ok)}
+.note.info{background:var(--pale);color:#1D4FC4}
+.note b{color:inherit}
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 0 10px}
+.flow i{font-style:normal;color:var(--faint)}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th,td{text-align:left;vertical-align:top;padding:12px 10px;border-top:1px solid var(--line)}
+th{width:42%;font-weight:600}
+tr:first-child th,tr:first-child td{border-top:0}
+details{border-top:1px solid var(--line);padding:12px 0}
+details:first-of-type{border-top:0}
+summary{cursor:pointer;font-weight:600}
+details p{margin:8px 0 0;color:var(--muted)}
+footer{color:var(--faint);font-size:13px;text-align:center}
+@media (max-width:900px){.wrap{grid-template-columns:1fr}nav{position:static}nav ol{display:none}.ready{grid-template-columns:1fr}.sub,.note{margin-left:0}.step{grid-template-columns:38px minmax(0,1fr)}header,section{padding:22px 18px}}
+@media print{nav{display:none}.wrap{display:block}section,header{break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+ <div class="brand"><svg viewBox="0 0 128 128" aria-hidden="true"><rect width="128" height="128" rx="29" fill="#2463EB"/><path d="M64 36V14" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/><path d="M66 13H85L79.5 19L85 25H66Z" fill="#FFC94A"/><path d="M32 64H96V88Q96 98 86 98H60L42 111V98H42Q32 98 32 88Z" fill="#fff" stroke="#fff" stroke-width="8" stroke-linejoin="round"/><path d="M22 64L64 37L106 64Z" fill="#A9D9EC" stroke="#A9D9EC" stroke-width="6" stroke-linejoin="round"/><circle cx="49" cy="82" r="5.5" fill="#2463EB"/><circle cx="64" cy="82" r="5.5" fill="#2463EB"/><circle cx="79" cy="82" r="5.5" fill="#2463EB"/></svg>교무톡 수강신청</div>
+ <ol>
+  <li><a href="#s1">1. 구글 계정 준비</a></li>
+  <li><a href="#s2">2. 코드 붙여넣기</a></li>
+  <li><a href="#s3">3. 웹 앱으로 배포</a></li>
+  <li><a href="#s4">4. 교무톡에 주소 넣기</a></li>
+  <li><a href="#student">학생 화면</a></li>
+  <li><a href="#update">업데이트 뒤 다시 배포</a></li>
+  <li><a href="#trouble">문제가 생기면</a></li>
+ </ol>
+</nav>
+<main>
+<header>
+ <h1>수강신청 구글 연결 안내</h1>
+ <p class="lead">학교마다 처음 한 번만 하면 됩니다. 15분쯤 걸립니다. 이 안내를 옆에 띄워 두고 그림의 <b style="color:var(--mark)">빨간 테두리</b>를 순서대로 누르세요.</p>
+ <div class="ready">
+  <div><b>수강신청용 구글 계정</b>gmail 계정 하나 (아래 1단계)</div>
+  <div><b>교무톡 ‘구글 연결’ 화면</b>수강신청 → 구글 연결</div>
+  <div><b>인터넷이 되는 PC</b>구글 작업은 어느 PC에서 해도 됩니다</div>
+ </div>
+ <div class="note info" style="margin-left:0">왜 구글을 쓰나요? 교무톡 서버는 학교 안에서만 열려서 학생 휴대폰이 바로 들어올 수 없습니다. 그래서 학교가 만든 구글 웹 앱이 학생 화면을 대신 띄워 줍니다. <b>학생 이름·학년·반·번호는 구글에 보내지 않습니다.</b> 구글에는 누구 것인지 알 수 없는 번호와 고른 과목만 남고, 결과는 교무톡이 학교 서버의 명단과 이어 붙여 보여 줍니다.</div>
+</header>
+
+<section id="s1">
+ <h2><span class="no">1</span>수강신청용 구글 계정 준비</h2>
+ <p class="sub">학교 이름으로 gmail 계정을 하나 만들어 두면 담당자가 바뀌어도 그대로 넘겨줄 수 있습니다.</p>
+ <div class="step"><span>1</span><div>
+  <h3>gmail 계정을 만듭니다</h3>
+  <p>예: <b>○○고 수강신청</b>. 이미 있으면 그 계정을 씁니다.</p>
+ </div></div>
+ <div class="step"><span>2</span><div>
+  <h3>브라우저에서 그 계정으로 로그인합니다</h3>
+  <p>브라우저에 다른 구글 계정이 함께 로그인되어 있으면 엉뚱한 계정에 만들어지기 쉽습니다. 다른 계정은 로그아웃하거나, 크롬의 새 프로필에서 하세요.</p>
+ </div></div>
+ <div class="note warn"><b>학교 계정(교육청 도메인)은 피하세요.</b> 학교 계정은 3단계의 ‘모든 사용자’ 공개가 막혀 있는 경우가 많아 학생이 링크를 열지 못합니다. 계정 비밀번호는 업무 인계 문서에 적어 다음 담당자에게 넘겨주세요.</div>
+</section>
+
+<section id="s2">
+ <h2><span class="no">2</span>새 스크립트에 코드 붙여넣기</h2>
+ <p class="sub">교무톡이 우리 학교 전용 코드를 만들어 줍니다. 고치지 말고 그대로 붙여넣습니다.</p>
+ <div class="step"><span>1</span><div>
+  <h3>교무톡에서 <span class="btn">브라우저에서 새 스크립트 열기</span>를 누릅니다</h3>
+  <p>구글 Apps Script 편집기가 새로 열립니다. 주소창에 <b>script.google.com</b>을 직접 넣고 <b>새 프로젝트</b>를 눌러도 같습니다.</p>
+  <figure><a href="course-google-01-new.webp" target="_blank"><img src="course-google-01-new.webp" alt="새로 열린 Apps Script 편집기" loading="lazy"></a><figcaption>새 프로젝트. 왼쪽 위 이름을 누르면 프로젝트 이름을 바꿀 수 있습니다.</figcaption></figure>
+ </div></div>
+ <div class="step"><span>2</span><div>
+  <h3>(선택) 프로젝트 이름을 바꿉니다</h3>
+  <p>나중에 찾기 쉽게 <b>교무톡 수강신청</b>처럼 이름을 붙이고 <span class="btn">이름 변경하기</span>를 누릅니다.</p>
+  <figure><a href="course-google-02-rename.webp" target="_blank"><img src="course-google-02-rename.webp" alt="프로젝트 이름 변경 창" loading="lazy"></a></figure>
+ </div></div>
+ <div class="step"><span>3</span><div>
+  <h3>코드를 붙여넣고 저장합니다</h3>
+  <div class="flow">교무톡 <span class="btn">코드 복사</span><i>→</i>편집기 글자 부분 클릭<i>→</i><kbd>Ctrl</kbd>+<kbd>A</kbd> (원래 코드 모두 선택)<i>→</i><kbd>Ctrl</kbd>+<kbd>V</kbd> (붙여넣기)<i>→</i><kbd>Ctrl</kbd>+<kbd>S</kbd> (저장)</div>
+  <p>①처럼 코드가 <b>// 교무톡 수강신청 스크립트입니다</b>로 시작하고, ②에 <b>Drive에 저장됨</b>이 보이면 됩니다.</p>
+  <figure><a href="course-google-03-pasted.webp" target="_blank"><img src="course-google-03-pasted.webp" alt="코드를 붙여넣고 저장한 편집기" loading="lazy"></a><figcaption>3번째 줄의 연결 열쇠는 그림에서 가렸습니다.</figcaption></figure>
+ </div></div>
+ <div class="note warn">코드 3번째 줄의 <b>SECRET</b>은 학교 서버와 이 스크립트를 잇는 열쇠입니다. 코드를 메신저나 게시판에 올리지 마세요.</div>
+</section>
+
+<section id="s3">
+ <h2><span class="no">3</span>웹 앱으로 배포</h2>
+ <p class="sub">학생 휴대폰에서 열리도록 인터넷에 공개하는 단계입니다. 가장 많이 틀리는 곳이니 그림과 똑같이 맞춰 주세요.</p>
+ <div class="step"><span>1</span><div>
+  <h3>오른쪽 위 <span class="btn">배포</span> → <span class="btn">새 배포</span></h3>
+  <figure><a href="course-google-04-deploy-menu.webp" target="_blank"><img src="course-google-04-deploy-menu.webp" alt="배포 메뉴의 새 배포" loading="lazy"></a></figure>
+ </div></div>
+ <div class="step"><span>2</span><div>
+  <h3>① 톱니바퀴 → ② <span class="btn">웹 앱</span></h3>
+  <figure><a href="course-google-05-type.webp" target="_blank"><img src="course-google-05-type.webp" alt="배포 유형에서 웹 앱 고르기" loading="lazy"></a></figure>
+ </div></div>
+ <div class="step"><span>3</span><div>
+  <h3>‘액세스 권한이 있는 사용자’를 <span class="btn">모든 사용자</span>로 바꿉니다</h3>
+  <p>처음에는 ‘나만’으로 되어 있습니다. <b>‘Google 계정이 있는 모든 사용자’가 아니라 맨 아래 ‘모든 사용자’</b>입니다. 이것이 틀리면 학생에게 구글 로그인 화면이 뜹니다.</p>
+  <figure><a href="course-google-06-access-list.webp" target="_blank"><img src="course-google-06-access-list.webp" alt="액세스 권한 목록에서 모든 사용자 고르기" loading="lazy"></a></figure>
+ </div></div>
+ <div class="step"><span>4</span><div>
+  <h3>설정을 확인하고 <span class="btn">배포</span>를 누릅니다</h3>
+  <p>① 다음 사용자 인증 정보로 실행: <b>나(수강신청용 계정)</b> ② 액세스 권한이 있는 사용자: <b>모든 사용자</b> ③ <b>배포</b>. ‘설명’은 비워 두어도 됩니다.</p>
+  <figure><a href="course-google-07-settings.webp" target="_blank"><img src="course-google-07-settings.webp" alt="웹 앱 배포 설정" loading="lazy"></a><figcaption>계정 주소는 그림에서 가렸습니다.</figcaption></figure>
+ </div></div>
+ <div class="step"><span>5</span><div>
+  <h3><span class="btn">액세스 승인</span>을 누르고 권한을 허용합니다</h3>
+  <figure><a href="course-google-08-approve.webp" target="_blank"><img src="course-google-08-approve.webp" alt="액세스 승인 버튼" loading="lazy"></a></figure>
+  <p>새 창이 열리면 다음 순서로 누릅니다. 이 단계는 처음 배포할 때 한 번만 나옵니다.</p>
+  <div class="flow">수강신청용 계정 고르기<i>→</i><b>Google에서 확인하지 않은 앱</b> 경고가 나오면 왼쪽 아래 <span class="btn">고급</span><i>→</i><span class="btn">(프로젝트 이름)(으)로 이동(안전하지 않음)</span><i>→</i><span class="btn">허용</span> 또는 <span class="btn">계속</span></div>
+ </div></div>
+ <div class="note info"><b>‘확인하지 않은 앱’ 경고가 나와도 괜찮습니다.</b> 우리 학교가 방금 만든 스크립트라 구글 심사를 받지 않았다는 뜻입니다. 이 스크립트가 쓰는 권한은 답을 모아 둘 <b>구글 스프레드시트를 만들고 고치는 것</b>뿐입니다. 메일·연락처·다른 파일은 건드리지 않습니다.</div>
+ <div class="step"><span>6</span><div>
+  <h3>‘웹 앱 URL’을 복사합니다</h3>
+  <p>배포가 끝나면 나오는 창에서 <b>웹 앱</b> 아래의 URL 옆 <span class="btn">복사</span>를 누릅니다. 주소는 <b>https://script.google.com/macros/s/…/exec</b> 모양입니다. ‘배포 ID’가 아니라 <b>URL</b>을 복사하세요.</p>
+  <figure><a href="course-google-09-done.webp" target="_blank"><img src="course-google-09-done.webp" alt="배포 완료 창의 웹 앱 URL" loading="lazy"></a><figcaption>① 웹 앱 URL ② 복사. 그림에서는 주소 일부를 가렸습니다. 다 했으면 <b>완료</b>를 누릅니다.</figcaption></figure>
+ </div></div>
+</section>
+
+<section id="s4">
+ <h2><span class="no">4</span>교무톡에 주소 넣기</h2>
+ <p class="sub">교무톡 ‘구글 연결’ 화면 4번 칸에 붙여넣고 <span class="btn">연결 확인</span>을 누릅니다.</p>
+ <figure><a href="course-google-12-connect.webp" target="_blank"><img src="course-google-12-connect.webp" alt="교무톡 구글 연결 화면" loading="lazy"></a><figcaption>교무톡 수강신청 → 구글 연결. 4번 칸에 붙여넣고 연결 확인을 누릅니다.</figcaption></figure>
+ <div class="note ok">위쪽 표시가 <b>연결됨</b>으로 바뀌면 끝입니다. 이제 ‘학생 명단’에 나이스 명단을 올리고, ‘신청 · 결과’에서 새 신청을 만든 뒤 <b>학생 링크 만들기</b>를 누르세요. 처음 연결하면 구글 드라이브에 <b>교무톡 수강신청 자료 (지우지 마세요)</b> 스프레드시트가 생깁니다. 지우면 학생 답이 사라지니 그대로 두세요.</div>
+</section>
+
+<section id="student">
+ <h2><span class="no">✓</span>학생에게는 이렇게 보입니다</h2>
+ <p class="sub">학생은 받은 링크를 휴대폰에서 누르기만 하면 됩니다. 로그인도, 앱 설치도 없습니다.</p>
+ <div class="step"><span>i</span><div>
+  <p>맨 위의 <b>이 애플리케이션은 Google Apps Script 사용자가 만들었습니다</b> 안내는 구글이 모든 웹 앱에 붙이는 문구입니다. 학생에게 오른쪽 X를 눌러 닫아도 된다고 알려 주세요.</p>
+  <p>학생 이름은 링크 안에 들어 있어 화면 위에 보입니다. 과목을 고르고 <b>제출하기</b>를 누르면 <b>제출했습니다</b>가 뜨고, 마감일 밤 12시까지 바꿀 수 있습니다. 결과는 교무톡 ‘신청 · 결과’에서 <b>결과 새로고침</b>을 누르면 들어옵니다.</p>
+  <figure style="max-width:320px"><a href="course-google-11-student.webp" target="_blank"><img src="course-google-11-student.webp" alt="학생 휴대폰 화면, 제출을 마친 모습" loading="lazy"></a><figcaption>실제 구글에서 연 학생 화면(가상 학생)</figcaption></figure>
+ </div></div>
+</section>
+
+<section id="update">
+ <h2><span class="no">↻</span>교무톡 업데이트 뒤 다시 배포</h2>
+ <p class="sub">교무톡이 업데이트되면서 스크립트가 바뀌면 ‘구글 연결’에 <b>스크립트 다시 붙여넣기 필요</b>가 표시됩니다. 그때만 하면 됩니다.</p>
+ <div class="step"><span>1</span><div><h3>2단계처럼 코드를 다시 복사해 붙여넣고 저장합니다</h3><p>예전에 만든 같은 프로젝트를 열어서 합니다. 새 프로젝트를 만들지 않습니다.</p></div></div>
+ <div class="step"><span>2</span><div><h3><span class="btn">배포</span> → <span class="btn">배포 관리</span> → 연필 모양 <span class="btn">수정</span></h3><p>‘버전’에서 <b>새 버전</b>을 고르고 <span class="btn">배포</span>를 누릅니다.</p>
+  <figure><a href="course-google-10-manage.webp" target="_blank"><img src="course-google-10-manage.webp" alt="배포 관리의 수정 버튼" loading="lazy"></a><figcaption>배포 관리 창 오른쪽 위 연필 모양이 ‘수정’입니다.</figcaption></figure>
+ </div></div>
+ <div class="note info">이렇게 하면 <b>웹 앱 URL이 그대로</b>여서 교무톡에 주소를 다시 넣을 필요도, 학생 링크를 다시 보낼 필요도 없습니다. ‘새 배포’를 누르면 주소가 바뀌니 주의하세요.</div>
+</section>
+
+<section id="trouble">
+ <h2><span class="no">?</span>문제가 생기면</h2>
+ <p class="sub">교무톡 아래쪽에 뜬 문구를 찾아 오른쪽대로 해 보세요.</p>
+ <table>
+  <tr><th>‘웹 앱 URL’을 그대로 붙여넣으세요</th><td>배포 ID나 편집기 주소를 넣은 경우입니다. 3단계 6번의 <b>…/exec</b>로 끝나는 URL을 넣으세요.</td></tr>
+  <tr><th>구글 스크립트가 답하지 않습니다</th><td>3단계 4번 설정을 확인하세요. 실행은 <b>나</b>, 액세스는 <b>모든 사용자</b>여야 합니다. 설정을 바꿨다면 ‘배포 관리 → 수정 → 새 버전’으로 다시 배포합니다.</td></tr>
+  <tr><th>연결 열쇠가 맞지 않습니다</th><td>다른 학교나 예전 코드를 붙여넣은 경우입니다. 교무톡에서 <b>코드 복사</b>를 다시 눌러 붙여넣고 새 버전으로 배포하세요.</td></tr>
+  <tr><th>보안 도입 검토 기록에 수강신청 연결이 없습니다</th><td>학교 서버 관리자에게 보안 도입 검토 기록에 <b>script.google.com</b>, <b>script.googleusercontent.com</b>(443) 추가를 부탁하세요.</td></tr>
+  <tr><th>구글에 연결하지 못했습니다</th><td>학교 서버 PC가 인터넷에 연결되어 있는지 확인하세요. 학교 방화벽이 구글을 막고 있으면 정보 담당 선생님께 문의하세요.</td></tr>
+  <tr><th>연결은 되었지만 붙여넣은 코드가 옛 버전입니다</th><td>위의 ‘교무톡 업데이트 뒤 다시 배포’를 따라 하세요.</td></tr>
+ </table>
+ <h3 style="margin:26px 0 4px;font-size:17px">학생이 이렇게 말해요</h3>
+ <details><summary>“링크를 여니 구글 로그인 화면이 나와요”</summary><p>액세스 권한이 ‘모든 사용자’가 아닙니다. 3단계 3번을 확인하고 ‘배포 관리 → 수정 → 새 버전’으로 다시 배포하세요.</p></details>
+ <details><summary>“링크가 잘렸어요라고 나와요”</summary><p>링크 뒷부분(# 뒤)이 메신저에서 잘렸습니다. ‘링크 목록 저장’ 파일에서 그 학생 링크를 처음부터 끝까지 다시 복사해 보내 주세요.</p></details>
+ <details><summary>“열 수 없는 링크예요라고 나와요”</summary><p>신청이 지워졌거나 그 학생이 명단에서 빠진 경우입니다. 명단을 확인하고, 필요하면 학생을 다시 넣은 뒤 ‘링크 목록 저장’으로 새 링크를 보내세요.</p></details>
+ <details><summary>“제출이 안 돼요 / 연결이 원활하지 않아요”</summary><p>한꺼번에 많은 학생이 제출하면 구글이 잠깐 몰릴 수 있습니다. 화면이 알아서 몇 번 다시 시도합니다. 전교생이 한꺼번에 하기보다 반별로 시간을 나눠 안내하면 좋습니다.</p></details>
+ <details><summary>“다른 친구 링크로 들어가졌어요”</summary><p>링크는 학생마다 다르고, 링크를 가진 사람은 그 학생 이름으로 제출할 수 있습니다. 링크 목록 파일을 단체방에 올리지 말고 학생에게 하나씩 보내 주세요.</p></details>
+</section>
+<footer>교무톡 수강신청 · 이 안내는 교무톡에 들어 있으며 인터넷 없이도 열립니다. 구글 화면은 구글 사정에 따라 조금 달라질 수 있습니다.</footer>
+</main>
+</div>
+</body>
+</html>

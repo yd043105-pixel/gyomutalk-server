@@ -133,14 +133,15 @@ public static class CourseSelection
             await Resync(store, review, grades);
             return result;
         }));
-        api.MapPost("/courses/students", (StudentRow request, HttpContext c) => Guard(c, () =>
+        api.MapPost("/courses/students", (StudentRow request, HttpContext c) => Guard(c, async () =>
         {
             var row = request with { Name = (request.Name ?? "").Trim() };
             if (!Valid(row)) throw new CourseException("학년(1~3)·반·번호·이름을 확인하세요.");
             using var db = store.Open(); using var tx = db.BeginTransaction(deferred: false);
             try { Insert(db, tx, row); } catch (SqliteException e) when (e.SqliteErrorCode == 19) { throw new CourseException($"{row.Grade}학년 {row.ClassNo}반 {row.Number}번 학생이 이미 있습니다.", 409); }
             StaffAccounts.Audit(db, tx, User(c), "course.student.add", $"{row.Grade}-{row.ClassNo}-{row.Number}"); tx.Commit();
-            return Task.FromResult<object?>(null);
+            await Resync(store, review, [row.Grade]);
+            return null;
         }));
         api.MapPost("/courses/students/{id}/delete", (string id, HttpContext c) => Guard(c, async () =>
         {
@@ -268,9 +269,11 @@ public static class CourseSelection
         store.Execute("UPDATE CourseRounds SET PublishedAt=$now WHERE Id=$id", ("$now", Now), ("$id", id));
         return students.Count;
     }
+    // Plain UTF-8 keeps Korean names short in the link; the text is base64 so nothing here reaches HTML unescaped.
+    static readonly JsonSerializerOptions LinkJson = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
     // What the student page shows at the top; it lives only in the link.
     static string Me(int grade, int classNo, int number, string name) =>
-        Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { n = name, g = grade, c = classNo, no = number }))).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { n = name, g = grade, c = classNo, no = number }, LinkJson))).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 
     // Google returns every answer for the round; the server checks each one again before keeping it.
     static async Task Pull(Store store, DeploymentReview review, string id)

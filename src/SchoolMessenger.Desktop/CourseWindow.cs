@@ -325,7 +325,7 @@ public sealed class CourseWindow : Window
             drop.Click += async (_, _) => await Run(async () =>
             {
                 if (Notice.Show(this, $"{s.Grade}학년 {s.ClassNo}반 {s.Number}번 {s.Name} 학생을 명단에서 뺄까요?\n\n받은 링크가 더 이상 열리지 않고, 제출 내용도 함께 지워집니다.", "학생 빼기", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
-                await api.Send<System.Text.Json.JsonElement>(HttpMethod.Post, $"api/courses/students/{s.Id}/delete"); await Roster(); Say(s.Name + " 학생을 뺐습니다. 이미 보낸 신청에는 ‘링크 다시 보내기’를 눌러야 반영됩니다.", false);
+                await api.Send<System.Text.Json.JsonElement>(HttpMethod.Post, $"api/courses/students/{s.Id}/delete"); await Roster(); Say(s.Name + " 학생을 뺐습니다. 이미 보낸 신청에서도 이 학생 링크와 제출 내용을 지웠습니다.", false);
             });
             var cell = new Border { Child = line, Padding = new Thickness(16, 8, 12, 8), BorderThickness = new Thickness(0, 0, 0, 1) }; cell.SetResourceReference(Border.BorderBrushProperty, "Line"); table.Children.Add(cell);
         }
@@ -344,7 +344,7 @@ public sealed class CourseWindow : Window
         {
             int Number(TextBox box) => int.TryParse(box.Text.Trim(), out var n) ? n : 0;
             await api.Send<System.Text.Json.JsonElement>(HttpMethod.Post, "api/courses/students", new { grade = Number(grade), classNo = Number(room), number = Number(number), name = name.Text });
-            rosterGrade = Number(grade); rosterClass = Number(room); await Roster(); Say(name.Text.Trim() + " 학생을 더했습니다.", false);
+            rosterGrade = Number(grade); rosterClass = Number(room); await Roster(); Say(name.Text.Trim() + " 학생을 더했습니다. 이미 링크를 보낸 신청이 있으면 이 학생 링크도 만들었으니 ‘링크 목록 저장’으로 받아 전해 주세요.", false);
         });
         line.Children.Add(add); body.Children.Add(line);
     }
@@ -369,7 +369,19 @@ public sealed class CourseWindow : Window
         if (Notice.Show(this, text, "명단 넣기", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
         var done = await api.Send<System.Text.Json.JsonElement>(HttpMethod.Post, "api/courses/students/import", new { grades, students = read.Students });
         rosterGrade = grades[0]; rosterClass = 0; await Roster();
-        Say($"명단을 넣었습니다. 새로 들어온 학생 {done.GetProperty("added").GetInt32()}명, 빠진 학생 {done.GetProperty("removed").GetInt32()}명. 이미 보낸 신청에는 ‘링크 다시 보내기’를 눌러야 반영됩니다.", false);
+        Say($"명단을 넣었습니다. 새로 들어온 학생 {done.GetProperty("added").GetInt32()}명, 빠진 학생 {done.GetProperty("removed").GetInt32()}명. 이미 보낸 신청에도 바로 반영했습니다.", false);
+    }
+
+    // The step-by-step Google guide (with pictures) ships inside the program and opens in the browser beside the script editor.
+    static void OpenGuide()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "gyomutalk-guide"); Directory.CreateDirectory(dir);
+        var assembly = typeof(CourseWindow).Assembly;
+        foreach (var name in assembly.GetManifestResourceNames().Where(n => n.StartsWith("Guide/", StringComparison.Ordinal)))
+        {
+            using var from = assembly.GetManifestResourceStream(name)!; using var to = File.Create(Path.Combine(dir, name["Guide/".Length..])); from.CopyTo(to);
+        }
+        Process.Start(new ProcessStartInfo(Path.Combine(dir, "course-google.html")) { UseShellExecute = true });
     }
 
     // ── Google connection: paste the generated script once, deploy it, paste its address back ──
@@ -378,7 +390,10 @@ public sealed class CourseWindow : Window
         var setup = await api.Get<Setup>("api/courses/setup");
         Header();
         var state = setup.Connected ? setup.ScriptCurrent ? AdminUi.Badge("연결됨", "Success") : AdminUi.Badge("스크립트 다시 붙여넣기 필요", "Warning") : AdminUi.Badge("아직 연결 안 됨", "Neutral");
-        state.Margin = new Thickness(0, 0, 0, 14); body.Children.Add(state);
+        var top = new WrapPanel { Margin = new Thickness(0, 0, 0, 14) }; state.VerticalAlignment = VerticalAlignment.Center; top.Children.Add(state);
+        var guide = new Button { Content = "그림으로 보는 자세한 안내", Margin = new Thickness(12, 0, 0, 0) }; guide.SetResourceReference(StyleProperty, "SubtleButton");
+        guide.Click += (_, _) => { try { OpenGuide(); Say("브라우저에 안내를 열었습니다. 안내를 보면서 한 단계씩 따라 하세요.", false); } catch (Exception e) when (e is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception) { Say("안내를 열지 못했습니다. 다시 눌러 보고, 그래도 안 되면 기본 브라우저가 정해져 있는지 확인하세요.", true); } };
+        top.Children.Add(guide); body.Children.Add(top);
         var steps = new StackPanel { MaxWidth = 720, HorizontalAlignment = HorizontalAlignment.Left };
         body.Children.Add(steps);
         StackPanel Step(int number, string title, string detail)
@@ -402,7 +417,7 @@ public sealed class CourseWindow : Window
         var browse = new Button { Content = "브라우저에서 새 스크립트 열기" }; AutomationProperties.SetName(browse, "브라우저에서 새 스크립트 열기");
         browse.Click += (_, _) => { try { Process.Start(new ProcessStartInfo("https://script.google.com/home/projects/create") { UseShellExecute = true }); } catch (System.ComponentModel.Win32Exception) { Say("브라우저를 열지 못했습니다. 주소창에 script.google.com 을 직접 입력하세요.", true); } };
         buttons.Children.Add(copy); buttons.Children.Add(browse); second.Children.Add(buttons);
-        Step(3, "웹 앱으로 배포", "오른쪽 위 ‘배포 → 새 배포’를 누르고 유형에서 ‘웹 앱’을 고릅니다. ‘다음 사용자 인증 정보로 실행: 나’, ‘액세스 권한이 있는 사용자: 모든 사용자’로 두고 배포합니다. 권한을 묻는 창이 뜨면 계정을 고르고 ‘허용’을 누릅니다(‘확인되지 않은 앱’ 경고가 나오면 ‘고급 → 이동’).");
+        Step(3, "웹 앱으로 배포", "오른쪽 위 ‘배포 → 새 배포’에서 톱니바퀴를 눌러 ‘웹 앱’을 고릅니다. ‘액세스 권한이 있는 사용자’를 ‘모든 사용자’로 바꾸고 배포합니다. ‘액세스 승인’을 눌러 계정을 고르고 허용합니다(‘Google에서 확인하지 않은 앱’ 경고가 나오면 ‘고급 → 이동’).");
         var fourth = Step(4, "웹 앱 URL 붙여넣기", "배포가 끝나면 나오는 ‘웹 앱 URL’(…/exec로 끝남)을 복사해 아래에 붙여넣고 ‘연결 확인’을 누릅니다.");
         var line = new DockPanel { Margin = new Thickness(0, 10, 0, 0) };
         var check = new Button { Content = "연결 확인", Margin = new Thickness(8, 0, 0, 0) }; check.SetResourceReference(StyleProperty, "PrimaryButton"); DockPanel.SetDock(check, Dock.Right); line.Children.Add(check);
