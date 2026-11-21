@@ -425,7 +425,7 @@ public sealed class CourseWindow : Window
 <table class=""picks""><tr><th>선택군</th><th class=""term"">학기</th><th>신청 과목</th></tr>{rows}</table><p class=""meta"">{stamp}</p>
 <p class=""vow"">위와 같이 선택과목 수강을 신청하였음을 확인합니다.</p>
 <p class=""date"">신청 일자 :&emsp;&emsp;&emsp;&emsp;년&emsp;&emsp;&emsp;월&emsp;&emsp;&emsp;일</p>
-<table class=""sign""><tr><th>학생</th><td>{H(s.Name)}</td><td class=""mark"">(서명)</td></tr><tr><th>학부모(보호자)</th><td></td><td class=""mark"">(서명)</td></tr></table>
+<div class=""sign""><span>학생 :</span><b>{H(s.Name)}</b><span>(인)</span><span>학부모(보호자) :</span><b></b><span>(인)</span></div>
 <p class=""to"">{H(school)}장 귀하</p></section>");
         }
         var html = $@"<!doctype html><html lang=""ko""><head><meta charset=""utf-8""><title>{H(round.Title)} 수강신청 확인서 {H(label)}</title><style>
@@ -439,7 +439,7 @@ table{{width:100%;border-collapse:collapse;font-size:11.5pt}}th,td{{border:1px s
 .who td,.who th{{text-align:center}}.who .name{{font-weight:700;min-width:28mm}}.picks{{margin-top:6mm}}.picks th{{width:27%}}.picks .term{{width:13%;text-align:center}}
 .picks td.blank{{height:21mm;vertical-align:top}}small{{color:#666;font-size:9pt}}.meta{{margin:2mm 0 0;text-align:right;font-size:9pt;color:#666}}
 .vow{{margin:12mm 0 7mm;text-align:center;font-size:12.5pt}}.date{{margin:0 0 11mm;text-align:center;font-size:12.5pt}}
-.sign th{{width:28%}}.sign td{{height:13mm}}.sign .mark{{width:20%;text-align:right;color:#555}}.to{{margin:auto 0 0;padding-top:10mm;text-align:center;font-size:16pt;font-weight:700}}
+.sign{{display:grid;grid-template-columns:auto 42mm auto;column-gap:4mm;row-gap:9mm;align-items:end;margin:4mm 0 0 auto;font-size:12.5pt}}.sign span:nth-child(3n+1){{text-align:right}}.sign b{{font-weight:600;text-align:center}}.sign span:nth-child(3n){{color:#555}}.to{{margin:auto 0 0;padding-top:10mm;text-align:center;font-size:16pt;font-weight:700}}
 @media print{{body{{background:#fff}}.bar{{display:none}}.page{{margin:0;width:auto;height:266mm;padding:0;box-shadow:none}}}}
 </style></head><body><div class=""bar""><button onclick=""print()"">인쇄하기</button><span><b>{H(label)} {chosen.Length}명</b> · 학생 한 명에 한 장 · PDF로 저장하려면 인쇄 창에서 ‘PDF로 저장’을 고르세요.</span></div>
 {pages}</body></html>";
