@@ -127,6 +127,13 @@ try{
  await duty.request(`courses/rounds/${id}`,'POST',{title:'3학년 선택과목(연장)',grade:2,closes:day(9),groups:[{...groups[0],semester:3},groups[1]]},400);
  check('after answers arrive only the name, deadline and term change, and the change reaches the student page at once');
 
+ const kinds={'물리학Ⅱ':['과학','진로선택'],'없는 과목':['과학','일반선택']};
+ await duty.request(`courses/rounds/${id}`,'POST',{title:'3학년 선택과목(연장)',grade:2,closes:day(9),groups:groups.map((g,i)=>({...g,semester:i+1,kinds:i===0?kinds:{}}))});
+ assert.deepEqual(host.context.load(one.token).groups[0].kinds,{'물리학Ⅱ':['과학','진로선택']});assert.equal(host.context.load(one.token).groups[1].kinds,null);
+ await duty.request(`courses/rounds/${id}`,'POST',{title:'3학년 선택과목(연장)',grade:2,closes:day(9),groups:groups.map((g,i)=>({...g,semester:i+1}))});
+ assert.deepEqual((await duty.request(`courses/rounds/${id}/results`)).round.groups[0].kinds,{'물리학Ⅱ':['과학','진로선택']});
+ check('each course can carry its 교과(군) and 유형, changeable after answers; they reach the student page and a form without them keeps them');
+
  await duty.request(`courses/rounds/${id}/closed`,'POST',{group:0,course:'물리학Ⅱ',closed:true});
  assert.deepEqual(host.context.load(one.token).groups[0].closed,['물리학Ⅱ']);assert.ok(host.context.load(one.token).picks[0].includes('물리학Ⅱ'));
  assert.equal(host.context.submit(one.token,[['물리학Ⅱ','화학Ⅱ'],['경제']]).error,'invalid');

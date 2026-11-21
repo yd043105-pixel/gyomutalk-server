@@ -127,6 +127,7 @@ label.opt.on{border-color:var(--blue);background:var(--blue-soft);font-weight:60
 label.opt.off{opacity:.45}
 label.opt.gone{opacity:.55;background:#F5F7FB}
 label.opt.gone span{text-decoration:line-through}
+label.opt small{margin-left:auto;color:var(--faint);font-size:13px;font-weight:400;text-align:right}
 label.opt em{margin-left:auto;font-style:normal;font-size:13px;font-weight:700;color:var(--bad)}
 .bar{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
 .bar div{max-width:560px;margin:0 auto}
@@ -185,7 +186,9 @@ function draw() {
     var boxes = [];
     g.courses.forEach(function (name) {
       var row = el('label', 'opt'), box = el('input'); box.type = 'checkbox'; box.checked = picks[gi].indexOf(name) >= 0; box.disabled = closed || gone(g, name);
-      row.appendChild(box); row.appendChild(el('span', null, name)); if (gone(g, name)) row.appendChild(el('em', null, '폐강'));
+      row.appendChild(box); row.appendChild(el('span', null, name));
+      var kind = ((g.kinds || {})[name] || []).filter(Boolean).join(' · '); if (kind) row.appendChild(el('small', null, kind));
+      if (gone(g, name)) row.appendChild(el('em', null, '폐강'));
       card.appendChild(row); boxes.push({ box: box, row: row, name: name });
       box.addEventListener('change', function () {
         var list = picks[gi], at = list.indexOf(name);

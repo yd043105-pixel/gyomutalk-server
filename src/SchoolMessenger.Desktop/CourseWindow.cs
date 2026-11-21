@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -19,7 +20,7 @@ public sealed class CourseWindow : Window
 {
     public sealed record Round(string Id, string Title, int Grade, long Closes, long? PublishedAt, long? PulledAt, int Students, int Submitted);
     public sealed record Student(string Id, int Grade, int ClassNo, int Number, string Name);
-    public sealed record Group(string Name, int Pick, string[] Courses, int Semester = 0, string[]? Closed = null);
+    public sealed record Group(string Name, int Pick, string[] Courses, int Semester = 0, string[]? Closed = null, Dictionary<string, string[]>? Kinds = null);
     public sealed record Setup(bool Connected, string ScriptUrl, bool ScriptCurrent, GradeCount[] Grades);
     public sealed record GradeCount(int Grade, int Count);
     public sealed record Course(string Name, int Count);
@@ -233,7 +234,7 @@ public sealed class CourseWindow : Window
                     var line = new Grid { Margin = new Thickness(0, 4, 0, 4) };
                     line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) }); line.ColumnDefinitions.Add(new ColumnDefinition()); line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) }); line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(92) });
                     var closed = shut.Contains(course.Name);
-                    var label = AdminUi.Label(closed ? course.Name + " · 폐강" : course.Name, closed ? "Danger" : "Ink", 13); label.TextTrimming = TextTrimming.CharacterEllipsis; label.TextWrapping = TextWrapping.NoWrap; label.ToolTip = course.Name; label.VerticalAlignment = VerticalAlignment.Center; line.Children.Add(label);
+                    var label = AdminUi.Label(closed ? course.Name + " · 폐강" : course.Name, closed ? "Danger" : "Ink", 13); label.TextTrimming = TextTrimming.CharacterEllipsis; label.TextWrapping = TextWrapping.NoWrap; label.ToolTip = round.Groups[index].Kinds?.GetValueOrDefault(course.Name) is { } kind ? $"{course.Name} · {string.Join(" · ", kind.Where(k => k.Length > 0))}" : course.Name; label.VerticalAlignment = VerticalAlignment.Center; line.Children.Add(label);
                     var track = new Grid { Height = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 8, 0) }; Grid.SetColumn(track, 1);
                     track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(course.Count, GridUnitType.Star) }); track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(most - course.Count, GridUnitType.Star) });
                     var back2 = new Border { CornerRadius = new CornerRadius(5) }; back2.SetResourceReference(Border.BackgroundProperty, "Subtle"); Grid.SetColumnSpan(back2, 2); track.Children.Add(back2);
@@ -482,10 +483,14 @@ table{{width:100%;border-collapse:collapse;font-size:11.5pt}}th,td{{border:1px s
             var pick = new ComboBox { ItemsSource = Enumerable.Range(1, 10).Select(n => n + "과목 고르기").ToArray(), SelectedIndex = (g?.Pick ?? 1) - 1 }; AutomationProperties.SetName(pick, "고를 과목 수"); Grid.SetColumn(pick, 4); top.Children.Add(pick);
             var drop = new Button { Content = "빼기", Margin = new Thickness(8, 0, 0, 0) }; Grid.SetColumn(drop, 5); top.Children.Add(drop); AutomationProperties.SetName(drop, "선택군 빼기");
             card.Children.Add(top);
-            var note = AdminUi.Label("과목을 한 줄에 하나씩 적으세요.", "Faint", 12); note.Margin = new Thickness(0, 10, 0, 4); card.Children.Add(note);
-            var courses = new TextBox { Text = g is null ? "" : string.Join("\r\n", g.Courses), AcceptsReturn = true, MinHeight = 96, MaxHeight = 220, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, TextWrapping = TextWrapping.Wrap };
-            AutomationProperties.SetName(courses, "과목 목록"); card.Children.Add(courses);
-            var shell = AdminUi.Card(card, 16); shell.Margin = new Thickness(0, 0, 0, 10); shell.Tag = (name, pick, courses, term); groups.Children.Add(shell);
+            var head = CourseRows.Columns(); head.Margin = new Thickness(0, 12, 0, 4);
+            foreach (var (text, col) in new[] { ("과목 (이름을 적거나 ▾에서 고르기)", 0), ("교과(군)", 2), ("유형", 4) }) { var c = AdminUi.Label(text, "Faint", 12); Grid.SetColumn(c, col); head.Children.Add(c); }
+            var rows = new CourseRows(); card.Children.Add(head); card.Children.Add(rows);
+            foreach (var c in g?.Courses ?? []) rows.Add(c, g?.Kinds?.GetValueOrDefault(c));
+            if (rows.Children.Count == 0) { rows.Add(""); rows.Add(""); }
+            var addCourse = new Button { Content = "+ 과목 추가", HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 2, 0, 0) };
+            addCourse.Click += (_, _) => rows.Add("", focus: true); card.Children.Add(addCourse);
+            var shell = AdminUi.Card(card, 16); shell.Margin = new Thickness(0, 0, 0, 10); shell.Tag = (name, pick, rows, term); groups.Children.Add(shell);
             drop.Click += (_, _) => { if (groups.Children.Count > 1) groups.Children.Remove(shell); };
         }
         foreach (var g in round?.Groups ?? [new Group("선택군 A", 1, [])]) AddGroup(g);
@@ -499,8 +504,12 @@ table{{width:100%;border-collapse:collapse;font-size:11.5pt}}th,td{{border:1px s
         save.Click += async (_, _) => await Run(async () =>
         {
             if (closes.SelectedDate is not { } day) throw new InvalidOperationException("마감일을 고르세요.");
-            var list = groups.Children.OfType<Border>().Select(b => ((TextBox Name, ComboBox Pick, TextBox Courses, ComboBox Term))b.Tag)
-                .Select(t => new Group(t.Name.Text, t.Pick.SelectedIndex + 1, t.Courses.Text.Split('\n').Select(x => x.Trim()).Where(x => x.Length > 0).ToArray(), t.Term.SelectedIndex)).ToArray();
+            var list = groups.Children.OfType<Border>().Select(b => ((TextBox Name, ComboBox Pick, CourseRows Rows, ComboBox Term))b.Tag).Select(t =>
+            {
+                var items = t.Rows.Items;
+                var kinds = items.Where(r => r.Kind.Any(k => k.Length > 0)).DistinctBy(r => r.Name).ToDictionary(r => r.Name, r => r.Kind);
+                return new Group(t.Name.Text, t.Pick.SelectedIndex + 1, items.Select(r => r.Name).ToArray(), t.Term.SelectedIndex, Kinds: kinds);
+            }).ToArray();
             var request = new { title = title.Text, grade = grade.SelectedIndex + 1, closes = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), groups = list };
             var saved = await api.Send<System.Text.Json.JsonElement>(HttpMethod.Post, round is null ? "api/courses/rounds" : $"api/courses/rounds/{round.Id}", request);
             await ShowRound(saved.GetProperty("id").GetString()!, false); Say(round?.PublishedAt is null ? "저장했습니다. ‘학생 링크 만들기’를 누르면 학생 링크가 만들어집니다." : "저장하고 학생 화면에 반영했습니다.", false);

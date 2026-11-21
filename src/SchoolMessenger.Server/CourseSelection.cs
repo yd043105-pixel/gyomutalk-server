@@ -17,7 +17,8 @@ public static class CourseSelection
     public const int ScriptVersion = 1;
     // Semester 0 means the group runs all year (or the school does not split it); 1 or 2 is the term its courses run in.
     // Closed lists the courses the school dropped (폐강) after asking; they stay so earlier answers still read, but no one can pick them.
-    public sealed record Group(string Name, int Pick, string[] Courses, int Semester = 0, string[]? Closed = null);
+    // Kinds gives a course its 교과(군) and 유형 ([area, type]) so students see them; courses without one show none.
+    public sealed record Group(string Name, int Pick, string[] Courses, int Semester = 0, string[]? Closed = null, Dictionary<string, string[]>? Kinds = null);
     record Closing(int Group, string? Course, bool Closed);
     public sealed record StudentRow(int Grade, int ClassNo, int Number, string Name);
     record Roster(int[]? Grades, StudentRow[]? Students);
@@ -241,7 +242,9 @@ public static class CourseSelection
             var name = (g.Name ?? "").Trim(); var courses = (g.Courses ?? []).Select(x => (x ?? "").Trim()).Where(x => x.Length > 0).ToArray();
             // A form that does not mention closed courses keeps the ones already closed.
             var closed = (g.Closed ?? prior?.Groups.FirstOrDefault(p => p.Name == name)?.Closed ?? []).Where(courses.Contains).Distinct().ToArray();
-            return new Group(name, g.Pick, courses, g.Semester, closed);
+            var kinds = (g.Kinds ?? prior?.Groups.FirstOrDefault(p => p.Name == name)?.Kinds ?? new Dictionary<string, string[]>()).Where(k => courses.Contains(k.Key))
+                .ToDictionary(k => k.Key, k => (k.Value ?? []).Concat(["", ""]).Take(2).Select(x => (x ?? "").Trim()).Select(x => x.Length > 20 ? x[..20] : x).ToArray());
+            return new Group(name, g.Pick, courses, g.Semester, closed, kinds.Count == 0 ? null : kinds);
         }).ToArray();
         if (groups.Length is 0 or > 20) throw new CourseException("선택군을 하나 이상 만드세요.");
         foreach (var g in groups)
@@ -263,7 +266,7 @@ public static class CourseSelection
         {
             var before = prior!;
             // Answers were checked against the old courses; a changed course list asks students again. The term only sorts the results, so it may change.
-            static string Choices(Group[] list) => JsonSerializer.Serialize(list.Select(g => g with { Semester = 0, Closed = null }), Web);
+            static string Choices(Group[] list) => JsonSerializer.Serialize(list.Select(g => g with { Semester = 0, Closed = null, Kinds = null }), Web);
             if (before.PublishedAt is not null && (before.Grade != request.Grade || Choices(before.Groups) != Choices(groups)) && store.Query("SELECT 1 FROM CourseChoices WHERE RoundId=$id LIMIT 1", r => 1, ("$id", id)).Count > 0)
                 throw new CourseException("이미 제출한 학생이 있어 학년·선택군·과목은 바꿀 수 없습니다. 신청 이름·마감일·학기만 바꾸거나, 새 신청을 만드세요.", 409);
             store.Execute("UPDATE CourseRounds SET Title=$t,Grade=$g,Closes=$c,Groups=$groups WHERE Id=$id", ("$id", id), ("$t", title), ("$g", request.Grade), ("$c", closes), ("$groups", json));
