@@ -112,7 +112,7 @@ public static class CourseSelection
             if (paste?.Text is not { Length: > 0 and <= 500_000 } text) throw new CourseException("엑셀에서 명단을 머리글(학년·반·번호·성명)까지 복사해 붙여넣으세요.");
             return RosterReader.Read([RosterReader.Text(text)]);
         }));
-        api.MapPost("/courses/students/import", (Roster request, HttpContext c) => Guard(c, () =>
+        api.MapPost("/courses/students/import", (Roster request, HttpContext c) => Guard(c, async () =>
         {
             var rows = request.Students ?? []; var grades = (request.Grades ?? []).Distinct().ToArray();
             if (rows.Length is 0 or > 3000 || grades.Length == 0 || rows.Any(r => !grades.Contains(r.Grade) || !Valid(r)) || rows.DistinctBy(r => (r.Grade, r.ClassNo, r.Number)).Count() != rows.Length)
@@ -130,7 +130,9 @@ public static class CourseSelection
             var kept = existing.Select(e => e.Row).ToHashSet();
             foreach (var row in incoming.Where(r => !kept.Contains(r))) Insert(db, tx, row);
             StaffAccounts.Audit(db, tx, User(c), "course.roster", string.Join(",", grades)); tx.Commit();
-            return Task.FromResult<object?>(new { ok = true, added = incoming.Count(r => !kept.Contains(r)), removed = existing.Count(e => !incoming.Contains(e.Row)) });
+            var result = new { ok = true, added = incoming.Count(r => !kept.Contains(r)), removed = existing.Count(e => !incoming.Contains(e.Row)) };
+            await Resync(store, review, grades);
+            return result;
         }));
         api.MapPost("/courses/students", (StudentRow request, HttpContext c) => Guard(c, () =>
         {
@@ -141,12 +143,14 @@ public static class CourseSelection
             StaffAccounts.Audit(db, tx, User(c), "course.student.add", $"{row.Grade}-{row.ClassNo}-{row.Number}"); tx.Commit();
             return Task.FromResult<object?>(null);
         }));
-        api.MapPost("/courses/students/{id}/delete", (string id, HttpContext c) => Guard(c, () =>
+        api.MapPost("/courses/students/{id}/delete", (string id, HttpContext c) => Guard(c, async () =>
         {
+            var grade = store.Query("SELECT Grade FROM CourseStudents WHERE Id=$id", r => r.GetInt32(0), ("$id", id));
             using var db = store.Open(); using var tx = db.BeginTransaction(deferred: false);
             using (var d = Store.Command(db, "DELETE FROM CourseStudents WHERE Id=$id", tx, ("$id", id))) if (d.ExecuteNonQuery() != 1) throw new CourseException("이미 지워진 학생입니다.", 404);
             StaffAccounts.Audit(db, tx, User(c), "course.student.delete", id); tx.Commit();
-            return Task.FromResult<object?>(null);
+            await Resync(store, review, [.. grade]);
+            return null;
         }));
 
         api.MapGet("/courses/rounds", (HttpContext c, CancellationToken _) => Guard(c, () => Task.FromResult<object?>(store.Query("""
@@ -243,6 +247,17 @@ public static class CourseSelection
     }
 
     // Every student of the grade gets a link once; sending again keeps the links already handed out.
+    // A roster change reaches the links already sent, so a student taken off loses their link and answer on Google too.
+    static async Task Resync(Store store, DeploymentReview review, int[] grades)
+    {
+        var rounds = store.Query("SELECT Id,Grade FROM CourseRounds WHERE PublishedAt IS NOT NULL", r => (Id: r.GetString(0), Grade: r.GetInt32(1)));
+        foreach (var round in rounds.Where(r => grades.Contains(r.Grade)))
+        {
+            if (store.Query("SELECT 1 FROM CourseStudents WHERE Grade=$g LIMIT 1", r => 1, ("$g", round.Grade)).Count > 0) { await Publish(store, review, round.Id); continue; }
+            await Call(store, review, new { action = "remove", round = round.Id });
+            store.Execute("UPDATE CourseRounds SET PublishedAt=NULL WHERE Id=$id", ("$id", round.Id));
+        }
+    }
     static async Task<int> Publish(Store store, DeploymentReview review, string id)
     {
         var round = Round(store, id);

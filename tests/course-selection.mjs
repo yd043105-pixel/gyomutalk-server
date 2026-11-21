@@ -125,11 +125,13 @@ try{
  check('after answers arrive only the name and deadline change, and the change reaches the student page at once');
 
  const moved=[...read.students.filter(s=>s.name!=='가상이'),...pasted.students,{grade:2,classNo:1,number:2,name:'가상구'}];
+ assert.ok(host.context.submit(link('가상이').token,[['물리학Ⅱ','화학Ⅱ'],['경제']]).ok);
  const swap=await duty.request('courses/students/import','POST',{grades:[2],students:moved});assert.deepEqual([swap.added,swap.removed],[1,1]);
- await duty.request(`courses/rounds/${id}/publish`,'POST');
- assert.equal(host.context.load(link('가상이').token).error,'gone');assert.ok(host.context.load(one.token).picks);
+ assert.equal(host.context.load(link('가상이').token).error,'gone');assert.ok(!host.rows('answers').some(r=>r[0]===link('가상이').token));
+ const sixth=(await duty.request('courses/students')).find(s=>s.name==='가상육');await duty.request(`courses/students/${sixth.id}/delete`,'POST');
+ assert.equal(host.context.load(link('가상육').token).error,'gone');assert.ok(host.context.load(one.token).picks);
  result=await duty.request(`courses/rounds/${id}/results`);assert.ok(result.students.some(s=>s.name==='가상구'&&s.linked));assert.ok(result.students.find(s=>s.name==='가상일').picks);
- check('loading the list again keeps everyone unchanged with their link and answer; a student taken off loses their link');
+ check('loading the list again keeps everyone unchanged with their link and answer; a student taken off loses their link and answer on Google at once');
 
  const late=await duty.request('courses/rounds','POST',{title:'지난 신청',grade:2,closes:day(-1),groups});await duty.request(`courses/rounds/${late.id}/publish`,'POST');
  const lateLinks=await duty.request(`courses/rounds/${late.id}/links`);
@@ -140,7 +142,7 @@ try{
  await admin.request('admin/features','POST',{name:'courses',enabled:false});
  assert.equal((await duty.request('courses/access')).manager,false);await duty.request(`courses/rounds/${id}/results`,'GET',undefined,403);
  await admin.request('admin/features','POST',{name:'courses',enabled:true});
- assert.equal((await duty.request(`courses/rounds/${id}/results`)).students.length,6);
+ assert.equal((await duty.request(`courses/rounds/${id}/results`)).students.length,5);
  check('an administrator can switch 수강신청 off for the school; its data comes back when switched on');
 
  await duty.request(`courses/rounds/${late.id}/delete`,'POST');

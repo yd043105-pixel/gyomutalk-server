@@ -22,6 +22,8 @@ function doPost(e) {
       append_('rounds', [[round.id, JSON.stringify(round)]]);
       keep_('students', function (r) { return r[1] !== round.id; });
       if (body.students.length) append_('students', body.students.map(function (s) { return [s[0], round.id, s[1]]; }));
+      var live = {}; body.students.forEach(function (s) { live[s[0]] = true; });
+      keep_('answers', function (r) { return r[1] !== round.id || live[r[0]]; });
       return reply_({ ok: true, count: body.students.length });
     }
     if (body.action === 'results') {
