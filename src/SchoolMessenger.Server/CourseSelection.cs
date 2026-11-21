@@ -15,7 +15,8 @@ namespace SchoolMessenger.Server;
 public static class CourseSelection
 {
     public const int ScriptVersion = 1;
-    public sealed record Group(string Name, int Pick, string[] Courses);
+    // Semester 0 means the group runs all year (or the school does not split it); 1 or 2 is the term its courses run in.
+    public sealed record Group(string Name, int Pick, string[] Courses, int Semester = 0);
     public sealed record StudentRow(int Grade, int ClassNo, int Number, string Name);
     record Roster(int[]? Grades, StudentRow[]? Students);
     record RoundRequest(string? Title, int Grade, string? Closes, Group[]? Groups);
@@ -218,13 +219,14 @@ public static class CourseSelection
         if (!DateOnly.TryParseExact(request.Closes, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)) throw new CourseException("마감일을 고르세요.");
         // A round closes when that day ends in Korea.
         var closes = new DateTimeOffset(day.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.FromHours(9)).ToUnixTimeMilliseconds();
-        var groups = (request.Groups ?? []).Select(g => new Group((g.Name ?? "").Trim(), g.Pick, (g.Courses ?? []).Select(x => (x ?? "").Trim()).Where(x => x.Length > 0).ToArray())).ToArray();
+        var groups = (request.Groups ?? []).Select(g => new Group((g.Name ?? "").Trim(), g.Pick, (g.Courses ?? []).Select(x => (x ?? "").Trim()).Where(x => x.Length > 0).ToArray(), g.Semester)).ToArray();
         if (groups.Length is 0 or > 20) throw new CourseException("선택군을 하나 이상 만드세요.");
         foreach (var g in groups)
         {
             if (g.Name.Length is 0 or > 40) throw new CourseException("선택군 이름을 40자 안으로 적으세요.");
             if (g.Courses.Length is 0 or > 40 || g.Courses.Any(x => x.Length > 60) || g.Courses.Distinct().Count() != g.Courses.Length) throw new CourseException($"{g.Name}: 과목을 한 줄에 하나씩, 겹치지 않게 적으세요.");
             if (g.Pick < 1 || g.Pick > g.Courses.Length) throw new CourseException($"{g.Name}: 고를 과목 수는 1부터 과목 수({g.Courses.Length})까지입니다.");
+            if (g.Semester is < 0 or > 2) throw new CourseException($"{g.Name}: 학기를 고르세요.");
         }
         if (groups.Select(g => g.Name).Distinct().Count() != groups.Length) throw new CourseException("선택군 이름이 겹칩니다.");
         var json = JsonSerializer.Serialize(groups, Web);
@@ -236,9 +238,10 @@ public static class CourseSelection
         else
         {
             var before = Round(store, id);
-            // Answers were checked against the old courses; a changed course list asks students again.
-            if (before.PublishedAt is not null && (before.Grade != request.Grade || JsonSerializer.Serialize(before.Groups, Web) != json) && store.Query("SELECT 1 FROM CourseChoices WHERE RoundId=$id LIMIT 1", r => 1, ("$id", id)).Count > 0)
-                throw new CourseException("이미 제출한 학생이 있어 학년·선택군·과목은 바꿀 수 없습니다. 신청 이름과 마감일만 바꾸거나, 새 신청을 만드세요.", 409);
+            // Answers were checked against the old courses; a changed course list asks students again. The term only sorts the results, so it may change.
+            static string Choices(Group[] list) => JsonSerializer.Serialize(list.Select(g => g with { Semester = 0 }), Web);
+            if (before.PublishedAt is not null && (before.Grade != request.Grade || Choices(before.Groups) != Choices(groups)) && store.Query("SELECT 1 FROM CourseChoices WHERE RoundId=$id LIMIT 1", r => 1, ("$id", id)).Count > 0)
+                throw new CourseException("이미 제출한 학생이 있어 학년·선택군·과목은 바꿀 수 없습니다. 신청 이름·마감일·학기만 바꾸거나, 새 신청을 만드세요.", 409);
             store.Execute("UPDATE CourseRounds SET Title=$t,Grade=$g,Closes=$c,Groups=$groups WHERE Id=$id", ("$id", id), ("$t", title), ("$g", request.Grade), ("$c", closes), ("$groups", json));
             if (before.PublishedAt is not null) await Publish(store, review, id);
         }

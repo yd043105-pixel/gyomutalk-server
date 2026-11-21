@@ -95,7 +95,7 @@ try{
     const family='김이박최정강조윤장임한오서신권황안송류홍',given=['가온','나래','다온','라엘','마루','바다','사랑','아라','자람','하늘','도윤','서아','이안','지우','하람','연우','시온','유나','주원','태오','예린','건우','수아','민재','채원','도하','윤슬','로운'];
     const students=[];for(let c=1;c<=6;c++)for(let n=1;n<=28;n++)students.push({grade:2,classNo:c,number:n,name:family[(c*7+n)%family.length]+given[(n+c)%given.length]});
     await admin.request('courses/students/import','POST',{grades:[2],students});
-    const groups=[{name:'선택군 1 (과학)',pick:2,courses:['물리학Ⅱ','화학Ⅱ','생명과학Ⅱ','지구과학Ⅱ','융합과학 탐구']},{name:'선택군 2 (사회)',pick:2,courses:['경제','정치와 법','사회·문화','세계사','윤리와 사상']},{name:'선택군 3 (교양)',pick:1,courses:['철학','논리학','심리학','진로와 직업']}];
+    const groups=[{name:'선택군 1 (과학)',pick:2,semester:1,courses:['물리학Ⅱ','화학Ⅱ','생명과학Ⅱ','지구과학Ⅱ','융합과학 탐구']},{name:'선택군 2 (사회)',pick:2,semester:2,courses:['경제','정치와 법','사회·문화','세계사','윤리와 사상']},{name:'선택군 3 (교양)',pick:1,courses:['철학','논리학','심리학','진로와 직업']}];
     const korea=new Date(Date.now()+9*3600000+10*86400000).toISOString().slice(0,10);
     const round=await admin.request('courses/rounds','POST',{title:'2027학년도 3학년 선택과목 신청',grade:2,closes:korea,groups});
     await admin.request('courses/rounds','POST',{title:'1학년 진로 선택 희망 조사(준비 중)',grade:2,closes:korea,groups:[groups[2]]});

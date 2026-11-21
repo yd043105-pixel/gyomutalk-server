@@ -19,7 +19,7 @@ public sealed class CourseWindow : Window
 {
     public sealed record Round(string Id, string Title, int Grade, long Closes, long? PublishedAt, long? PulledAt, int Students, int Submitted);
     public sealed record Student(string Id, int Grade, int ClassNo, int Number, string Name);
-    public sealed record Group(string Name, int Pick, string[] Courses);
+    public sealed record Group(string Name, int Pick, string[] Courses, int Semester = 0);
     public sealed record Setup(bool Connected, string ScriptUrl, bool ScriptCurrent, GradeCount[] Grades);
     public sealed record GradeCount(int Grade, int Count);
     public sealed record Course(string Name, int Count);
@@ -33,9 +33,12 @@ public sealed class CourseWindow : Window
 
     readonly Api api;
     readonly StackPanel body = new() { Margin = new Thickness(24, 16, 24, 24) };
+    readonly ScrollViewer page = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
     readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(24, 8, 24, 12), FontSize = 12 };
     bool busy; string tab = "rounds"; int rosterGrade; int rosterClass;
     static readonly CultureInfo Korean = CultureInfo.GetCultureInfo("ko-KR");
+    static readonly string[] Terms = ["1·2학기", "1학기", "2학기"];
+    int overlapTerm = 1; string resultView = "counts";
 
     public CourseWindow(MainWindow main)
     {
@@ -43,7 +46,7 @@ public sealed class CourseWindow : Window
         Title = "교무톡 · 수강신청"; Width = 960; Height = 760; MinWidth = 700; MinHeight = 500; FontSize = 13;
         Style = (Style)FindResource("SchoolWindow"); WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var dock = new DockPanel(); DockPanel.SetDock(status, Dock.Bottom); dock.Children.Add(status);
-        dock.Children.Add(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled });
+        page.Content = body; dock.Children.Add(page);
         dock.SetResourceReference(BackgroundProperty, "Surface"); Content = dock;
         Loaded += async (_, _) => await Run(Open);
     }
@@ -62,7 +65,8 @@ public sealed class CourseWindow : Window
 
     void Header(string? actionLabel = null, Func<Task>? action = null)
     {
-        body.Children.Clear();
+        // Every new page starts at its top, not where the last page was scrolled to.
+        body.Children.Clear(); page.ScrollToTop();
         var head = new DockPanel();
         if (actionLabel is not null)
         {
@@ -172,40 +176,150 @@ public sealed class CourseWindow : Window
         {
             body.Children.Add(AdminUi.EmptyCard("아직 학생 링크를 만들지 않았습니다", $"‘학생 링크 만들기’를 누르면 {round.Grade}학년 학생마다 링크가 만들어져 구글에 올라갑니다.")); return;
         }
-        var summary = new WrapPanel { Margin = new Thickness(0, 4, 0, 14) };
-        summary.Children.Add(AdminUi.Badge($"제출 {answered}명", "Success")); var missing = AdminUi.Badge($"미제출 {total - answered}명", total - answered > 0 ? "Warning" : "Neutral"); missing.Margin = new Thickness(8, 0, 0, 0); summary.Children.Add(missing);
-        body.Children.Add(summary);
-        foreach (var group in results.Groups)
+        // One view at a time, so the table someone came for is on screen without scrolling past the others.
+        // Only the part below the view buttons is redrawn, so the page does not jump back to the top.
+        var views = new WrapPanel { Margin = new Thickness(0, 4, 0, 10) }; var content = new StackPanel();
+        void Paint(Button chip, bool on)
         {
-            var stack = new StackPanel(); var name = AdminUi.Heading($"{group.Name}", 15); stack.Children.Add(name);
-            var hint = AdminUi.Label($"{group.Courses.Length}과목 중 {group.Pick}과목 선택", "Muted", 12); hint.Margin = new Thickness(0, 2, 0, 10); stack.Children.Add(hint);
-            // Bars are out of the students who answered, so a long bar means most of the grade chose it.
-            var most = Math.Max(1, answered);
-            foreach (var course in group.Courses.OrderByDescending(c => c.Count))
-            {
-                var line = new Grid { Margin = new Thickness(0, 4, 0, 4) };
-                line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) }); line.ColumnDefinitions.Add(new ColumnDefinition()); line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
-                var label = AdminUi.Label(course.Name, "Ink", 13); label.TextTrimming = TextTrimming.CharacterEllipsis; label.TextWrapping = TextWrapping.NoWrap; label.ToolTip = course.Name; label.VerticalAlignment = VerticalAlignment.Center; line.Children.Add(label);
-                var track = new Grid { Height = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 8, 0) }; Grid.SetColumn(track, 1);
-                track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(course.Count, GridUnitType.Star) }); track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(most - course.Count, GridUnitType.Star) });
-                var back2 = new Border { CornerRadius = new CornerRadius(5) }; back2.SetResourceReference(Border.BackgroundProperty, "Subtle"); Grid.SetColumnSpan(back2, 2); track.Children.Add(back2);
-                var fill = new Border { CornerRadius = new CornerRadius(5) }; fill.SetResourceReference(Border.BackgroundProperty, "Blue"); if (course.Count > 0) track.Children.Add(fill);
-                line.Children.Add(track);
-                var count = AdminUi.Label(course.Count + "명", "Ink", 13, true); count.TextAlignment = TextAlignment.Right; count.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(count, 2); line.Children.Add(count);
-                stack.Children.Add(line);
-            }
-            var card = AdminUi.Card(stack, 18); card.Margin = new Thickness(0, 0, 0, 12); body.Children.Add(card);
+            if (on) { chip.SetResourceReference(BackgroundProperty, "Pale"); chip.SetResourceReference(ForegroundProperty, "Blue"); chip.SetResourceReference(BorderBrushProperty, "Blue"); }
+            else { chip.ClearValue(BackgroundProperty); chip.ClearValue(ForegroundProperty); chip.ClearValue(BorderBrushProperty); }
         }
-        var waiting = results.Students.Where(s => s.Picks is null).ToArray();
-        var list = new StackPanel(); list.Children.Add(AdminUi.Heading(waiting.Length == 0 ? "모두 제출했습니다" : $"미제출 학생 {waiting.Length}명", 15));
-        foreach (var room in waiting.GroupBy(s => s.ClassNo))
+        foreach (var (key, label) in new[] { ("counts", $"과목별 인원 · 제출 {answered} / {total}명"), ("overlap", "함께 듣는 학생 수"), ("waiting", $"미제출 {total - answered}명") })
+        {
+            var chip = new Button { Content = label, Margin = new Thickness(0, 0, 6, 6), Tag = key }; chip.SetResourceReference(StyleProperty, "FilterButton"); Paint(chip, key == resultView);
+            chip.Click += (_, _) => { resultView = key; foreach (var other in views.Children.OfType<Button>()) Paint(other, (string)other.Tag == key); Fill(); }; views.Children.Add(chip);
+        }
+        body.Children.Add(views); body.Children.Add(content); Fill();
+        void Fill()
+        {
+            content.Children.Clear();
+            if (resultView == "overlap")
+            {
+                var box = new StackPanel();
+                if (answered > 0) Overlap(results, box); else box.Children.Add(AdminUi.Label("제출한 학생이 생기면 여기에 표가 나옵니다.", "Faint", 13));
+                content.Children.Add(AdminUi.Card(box, 18)); return;
+            }
+            if (resultView == "waiting")
+            {
+                var waiting = results.Students.Where(s => s.Picks is null).ToArray();
+                var list = new StackPanel(); list.Children.Add(AdminUi.Heading(waiting.Length == 0 ? "모두 제출했습니다" : $"미제출 학생 {waiting.Length}명", 15));
+                ByClass(list, waiting, s => s.Linked ? "" : "(링크 없음)");
+                content.Children.Add(AdminUi.Card(list, 18)); return;
+            }
+            foreach (var (group, index) in results.Groups.Select((g, i) => (g, i)))
+            {
+                var term = round.Groups[index].Semester;
+                var stack = new StackPanel(); var name = AdminUi.Heading(term == 0 ? group.Name : $"{group.Name} · {Terms[term]}", 15); stack.Children.Add(name);
+                var hint = AdminUi.Label($"{group.Courses.Length}과목 중 {group.Pick}과목 선택", "Muted", 12); hint.Margin = new Thickness(0, 2, 0, 10); stack.Children.Add(hint);
+                // Bars are out of the students who answered, so a long bar means most of the grade chose it.
+                var most = Math.Max(1, answered);
+                foreach (var course in group.Courses.OrderByDescending(c => c.Count))
+                {
+                    var line = new Grid { Margin = new Thickness(0, 4, 0, 4) };
+                    line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) }); line.ColumnDefinitions.Add(new ColumnDefinition()); line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
+                    var label = AdminUi.Label(course.Name, "Ink", 13); label.TextTrimming = TextTrimming.CharacterEllipsis; label.TextWrapping = TextWrapping.NoWrap; label.ToolTip = course.Name; label.VerticalAlignment = VerticalAlignment.Center; line.Children.Add(label);
+                    var track = new Grid { Height = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 8, 0) }; Grid.SetColumn(track, 1);
+                    track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(course.Count, GridUnitType.Star) }); track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(most - course.Count, GridUnitType.Star) });
+                    var back2 = new Border { CornerRadius = new CornerRadius(5) }; back2.SetResourceReference(Border.BackgroundProperty, "Subtle"); Grid.SetColumnSpan(back2, 2); track.Children.Add(back2);
+                    var fill = new Border { CornerRadius = new CornerRadius(5) }; fill.SetResourceReference(Border.BackgroundProperty, "Blue"); if (course.Count > 0) track.Children.Add(fill);
+                    line.Children.Add(track);
+                    var count = AdminUi.Label(course.Count + "명", "Ink", 13, true); count.TextAlignment = TextAlignment.Right; count.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(count, 2); line.Children.Add(count);
+                    stack.Children.Add(line);
+                }
+                var card = AdminUi.Card(stack, 18); card.Margin = new Thickness(0, 0, 0, 12); content.Children.Add(card);
+            }
+        }
+    }
+    static void ByClass(Panel host, System.Collections.Generic.IEnumerable<Answer> students, Func<Answer, string>? note = null)
+    {
+        foreach (var room in students.GroupBy(s => s.ClassNo).OrderBy(r => r.Key))
         {
             var line = new Grid { Margin = new Thickness(0, 10, 0, 0) }; line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) }); line.ColumnDefinitions.Add(new ColumnDefinition());
             line.Children.Add(AdminUi.Label($"{room.Key}반 {room.Count()}명", "Muted", 13, true));
-            var names = AdminUi.Label(string.Join("   ", room.Select(s => $"{s.Number} {s.Name}" + (s.Linked ? "" : "(링크 없음)"))), "Ink", 13); Grid.SetColumn(names, 1); line.Children.Add(names);
-            list.Children.Add(line);
+            var names = AdminUi.Label(string.Join("   ", room.OrderBy(s => s.Number).Select(s => $"{s.Number} {s.Name}" + (note?.Invoke(s) ?? ""))), "Ink", 13); Grid.SetColumn(names, 1); line.Children.Add(names);
+            host.Children.Add(line);
         }
-        body.Children.Add(AdminUi.Card(list, 18));
+    }
+
+    // ── Courses taken together in one term: the cell where two courses meet counts the students who chose both,
+    // which is what decides the timetable blocks. A number opens the list of those students. ──
+    void Overlap(Results results, StackPanel box)
+    {
+        box.Children.Clear();
+        var groups = results.Round.Groups; var split = groups.Any(g => g.Semester != 0); var term = split ? overlapTerm : 0;
+        var inTerm = groups.Select((g, i) => (Group: g, Index: i)).Where(x => term == 0 || x.Group.Semester == 0 || x.Group.Semester == term).ToArray();
+        var courses = inTerm.SelectMany(x => x.Group.Courses).Distinct().ToArray();
+        var takers = results.Students.Where(s => s.Picks is not null).Select(s => (Student: s, Courses: inTerm.SelectMany(x => s.Picks![x.Index]).ToHashSet())).ToArray();
+        int Both(int a, int b) => takers.Count(t => t.Courses.Contains(courses[a]) && t.Courses.Contains(courses[b]));
+        var counts = new int[courses.Length, courses.Length];
+        for (var a = 0; a < courses.Length; a++) for (var b = 0; b < courses.Length; b++) counts[a, b] = Both(a, b);
+
+        var head = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
+        var save = new Button { Content = "표 저장", VerticalAlignment = VerticalAlignment.Center }; DockPanel.SetDock(save, Dock.Right); head.Children.Add(save);
+        head.Children.Add(AdminUi.Heading(split ? $"함께 듣는 학생 수 · {Terms[term]}" : "함께 듣는 학생 수", 15)); box.Children.Add(head);
+        var hint = AdminUi.Label("두 과목이 만나는 칸은 두 과목을 모두 고른 학생 수, 대각선의 숫자는 그 과목을 고른 학생 수입니다.", "Muted", 12);
+        hint.Margin = new Thickness(0, 0, 0, 10); box.Children.Add(hint);
+        if (split)
+        {
+            var chips = new WrapPanel { Margin = new Thickness(0, 0, 0, 8) };
+            foreach (var t in new[] { 1, 2 })
+            {
+                var chip = new Button { Content = Terms[t], Margin = new Thickness(0, 0, 6, 6) }; chip.SetResourceReference(StyleProperty, "FilterButton");
+                if (t == term) { chip.SetResourceReference(BackgroundProperty, "Pale"); chip.SetResourceReference(ForegroundProperty, "Blue"); chip.SetResourceReference(BorderBrushProperty, "Blue"); }
+                chip.Click += (_, _) => { overlapTerm = t; Overlap(results, box); }; chips.Children.Add(chip);
+            }
+            box.Children.Add(chips);
+        }
+        if (courses.Length == 0) { box.Children.Add(AdminUi.Label($"{Terms[term]}에 듣는 선택군이 없습니다.", "Faint", 13)); return; }
+
+        var grid = new Grid { HorizontalAlignment = HorizontalAlignment.Left };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) });
+        grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(Math.Clamp(courses.Max(c => c.Length) * 13 + 16, 44, 124)) });
+        foreach (var _ in courses) { grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) }); grid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(32) }); }
+        var most = Math.Max(1, Enumerable.Range(0, courses.Length).SelectMany(a => Enumerable.Range(0, courses.Length).Where(b => b != a).Select(b => counts[a, b])).DefaultIfEmpty(0).Max());
+        var chosen = new StackPanel { Width = 330, Margin = new Thickness(0, 0, 0, 8) };
+        Button? lit = null;
+        for (var i = 0; i < courses.Length; i++)
+        {
+            // Column names stand on their side so a dozen courses still fit across the window. A fixed size keeps the turned text from being squeezed to the column width.
+            var top = new TextBlock { Text = courses[i], FontSize = 12, ToolTip = courses[i], TextTrimming = TextTrimming.CharacterEllipsis, Width = 108, Margin = new Thickness(0, 0, 0, 6),
+                LayoutTransform = new RotateTransform(-90), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom };
+            top.SetResourceReference(TextBlock.ForegroundProperty, "Muted"); Grid.SetColumn(top, i + 1); grid.Children.Add(top);
+            var side = AdminUi.Label(courses[i], "Ink", 13); side.TextTrimming = TextTrimming.CharacterEllipsis; side.TextWrapping = TextWrapping.NoWrap; side.ToolTip = courses[i];
+            side.VerticalAlignment = VerticalAlignment.Center; side.Margin = new Thickness(0, 0, 8, 0); Grid.SetRow(side, i + 1); grid.Children.Add(side);
+            for (var j = 0; j < courses.Length; j++)
+            {
+                int a = i, b = j, n = counts[i, j];
+                var cell = new Button { Content = n == 0 ? "" : n.ToString(CultureInfo.InvariantCulture), Margin = new Thickness(1), Padding = new Thickness(0), MinHeight = 0, MinWidth = 0, BorderThickness = new Thickness(1), IsEnabled = n > 0 };
+                cell.SetResourceReference(StyleProperty, "SubtleButton");
+                if (a == b) { cell.SetResourceReference(BackgroundProperty, "Pale"); cell.FontWeight = FontWeights.Bold; }
+                else cell.Background = new SolidColorBrush(Color.FromArgb((byte)(n == 0 ? 0 : 24 + 120 * n / most), 0x24, 0x63, 0xEB));
+                cell.SetResourceReference(ForegroundProperty, "Ink"); cell.BorderBrush = Brushes.Transparent;
+                AutomationProperties.SetName(cell, a == b ? $"{courses[a]} 고른 학생" : $"{courses[a]} + {courses[b]} 함께 듣는 학생");
+                cell.ToolTip = a == b ? $"{courses[a]} {n}명" : $"{courses[a]} + {courses[b]} {n}명";
+                cell.Click += (_, _) =>
+                {
+                    if (lit is not null) lit.BorderBrush = Brushes.Transparent; lit = cell; cell.SetResourceReference(BorderBrushProperty, "Blue");
+                    chosen.Children.Clear();
+                    var title = AdminUi.Heading(a == b ? $"{courses[a]} 고른 학생 {n}명" : $"{courses[a]} + {courses[b]} 함께 듣는 학생 {n}명", 14); title.TextWrapping = TextWrapping.Wrap; chosen.Children.Add(title);
+                    ByClass(chosen, takers.Where(t => t.Courses.Contains(courses[a]) && t.Courses.Contains(courses[b])).Select(t => t.Student));
+                };
+                Grid.SetRow(cell, i + 1); Grid.SetColumn(cell, j + 1); grid.Children.Add(cell);
+            }
+        }
+        var scroller = new ScrollViewer { Content = grid, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        // The page scrolls up and down; the wheel over the table should move the page, not stop at the table.
+        scroller.PreviewMouseWheel += (_, e) =>
+        {
+            e.Handled = true;
+            ((UIElement)scroller.Parent).RaiseEvent(new System.Windows.Input.MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta) { RoutedEvent = MouseWheelEvent, Source = scroller });
+        };
+        // The students sit beside the table when there is room, and drop below it in a narrow window.
+        scroller.Margin = new Thickness(0, 0, 24, 8);
+        var pair = new WrapPanel(); pair.Children.Add(scroller); pair.Children.Add(chosen); box.Children.Add(pair);
+        chosen.Children.Add(AdminUi.Label("표의 숫자를 누르면 해당 학생의 반·번호·이름이 여기에 나옵니다.", "Faint", 12));
+        save.Click += (_, _) => Save($"{results.Round.Title} 함께 듣는 학생 수" + (split ? $" {Terms[term]}" : "") + ".csv", "과목," + string.Join(",", courses.Select(Cell)),
+            Enumerable.Range(0, courses.Length).Select(a => new object[] { courses[a] }.Concat(Enumerable.Range(0, courses.Length).Select(b => (object)counts[a, b])).ToArray()), "표를 저장했습니다.");
     }
 
     async Task SaveLinks(Detail round)
@@ -256,20 +370,21 @@ public sealed class CourseWindow : Window
         void AddGroup(Group? g)
         {
             var card = new StackPanel();
-            var top = new Grid(); top.ColumnDefinitions.Add(new ColumnDefinition()); top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) }); top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) }); top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var top = new Grid(); top.ColumnDefinitions.Add(new ColumnDefinition()); top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) }); top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(100) }); top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(8) }); top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) }); top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var name = new TextBox { Text = g?.Name ?? $"선택군 {(char)('A' + groups.Children.Count)}", MaxLength = 40, ToolTip = "선택군 이름" }; AutomationProperties.SetName(name, "선택군 이름"); top.Children.Add(name);
-            var pick = new ComboBox { ItemsSource = Enumerable.Range(1, 10).Select(n => n + "과목 고르기").ToArray(), SelectedIndex = (g?.Pick ?? 1) - 1 }; AutomationProperties.SetName(pick, "고를 과목 수"); Grid.SetColumn(pick, 2); top.Children.Add(pick);
-            var drop = new Button { Content = "빼기", Margin = new Thickness(8, 0, 0, 0) }; Grid.SetColumn(drop, 3); top.Children.Add(drop); AutomationProperties.SetName(drop, "선택군 빼기");
+            var term = new ComboBox { ItemsSource = Terms, SelectedIndex = g?.Semester ?? 0, ToolTip = "이 선택군 과목을 듣는 학기. 결과의 ‘함께 듣는 학생 수’를 학기별로 나눠 봅니다." }; AutomationProperties.SetName(term, "듣는 학기"); Grid.SetColumn(term, 2); top.Children.Add(term);
+            var pick = new ComboBox { ItemsSource = Enumerable.Range(1, 10).Select(n => n + "과목 고르기").ToArray(), SelectedIndex = (g?.Pick ?? 1) - 1 }; AutomationProperties.SetName(pick, "고를 과목 수"); Grid.SetColumn(pick, 4); top.Children.Add(pick);
+            var drop = new Button { Content = "빼기", Margin = new Thickness(8, 0, 0, 0) }; Grid.SetColumn(drop, 5); top.Children.Add(drop); AutomationProperties.SetName(drop, "선택군 빼기");
             card.Children.Add(top);
             var note = AdminUi.Label("과목을 한 줄에 하나씩 적으세요.", "Faint", 12); note.Margin = new Thickness(0, 10, 0, 4); card.Children.Add(note);
             var courses = new TextBox { Text = g is null ? "" : string.Join("\r\n", g.Courses), AcceptsReturn = true, MinHeight = 96, MaxHeight = 220, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, TextWrapping = TextWrapping.Wrap };
             AutomationProperties.SetName(courses, "과목 목록"); card.Children.Add(courses);
-            var shell = AdminUi.Card(card, 16); shell.Margin = new Thickness(0, 0, 0, 10); shell.Tag = (name, pick, courses); groups.Children.Add(shell);
+            var shell = AdminUi.Card(card, 16); shell.Margin = new Thickness(0, 0, 0, 10); shell.Tag = (name, pick, courses, term); groups.Children.Add(shell);
             drop.Click += (_, _) => { if (groups.Children.Count > 1) groups.Children.Remove(shell); };
         }
         foreach (var g in round?.Groups ?? [new Group("선택군 A", 1, [])]) AddGroup(g);
         var more = new Button { Content = "+ 선택군 추가", HorizontalAlignment = HorizontalAlignment.Left }; more.Click += (_, _) => AddGroup(null); form.Children.Add(more);
-        if (round?.PublishedAt is not null) { var note = AdminUi.Label("저장하면 바뀐 내용이 학생 화면에 바로 반영됩니다. 제출한 학생이 있으면 학년·선택군·과목은 바꿀 수 없습니다.", "Muted", 12); note.Margin = new Thickness(0, 14, 0, 0); form.Children.Add(note); }
+        if (round?.PublishedAt is not null) { var note = AdminUi.Label("저장하면 바뀐 내용이 학생 화면에 바로 반영됩니다. 제출한 학생이 있으면 학년·선택군·과목은 바꿀 수 없고, 신청 이름·마감일·학기만 바꿀 수 있습니다.", "Muted", 12); note.Margin = new Thickness(0, 14, 0, 0); form.Children.Add(note); }
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 20, 0, 0) };
         var save = new Button { Content = "저장" }; save.SetResourceReference(StyleProperty, "PrimaryButton");
         var cancel = new Button { Content = "취소", Margin = new Thickness(8, 0, 0, 0) };
@@ -278,8 +393,8 @@ public sealed class CourseWindow : Window
         save.Click += async (_, _) => await Run(async () =>
         {
             if (closes.SelectedDate is not { } day) throw new InvalidOperationException("마감일을 고르세요.");
-            var list = groups.Children.OfType<Border>().Select(b => ((TextBox Name, ComboBox Pick, TextBox Courses))b.Tag)
-                .Select(t => new Group(t.Name.Text, t.Pick.SelectedIndex + 1, t.Courses.Text.Split('\n').Select(x => x.Trim()).Where(x => x.Length > 0).ToArray())).ToArray();
+            var list = groups.Children.OfType<Border>().Select(b => ((TextBox Name, ComboBox Pick, TextBox Courses, ComboBox Term))b.Tag)
+                .Select(t => new Group(t.Name.Text, t.Pick.SelectedIndex + 1, t.Courses.Text.Split('\n').Select(x => x.Trim()).Where(x => x.Length > 0).ToArray(), t.Term.SelectedIndex)).ToArray();
             var request = new { title = title.Text, grade = grade.SelectedIndex + 1, closes = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), groups = list };
             var saved = await api.Send<System.Text.Json.JsonElement>(HttpMethod.Post, round is null ? "api/courses/rounds" : $"api/courses/rounds/{round.Id}", request);
             await ShowRound(saved.GetProperty("id").GetString()!, false); Say(round?.PublishedAt is null ? "저장했습니다. ‘학생 링크 만들기’를 누르면 학생 링크가 만들어집니다." : "저장하고 학생 화면에 반영했습니다.", false);

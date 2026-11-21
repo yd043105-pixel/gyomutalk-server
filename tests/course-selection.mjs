@@ -122,7 +122,10 @@ try{
  await duty.request(`courses/rounds/${id}`,'POST',{title:'3학년 선택과목',grade:2,closes:day(7),groups:[groups[0]]},409);
  await duty.request(`courses/rounds/${id}`,'POST',{title:'3학년 선택과목(연장)',grade:2,closes:day(9),groups});
  assert.equal(host.context.load(one.token).title,'3학년 선택과목(연장)');
- check('after answers arrive only the name and deadline change, and the change reaches the student page at once');
+ await duty.request(`courses/rounds/${id}`,'POST',{title:'3학년 선택과목(연장)',grade:2,closes:day(9),groups:groups.map((g,i)=>({...g,semester:i+1}))});
+ assert.deepEqual((await duty.request(`courses/rounds/${id}/results`)).round.groups.map(g=>g.semester),[1,2]);
+ await duty.request(`courses/rounds/${id}`,'POST',{title:'3학년 선택과목(연장)',grade:2,closes:day(9),groups:[{...groups[0],semester:3},groups[1]]},400);
+ check('after answers arrive only the name, deadline and term change, and the change reaches the student page at once');
 
  const moved=[...read.students.filter(s=>s.name!=='가상이'),...pasted.students,{grade:2,classNo:1,number:2,name:'가상구'}];
  assert.ok(host.context.submit(link('가상이').token,[['물리학Ⅱ','화학Ⅱ'],['경제']]).ok);

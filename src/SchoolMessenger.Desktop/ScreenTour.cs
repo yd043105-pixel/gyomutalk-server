@@ -126,6 +126,8 @@ sealed class ScreenTour(string folder)
     static void Press(FrameworkElement e,string kind)=>e.Dispatcher.BeginInvoke(()=>
     {
         MouseButtonEventArgs Mouse(RoutedEvent routed)=>new(System.Windows.Input.Mouse.PrimaryDevice,Environment.TickCount,MouseButton.Left){RoutedEvent=routed};
+        // A press far down a long page is pictured where it happened, not at the top of the page.
+        e.BringIntoView();
         switch(kind)
         {
             case "button":case "toggle":Click.Invoke(e,null);break;
