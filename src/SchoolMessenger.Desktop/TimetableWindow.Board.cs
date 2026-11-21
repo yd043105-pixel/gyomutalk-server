@@ -46,7 +46,9 @@ public sealed partial class TimetableWindow
 
     async Task SwapEditor()
     {
-        boardWeek = selected.AddDays(-((int)selected.DayOfWeek + 6) % 7);
+        // On a Saturday or Sunday this week's lessons are over, so the board opens on next week.
+        var from = selected.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday ? selected.AddDays(2) : selected;
+        boardWeek = from.AddDays(-((int)from.DayOfWeek + 6) % 7);
         boardMoves.Clear(); boardRequestId = null; boardReason = ""; boardAll = false; boardAssume = false; boardScrollX = boardScrollY = 0;
         // The board is wide and tall: a week of periods for every teacher. It takes the room the screen has.
         if (WindowState == WindowState.Normal)

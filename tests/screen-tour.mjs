@@ -75,7 +75,7 @@ try{
     const date=n=>new Date(monday.getTime()+n*86400000).toISOString().slice(0,10);
     const cells=rooms.flatMap((room,c)=>Array.from({length:35},(_,i)=>{const t=(c+i*5)%48;return{classId:room.id,className:room.name,day:Math.floor(i/7)+1,period:i%7+1,subject:subjects[t%subjects.length],teacherId:t?'':owner,teacherName:t?'가상교사 '+String(t).padStart(2,'0'):teacherName};}));
     for(const room of rooms)db.prepare('INSERT INTO TimetableClasses VALUES(?,?,?)').run(room.id,room.name,room.grade);
-    const payload={id:batch,revision:1,owner,clientId:client,kind:'base',year:monday.getUTCFullYear(),semester:2,start:date(0),end:date(6),date:null,fileName:'가상시간표.xlsx',publishedAt:Date.now(),withdrawn:false,cells};
+    const payload={id:batch,revision:1,owner,clientId:client,kind:'base',year:monday.getUTCFullYear(),semester:2,start:date(0),end:date(13),date:null,fileName:'가상시간표.xlsx',publishedAt:Date.now(),withdrawn:false,cells};
     db.prepare('INSERT INTO TimetableBatches(Revision,Id,Owner,ClientId,Payload,Delivered) VALUES(1,?,?,?,?,1)').run(batch,owner,client,JSON.stringify(payload));
     // A colleague's swap request waiting for the timetable manager, so the reminder and the requests page have one to show.
     {const asker=db.prepare("SELECT Id,Name FROM Users WHERE Username='가상교사01'").get();const room=rooms[7],on=date(4);

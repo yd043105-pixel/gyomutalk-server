@@ -29,7 +29,7 @@ try{
     // Teacher (class + 5 x slot) mod 48 never teaches two classes in one period; teacher 0 is the signed-in account.
     const cells=rooms.flatMap((room,c)=>Array.from({length:35},(_,i)=>{const t=(c+i*5)%48;return{classId:room.id,className:room.name,day:Math.floor(i/7)+1,period:i%7+1,subject:subjects[t%subjects.length],teacherId:t?'':owner,teacherName:t?'가상교사 '+String(t).padStart(2,'0'):teacherName};}));
     for(const room of rooms)db.prepare('INSERT INTO TimetableClasses VALUES(?,?,?)').run(room.id,room.name,room.grade);
-    const payload={id:batch,revision:1,owner,clientId:client,kind:'base',year:monday.getUTCFullYear(),semester:2,start:date(0),end:date(6),date:null,fileName:'가상시간표.xlsx',publishedAt:Date.now(),withdrawn:false,cells};
+    const payload={id:batch,revision:1,owner,clientId:client,kind:'base',year:monday.getUTCFullYear(),semester:2,start:date(0),end:date(13),date:null,fileName:'가상시간표.xlsx',publishedAt:Date.now(),withdrawn:false,cells};
     db.prepare('INSERT INTO TimetableBatches(Revision,Id,Owner,ClientId,Payload,Delivered) VALUES(1,?,?,?,?,1)').run(batch,owner,client,JSON.stringify(payload));
   } finally { db.close(); }
   ui=spawn(sdk,[path.join(root,'src/SchoolMessenger.Desktop/bin/Debug/net10.0-windows/SchoolMessenger.dll'),'--verify-ui'],{cwd:root,windowsHide:true,env:{...process.env,SCHOOL_UI_SERVER:address,SCHOOL_UI_USER:'admin',SCHOOL_UI_PASSWORD:password,SCHOOL_UI_OUTPUT:path.join(output,'client-preview.png'),SCHOOL_UI_LOCALDIR:path.join(fixture,'client'),YY_WINDOW_ORDER_UI_ONLY:'1'}});
