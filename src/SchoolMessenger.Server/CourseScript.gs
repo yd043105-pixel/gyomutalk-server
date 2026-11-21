@@ -72,7 +72,7 @@ function valid_(groups, picks) {
   return groups.every(function (g, i) {
     var p = picks[i], seen = {};
     if (!Array.isArray(p) || p.length !== g.pick) return false;
-    return p.every(function (c) { if (typeof c !== 'string' || g.courses.indexOf(c) < 0 || seen[c]) return false; seen[c] = true; return true; });
+    return p.every(function (c) { if (typeof c !== 'string' || g.courses.indexOf(c) < 0 || (g.closed || []).indexOf(c) >= 0 || seen[c]) return false; seen[c] = true; return true; });
   });
 }
 
@@ -125,6 +125,9 @@ label.opt{display:flex;align-items:center;gap:12px;min-height:52px;padding:10px 
 label.opt input{width:22px;height:22px;accent-color:var(--blue);flex:none;margin:0}
 label.opt.on{border-color:var(--blue);background:var(--blue-soft);font-weight:600}
 label.opt.off{opacity:.45}
+label.opt.gone{opacity:.55;background:#F5F7FB}
+label.opt.gone span{text-decoration:line-through}
+label.opt em{margin-left:auto;font-style:normal;font-size:13px;font-weight:700;color:var(--bad)}
 .bar{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
 .bar div{max-width:560px;margin:0 auto}
 .bar small{display:block;color:var(--muted);font-size:13px;margin-bottom:8px;text-align:center}
@@ -138,7 +141,8 @@ button:disabled{background:#C9D3E3}
 <body><main id="app"><div class="center"><div class="spin"></div>불러오는 중…</div></main>
 <script>
 var MARK = '<svg viewBox="0 0 128 128" aria-hidden="true"><rect width="128" height="128" rx="29" fill="#2463EB"/><path d="M64 36V14" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/><path d="M66 13H85L79.5 19L85 25H66Z" fill="#FFC94A"/><path d="M32 64H96V88Q96 98 86 98H60L42 111V98H42Q32 98 32 88Z" fill="#fff" stroke="#fff" stroke-width="8" stroke-linejoin="round"/><path d="M22 64L64 37L106 64Z" fill="#A9D9EC" stroke="#A9D9EC" stroke-width="6" stroke-linejoin="round"/><circle cx="49" cy="82" r="5.5" fill="#2463EB"/><circle cx="64" cy="82" r="5.5" fill="#2463EB"/><circle cx="79" cy="82" r="5.5" fill="#2463EB"/></svg>';
-var app = document.getElementById('app'), token = '', me = null, data = null, picks = [], saved = '';
+var app = document.getElementById('app'), token = '', me = null, data = null, picks = [], saved = '', lost = [];
+function gone(g, name) { return (g.closed || []).indexOf(name) >= 0; }
 function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 // A round closes at midnight Korean time, so its deadline is the day before that moment.
 function until(ms) { return new Date(ms - 1).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul', month: 'long', day: 'numeric', weekday: 'short' }) + ' 밤 12시까지'; }
@@ -163,7 +167,9 @@ function start(r) {
   data = r; draw();
 }
 function draw() {
-  picks = data.groups.map(function (g, i) { return data.picks && data.picks[i] ? data.picks[i].slice() : []; });
+  // A course closed after the student chose it is taken off their choice, so they pick again in that group.
+  lost = [];
+  picks = data.groups.map(function (g, i) { return (data.picks && data.picks[i] ? data.picks[i] : []).filter(function (c) { if (gone(g, c)) { lost.push(c); return false; } return true; }); });
   saved = data.picks ? JSON.stringify(data.picks) : '';
   var closed = data.now >= data.closes;
   app.innerHTML = '';
@@ -178,8 +184,9 @@ function draw() {
     card.appendChild(el('p', null, g.courses.length + '과목 중 ' + g.pick + '과목을 고르세요'));
     var boxes = [];
     g.courses.forEach(function (name) {
-      var row = el('label', 'opt'), box = el('input'); box.type = 'checkbox'; box.checked = picks[gi].indexOf(name) >= 0; box.disabled = closed;
-      row.appendChild(box); row.appendChild(el('span', null, name)); card.appendChild(row); boxes.push({ box: box, row: row, name: name });
+      var row = el('label', 'opt'), box = el('input'); box.type = 'checkbox'; box.checked = picks[gi].indexOf(name) >= 0; box.disabled = closed || gone(g, name);
+      row.appendChild(box); row.appendChild(el('span', null, name)); if (gone(g, name)) row.appendChild(el('em', null, '폐강'));
+      card.appendChild(row); boxes.push({ box: box, row: row, name: name });
       box.addEventListener('change', function () {
         var list = picks[gi], at = list.indexOf(name);
         if (box.checked && at < 0) list.push(name); else if (!box.checked && at >= 0) list.splice(at, 1);
@@ -189,7 +196,7 @@ function draw() {
     });
     function paintGroup() {
       var full = picks[gi].length >= g.pick;
-      boxes.forEach(function (b) { var on = picks[gi].indexOf(b.name) >= 0; b.box.checked = on; b.row.className = 'opt' + (on ? ' on' : full && g.pick > 1 && !closed ? ' off' : ''); b.box.disabled = closed || (full && !on && g.pick > 1); });
+      boxes.forEach(function (b) { var on = picks[gi].indexOf(b.name) >= 0, out = gone(g, b.name); b.box.checked = on; b.row.className = 'opt' + (out ? ' gone' : on ? ' on' : full && g.pick > 1 && !closed ? ' off' : ''); b.box.disabled = closed || out || (full && !on && g.pick > 1); });
       count.textContent = picks[gi].length + ' / ' + g.pick; count.className = picks[gi].length === g.pick ? 'done' : '';
     }
     card.paint = paintGroup; app.appendChild(card);
@@ -199,7 +206,7 @@ function draw() {
   send.addEventListener('click', function () {
     send.disabled = true; send.textContent = '제출하는 중…';
     call('submit', [token, picks], function (r) {
-      if (r && r.ok) { saved = JSON.stringify(picks); data.at = r.at; paint(); return; }
+      if (r && r.ok) { saved = JSON.stringify(picks); data.at = r.at; lost = []; paint(); return; }
       var why = r && r.error === 'closed' ? '신청이 마감되었습니다.' : r && r.error === 'gone' ? '링크가 바뀌었습니다. 담당 선생님께 새 링크를 받아 주세요.' : '선택이 바뀌었습니다. 화면을 새로 고친 뒤 다시 골라 주세요.';
       note('warn', why); send.textContent = '제출하기'; send.disabled = false;
     }, function () { note('warn', '제출하지 못했어요. 잠시 후 다시 눌러 주세요.'); send.textContent = '제출하기'; send.disabled = false; });
@@ -209,7 +216,7 @@ function draw() {
     var missing = data.groups.map(function (g, i) { return g.pick - picks[i].length; });
     var first = missing.findIndex(function (m) { return m !== 0; });
     var changed = JSON.stringify(picks) !== saved;
-    if (saved && !changed) note('ok', '제출했습니다 · ' + when(data.at)); else if (saved) note('warn', '바뀐 선택은 아직 제출하지 않았어요.'); else note('', '');
+    if (saved && !changed) note('ok', '제출했습니다 · ' + when(data.at)); else if (lost.length) note('warn', lost.join(', ') + ' 과목이 폐강되었어요. 그 선택군에서 다시 골라 제출해 주세요.'); else if (saved) note('warn', '바뀐 선택은 아직 제출하지 않았어요.'); else note('', '');
     var done = saved && !changed;
     send.disabled = first >= 0 || !changed; send.textContent = done ? '제출 완료' : saved ? '바뀐 내용 제출하기' : '제출하기';
     hint.className = done ? 'ok' : '';

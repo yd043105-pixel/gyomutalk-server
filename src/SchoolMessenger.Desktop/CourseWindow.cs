@@ -19,7 +19,7 @@ public sealed class CourseWindow : Window
 {
     public sealed record Round(string Id, string Title, int Grade, long Closes, long? PublishedAt, long? PulledAt, int Students, int Submitted);
     public sealed record Student(string Id, int Grade, int ClassNo, int Number, string Name);
-    public sealed record Group(string Name, int Pick, string[] Courses, int Semester = 0);
+    public sealed record Group(string Name, int Pick, string[] Courses, int Semester = 0, string[]? Closed = null);
     public sealed record Setup(bool Connected, string ScriptUrl, bool ScriptCurrent, GradeCount[] Grades);
     public sealed record GradeCount(int Grade, int Count);
     public sealed record Course(string Name, int Count);
@@ -49,6 +49,7 @@ public sealed class CourseWindow : Window
         page.Content = body; dock.Children.Add(page);
         dock.SetResourceReference(BackgroundProperty, "Surface"); Content = dock;
         Loaded += async (_, _) => await Run(Open);
+        Closed += (_, _) => { try { if (Directory.Exists(PrintFolder)) Directory.Delete(PrintFolder, true); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { } };
     }
 
     // One action at a time; a slow one says what it is doing, and a failure stays on screen with what to do next.
@@ -184,7 +185,12 @@ public sealed class CourseWindow : Window
             if (on) { chip.SetResourceReference(BackgroundProperty, "Pale"); chip.SetResourceReference(ForegroundProperty, "Blue"); chip.SetResourceReference(BorderBrushProperty, "Blue"); }
             else { chip.ClearValue(BackgroundProperty); chip.ClearValue(ForegroundProperty); chip.ClearValue(BorderBrushProperty); }
         }
-        foreach (var (key, label) in new[] { ("counts", $"과목별 인원 · 제출 {answered} / {total}명"), ("overlap", "함께 듣는 학생 수"), ("waiting", $"미제출 {total - answered}명") })
+        var redo = results.Students.Where(s => Lost(round, s).Length > 0).ToArray();
+        var choices = new System.Collections.Generic.List<(string Key, string Label)> { ("counts", $"과목별 인원 · 제출 {answered} / {total}명"), ("overlap", "함께 듣는 학생 수"), ("waiting", $"미제출 {total - answered}명") };
+        if (redo.Length > 0) choices.Add(("redo", $"폐강 재선택 {redo.Length}명"));
+        choices.Add(("print", "확인서 인쇄"));
+        if (resultView == "redo" && redo.Length == 0) resultView = "counts";
+        foreach (var (key, label) in choices)
         {
             var chip = new Button { Content = label, Margin = new Thickness(0, 0, 6, 6), Tag = key }; chip.SetResourceReference(StyleProperty, "FilterButton"); Paint(chip, key == resultView);
             chip.Click += (_, _) => { resultView = key; foreach (var other in views.Children.OfType<Button>()) Paint(other, (string)other.Tag == key); Fill(); }; views.Children.Add(chip);
@@ -202,33 +208,61 @@ public sealed class CourseWindow : Window
             if (resultView == "waiting")
             {
                 var waiting = results.Students.Where(s => s.Picks is null).ToArray();
-                var list = new StackPanel(); list.Children.Add(AdminUi.Heading(waiting.Length == 0 ? "모두 제출했습니다" : $"미제출 학생 {waiting.Length}명", 15));
+                var list = new StackPanel(); list.Children.Add(Titled(waiting.Length == 0 ? "모두 제출했습니다" : $"미제출 학생 {waiting.Length}명", waiting.Length == 0 ? null : Plain("미제출 학생 링크만 저장", () => SaveLinks(round, waiting), this)));
                 ByClass(list, waiting, s => s.Linked ? "" : "(링크 없음)");
                 content.Children.Add(AdminUi.Card(list, 18)); return;
             }
+            if (resultView == "redo")
+            {
+                var list = new StackPanel(); list.Children.Add(Titled($"폐강으로 다시 골라야 하는 학생 {redo.Length}명", Plain("이 학생들 링크만 저장", () => SaveLinks(round, redo), this)));
+                var hint = AdminUi.Label("이 학생들이 자기 링크를 다시 열면 폐강 안내가 나오고, 그 선택군만 다시 고르면 됩니다. 마감일이 지났으면 ‘수정’에서 마감일을 늘리세요.", "Muted", 12); hint.Margin = new Thickness(0, 4, 0, 0); list.Children.Add(hint);
+                ByClass(list, redo, s => $"({string.Join(", ", Lost(round, s))})");
+                content.Children.Add(AdminUi.Card(list, 18)); return;
+            }
+            if (resultView == "print") { var box = new StackPanel(); Slips(results, box); content.Children.Add(AdminUi.Card(box, 18)); return; }
             foreach (var (group, index) in results.Groups.Select((g, i) => (g, i)))
             {
                 var term = round.Groups[index].Semester;
                 var stack = new StackPanel(); var name = AdminUi.Heading(term == 0 ? group.Name : $"{group.Name} · {Terms[term]}", 15); stack.Children.Add(name);
-                var hint = AdminUi.Label($"{group.Courses.Length}과목 중 {group.Pick}과목 선택", "Muted", 12); hint.Margin = new Thickness(0, 2, 0, 10); stack.Children.Add(hint);
+                var shut = round.Groups[index].Closed ?? [];
+                var hint = AdminUi.Label($"{group.Courses.Length}과목 중 {group.Pick}과목 선택" + (shut.Length > 0 ? $" · 폐강 {string.Join(", ", shut)}" : ""), "Muted", 12); hint.Margin = new Thickness(0, 2, 0, 10); stack.Children.Add(hint);
                 // Bars are out of the students who answered, so a long bar means most of the grade chose it.
                 var most = Math.Max(1, answered);
                 foreach (var course in group.Courses.OrderByDescending(c => c.Count))
                 {
                     var line = new Grid { Margin = new Thickness(0, 4, 0, 4) };
-                    line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) }); line.ColumnDefinitions.Add(new ColumnDefinition()); line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
-                    var label = AdminUi.Label(course.Name, "Ink", 13); label.TextTrimming = TextTrimming.CharacterEllipsis; label.TextWrapping = TextWrapping.NoWrap; label.ToolTip = course.Name; label.VerticalAlignment = VerticalAlignment.Center; line.Children.Add(label);
+                    line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) }); line.ColumnDefinitions.Add(new ColumnDefinition()); line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) }); line.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(92) });
+                    var closed = shut.Contains(course.Name);
+                    var label = AdminUi.Label(closed ? course.Name + " · 폐강" : course.Name, closed ? "Danger" : "Ink", 13); label.TextTrimming = TextTrimming.CharacterEllipsis; label.TextWrapping = TextWrapping.NoWrap; label.ToolTip = course.Name; label.VerticalAlignment = VerticalAlignment.Center; line.Children.Add(label);
                     var track = new Grid { Height = 10, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(8, 0, 8, 0) }; Grid.SetColumn(track, 1);
                     track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(course.Count, GridUnitType.Star) }); track.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(most - course.Count, GridUnitType.Star) });
                     var back2 = new Border { CornerRadius = new CornerRadius(5) }; back2.SetResourceReference(Border.BackgroundProperty, "Subtle"); Grid.SetColumnSpan(back2, 2); track.Children.Add(back2);
-                    var fill = new Border { CornerRadius = new CornerRadius(5) }; fill.SetResourceReference(Border.BackgroundProperty, "Blue"); if (course.Count > 0) track.Children.Add(fill);
+                    var fill = new Border { CornerRadius = new CornerRadius(5) }; fill.SetResourceReference(Border.BackgroundProperty, closed ? "Faint" : "Blue"); if (course.Count > 0) track.Children.Add(fill);
                     line.Children.Add(track);
                     var count = AdminUi.Label(course.Count + "명", "Ink", 13, true); count.TextAlignment = TextAlignment.Right; count.VerticalAlignment = VerticalAlignment.Center; Grid.SetColumn(count, 2); line.Children.Add(count);
+                    var (groupIndex, courseName, people) = (index, course.Name, course.Count);
+                    var toggle = new Button { Content = closed ? "폐강 취소" : "폐강", HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Padding = new Thickness(8, 2, 8, 2) };
+                    toggle.SetResourceReference(StyleProperty, "SubtleButton"); if (!closed) toggle.SetResourceReference(ForegroundProperty, "Muted");
+                    AutomationProperties.SetName(toggle, (closed ? "폐강 취소 " : "폐강 ") + courseName); Grid.SetColumn(toggle, 3); line.Children.Add(toggle);
+                    toggle.Click += async (_, _) => await Run(async () =>
+                    {
+                        if (!closed && Notice.Show(this, $"‘{courseName}’을(를) 폐강할까요?\n\n이 과목을 고른 학생 {people}명은 자기 링크를 다시 열면 이 선택군을 다시 골라야 합니다. 학생 화면에 바로 반영됩니다.\n마감일이 지났다면 ‘수정’에서 마감일을 늘린 뒤 ‘폐강 재선택’의 학생들에게 링크를 다시 보내세요.", "폐강", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+                        await api.Send<System.Text.Json.JsonElement>(HttpMethod.Post, $"api/courses/rounds/{round.Id}/closed", new { group = groupIndex, course = courseName, closed = !closed });
+                        await ShowRound(round.Id, false); Say(closed ? $"‘{courseName}’ 폐강을 취소했습니다. 학생 화면에 다시 나옵니다." : $"‘{courseName}’을(를) 폐강했습니다. ‘폐강 재선택’에서 다시 골라야 하는 학생을 볼 수 있습니다.", false);
+                    }, round.PublishedAt is null ? null : "학생 화면에 반영하는 중…");
                     stack.Children.Add(line);
                 }
                 var card = AdminUi.Card(stack, 18); card.Margin = new Thickness(0, 0, 0, 12); content.Children.Add(card);
             }
         }
+    }
+    // The closed courses a student had chosen; they choose again in those groups.
+    static string[] Lost(Detail round, Answer s) => s.Picks is not { } p ? [] : round.Groups.SelectMany((g, i) => i < p.Length ? p[i].Where(c => (g.Closed ?? []).Contains(c)) : Enumerable.Empty<string>()).ToArray();
+    static DockPanel Titled(string title, Button? action)
+    {
+        var head = new DockPanel();
+        if (action is not null) { action.Margin = new Thickness(8, 0, 0, 0); action.VerticalAlignment = VerticalAlignment.Center; DockPanel.SetDock(action, Dock.Right); head.Children.Add(action); }
+        head.Children.Add(AdminUi.Heading(title, 15)); return head;
     }
     static void ByClass(Panel host, System.Collections.Generic.IEnumerable<Answer> students, Func<Answer, string>? note = null)
     {
@@ -248,8 +282,9 @@ public sealed class CourseWindow : Window
         box.Children.Clear();
         var groups = results.Round.Groups; var split = groups.Any(g => g.Semester != 0); var term = split ? overlapTerm : 0;
         var inTerm = groups.Select((g, i) => (Group: g, Index: i)).Where(x => term == 0 || x.Group.Semester == 0 || x.Group.Semester == term).ToArray();
-        var courses = inTerm.SelectMany(x => x.Group.Courses).Distinct().ToArray();
-        var takers = results.Students.Where(s => s.Picks is not null).Select(s => (Student: s, Courses: inTerm.SelectMany(x => s.Picks![x.Index]).ToHashSet())).ToArray();
+        // Closed courses are left out: no class will run for them.
+        var courses = inTerm.SelectMany(x => x.Group.Courses.Except(x.Group.Closed ?? [])).Distinct().ToArray();
+        var takers = results.Students.Where(s => s.Picks is not null).Select(s => (Student: s, Courses: inTerm.SelectMany(x => s.Picks![x.Index].Except(x.Group.Closed ?? [])).ToHashSet())).ToArray();
         int Both(int a, int b) => takers.Count(t => t.Courses.Contains(courses[a]) && t.Courses.Contains(courses[b]));
         var counts = new int[courses.Length, courses.Length];
         for (var a = 0; a < courses.Length; a++) for (var b = 0; b < courses.Length; b++) counts[a, b] = Both(a, b);
@@ -322,10 +357,11 @@ public sealed class CourseWindow : Window
             Enumerable.Range(0, courses.Length).Select(a => new object[] { courses[a] }.Concat(Enumerable.Range(0, courses.Length).Select(b => (object)counts[a, b])).ToArray()), "표를 저장했습니다.");
     }
 
-    async Task SaveLinks(Detail round)
+    async Task SaveLinks(Detail round, Answer[]? only = null)
     {
         var links = await api.Get<StudentLink[]>($"api/courses/rounds/{round.Id}/links");
-        Save($"{round.Title} 학생 링크.csv", "학년,반,번호,이름,링크", links.Select(l => new object[] { l.Grade, l.ClassNo, l.Number, l.Name, l.Link }),
+        if (only is not null) links = links.Where(l => only.Any(s => s.ClassNo == l.ClassNo && s.Number == l.Number)).ToArray();
+        Save($"{round.Title} 학생 링크{(only is null ? "" : $" {links.Length}명")}.csv", "학년,반,번호,이름,링크", links.Select(l => new object[] { l.Grade, l.ClassNo, l.Number, l.Name, l.Link }),
             "링크 목록을 저장했습니다. 학생 한 명마다 자기 링크만 받도록 나눠 주세요.");
     }
     Task SaveResults(Results results)
@@ -333,7 +369,7 @@ public sealed class CourseWindow : Window
         var groups = results.Round.Groups;
         Save($"{results.Round.Title} 결과.csv", "학년,반,번호,이름,제출," + string.Join(",", groups.Select(g => Cell(g.Name))) + ",제출 시각",
             results.Students.Select(s => new object[] { results.Round.Grade, s.ClassNo, s.Number, s.Name, s.Picks is null ? "미제출" : "제출" }
-                .Concat(groups.Select((_, i) => (object)(s.Picks is null ? "" : string.Join(", ", s.Picks[i])))).Append(s.SubmittedAt is { } at ? When(at) : "").ToArray()), "결과를 저장했습니다.");
+                .Concat(groups.Select((g, i) => (object)(s.Picks is null ? "" : string.Join(", ", s.Picks[i].Select(c => (g.Closed ?? []).Contains(c) ? c + "(폐강)" : c))))).Append(s.SubmittedAt is { } at ? When(at) : "").ToArray()), "결과를 저장했습니다.");
         return Task.CompletedTask;
     }
     static string Cell(object value) { var text = Convert.ToString(value, CultureInfo.InvariantCulture) ?? ""; return text.IndexOfAny([',', '"', '\n', '\r']) >= 0 ? "\"" + text.Replace("\"", "\"\"") + "\"" : text; }
@@ -344,6 +380,76 @@ public sealed class CourseWindow : Window
         // The byte order mark lets Excel read Korean correctly.
         File.WriteAllText(dialog.FileName, header + "\r\n" + string.Join("\r\n", rows.Select(r => string.Join(",", r.Select(Cell)))) + "\r\n", new UTF8Encoding(true));
         Say(done, false);
+    }
+
+    // ── 수강신청 확인서: one A4 page per student, by class, opened in the browser to print or save as PDF ──
+    bool blankSlips = true;
+    static readonly string PrintFolder = Path.Combine(Path.GetTempPath(), "gyomutalk-print");
+    void Slips(Results results, StackPanel box)
+    {
+        box.Children.Add(AdminUi.Heading("수강신청 확인서", 15));
+        var hint = AdminUi.Label("학생 한 명에 A4 한 장입니다. 학생·학부모 서명 칸과 신청 일자를 적는 칸이 있습니다. 반을 누르면 브라우저에 열리니 ‘인쇄하기’를 누르세요(PDF로 저장도 됩니다).", "Muted", 12);
+        hint.Margin = new Thickness(0, 4, 0, 10); box.Children.Add(hint);
+        var blanks = new CheckBox { Content = "미제출 학생은 빈 신청서로 함께 뽑기", IsChecked = blankSlips, Margin = new Thickness(0, 0, 0, 12) };
+        blanks.Click += (_, _) => blankSlips = blanks.IsChecked == true; box.Children.Add(blanks);
+        var rooms = new WrapPanel();
+        var all = new Button { Content = "전체 반", Margin = new Thickness(0, 0, 8, 8) }; all.SetResourceReference(StyleProperty, "PrimaryButton");
+        all.Click += async (_, _) => await Run(() => OpenSlips(results, results.Students, "전체"), "확인서를 만드는 중…"); rooms.Children.Add(all);
+        foreach (var room in results.Students.GroupBy(s => s.ClassNo).OrderBy(r => r.Key))
+        {
+            var students = room.ToArray();
+            var open = new Button { Content = $"{room.Key}반 · 제출 {students.Count(s => s.Picks is not null)}/{students.Length}", Margin = new Thickness(0, 0, 8, 8) };
+            open.Click += async (_, _) => await Run(() => OpenSlips(results, students, $"{room.Key}반"), "확인서를 만드는 중…"); rooms.Children.Add(open);
+        }
+        box.Children.Add(rooms);
+        var note = AdminUi.Label("인쇄용 파일은 이 PC의 임시 폴더에만 잠깐 만들어지고, 다음 인쇄나 수강신청 창을 닫을 때 지워집니다.", "Faint", 12); note.Margin = new Thickness(0, 6, 0, 0); box.Children.Add(note);
+    }
+    async Task OpenSlips(Results results, Answer[] students, string label)
+    {
+        var round = results.Round; var chosen = students.Where(s => blankSlips || s.Picks is not null).OrderBy(s => s.ClassNo).ThenBy(s => s.Number).ToArray();
+        if (chosen.Length == 0) throw new InvalidOperationException("뽑을 학생이 없습니다. 미제출 학생도 뽑으려면 ‘빈 신청서로 함께 뽑기’를 켜세요.");
+        var school = "학교";
+        try { school = (await api.Get<System.Text.Json.JsonElement>("server-info")).GetProperty("schoolName").GetString() is { Length: > 0 } name ? name : school; } catch (Exception e) when (e is InvalidOperationException or HttpRequestException or TaskCanceledException or KeyNotFoundException) { }
+        string H(string text) => System.Net.WebUtility.HtmlEncode(text);
+        var pages = new StringBuilder();
+        foreach (var s in chosen)
+        {
+            var rows = string.Concat(round.Groups.Select((g, i) =>
+            {
+                var picked = s.Picks is { } p && i < p.Length ? string.Join(", ", p[i].Select(c => (g.Closed ?? []).Contains(c) ? H(c) + " <small>(폐강 · 다시 신청)</small>" : H(c))) : "";
+                return $"<tr><th>{H(g.Name)}</th><td class=\"term\">{(g.Semester == 0 ? "1·2학기" : g.Semester + "학기")}</td><td class=\"{(picked.Length == 0 ? "blank" : "")}\">{(picked.Length == 0 ? $"<small>{g.Pick}과목을 적으세요 · {H(string.Join(", ", g.Courses.Except(g.Closed ?? [])))}</small>" : picked)}</td></tr>";
+            }));
+            var stamp = s.SubmittedAt is { } at ? $"온라인 제출 {DateTimeOffset.FromUnixTimeMilliseconds(at).ToOffset(TimeSpan.FromHours(9)).ToString("yyyy. M. d. HH:mm", Korean)}" : "온라인 미제출";
+            pages.Append($@"<section class=""page""><h1>수강신청 확인서</h1><p class=""round"">{H(round.Title)}</p>
+<table class=""who""><tr><th>학년</th><td>{round.Grade}</td><th>반</th><td>{s.ClassNo}</td><th>번호</th><td>{s.Number}</td><th>이름</th><td class=""name"">{H(s.Name)}</td></tr></table>
+<table class=""picks""><tr><th>선택군</th><th class=""term"">학기</th><th>신청 과목</th></tr>{rows}</table><p class=""meta"">{stamp}</p>
+<p class=""vow"">위와 같이 선택과목 수강을 신청하였음을 확인합니다.</p>
+<p class=""date"">신청 일자 :&emsp;&emsp;&emsp;&emsp;년&emsp;&emsp;&emsp;월&emsp;&emsp;&emsp;일</p>
+<table class=""sign""><tr><th>학생</th><td>{H(s.Name)}</td><td class=""mark"">(서명)</td></tr><tr><th>학부모(보호자)</th><td></td><td class=""mark"">(서명)</td></tr></table>
+<p class=""to"">{H(school)}장 귀하</p></section>");
+        }
+        var html = $@"<!doctype html><html lang=""ko""><head><meta charset=""utf-8""><title>{H(round.Title)} 수강신청 확인서 {H(label)}</title><style>
+@page{{size:A4;margin:15mm}}
+body{{margin:0;background:#E9EDF3;color:#111;font-family:""Malgun Gothic"",""Apple SD Gothic Neo"",sans-serif}}
+.bar{{position:sticky;top:0;z-index:1;display:flex;gap:14px;align-items:center;background:#fff;border-bottom:1px solid #DDE3EA;padding:10px 18px;font-size:14px;color:#5B6B80}}
+.bar b{{color:#17233A}}.bar button{{font:inherit;font-weight:700;background:#2463EB;color:#fff;border:0;border-radius:8px;padding:8px 18px;cursor:pointer}}
+.page{{box-sizing:border-box;width:210mm;height:297mm;margin:16px auto;padding:18mm 17mm;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.12);display:flex;flex-direction:column;page-break-after:always;break-after:page}}
+h1{{margin:0;text-align:center;font-size:24pt;letter-spacing:.35em}}.round{{margin:3mm 0 9mm;text-align:center;font-size:12pt;color:#333}}
+table{{width:100%;border-collapse:collapse;font-size:11.5pt}}th,td{{border:1px solid #444;padding:3mm}}th{{background:#F1F3F6;font-weight:600;white-space:nowrap}}
+.who td,.who th{{text-align:center}}.who .name{{font-weight:700;min-width:28mm}}.picks{{margin-top:6mm}}.picks th{{width:27%}}.picks .term{{width:13%;text-align:center}}
+.picks td.blank{{height:21mm;vertical-align:top}}small{{color:#666;font-size:9pt}}.meta{{margin:2mm 0 0;text-align:right;font-size:9pt;color:#666}}
+.vow{{margin:12mm 0 7mm;text-align:center;font-size:12.5pt}}.date{{margin:0 0 11mm;text-align:center;font-size:12.5pt}}
+.sign th{{width:28%}}.sign td{{height:13mm}}.sign .mark{{width:20%;text-align:right;color:#555}}.to{{margin:auto 0 0;padding-top:10mm;text-align:center;font-size:16pt;font-weight:700}}
+@media print{{body{{background:#fff}}.bar{{display:none}}.page{{margin:0;width:auto;height:266mm;padding:0;box-shadow:none}}}}
+</style></head><body><div class=""bar""><button onclick=""print()"">인쇄하기</button><span><b>{H(label)} {chosen.Length}명</b> · 학생 한 명에 한 장 · PDF로 저장하려면 인쇄 창에서 ‘PDF로 저장’을 고르세요.</span></div>
+{pages}</body></html>";
+        // Only the latest printout is kept, and only until this window closes, since it holds students' names.
+        Directory.CreateDirectory(PrintFolder); foreach (var old in Directory.GetFiles(PrintFolder, "*.html")) { try { File.Delete(old); } catch (IOException) { } }
+        var file = Path.Combine(PrintFolder, $"확인서 {Guid.NewGuid():N}.html"); File.WriteAllText(file, html, new UTF8Encoding(false));
+        // The screen tour keeps the page with its pictures instead of opening a browser on the test machine.
+        if (Environment.GetEnvironmentVariable("YY_SCREEN_TOUR") is { Length: > 0 } tour) { File.Copy(file, Path.Combine(tour, $"확인서 {label}.html"), true); Say($"{label} 확인서 {chosen.Length}장을 만들었습니다.", false); return; }
+        try { Process.Start(new ProcessStartInfo(file) { UseShellExecute = true }); } catch (System.ComponentModel.Win32Exception) { throw new InvalidOperationException("브라우저를 열지 못했습니다. 기본 브라우저가 정해져 있는지 확인하세요."); }
+        Say($"{label} 확인서 {chosen.Length}장을 브라우저에 열었습니다. ‘인쇄하기’를 누르세요.", false);
     }
 
     // ── New or changed round ──

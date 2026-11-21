@@ -1,5 +1,5 @@
 // Serves the student page of the generated script with made-up students, to look at it in a browser:
-//   node tests/course-page-preview.mjs [port]   then open the printed links (one fresh, one already answered, one closed).
+//   node tests/course-page-preview.mjs [port]   then open the printed links (one fresh, one whose course was closed after answering, two past the deadline).
 import {randomBytes} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import {startScriptHost} from './course-script-host.mjs';
@@ -15,4 +15,6 @@ for(const [round,closes] of [['open',Date.now()+5*86400000],['closed',Date.now()
  await post({action:'publish',round:{id:round,title:'2027학년도 3학년 선택과목 신청',closes,groups},students});
 }
 host.context.submit(links[1][2],[['물리학Ⅱ','화학Ⅱ'],['경제','세계사'],['심리학']]);
+// The school then closes 물리학Ⅱ: the student who had it sees the notice and picks again.
+await post({action:'publish',round:{id:'open',title:'2027학년도 3학년 선택과목 신청',closes:Date.now()+5*86400000,groups:groups.map((g,i)=>i===0?{...g,closed:['물리학Ⅱ']}:g)},students:links.filter(l=>l[0].startsWith('open')).map(l=>l[2])});
 for(const [label,link] of links)console.log(label+'\t'+link);

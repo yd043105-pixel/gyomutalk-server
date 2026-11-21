@@ -127,6 +127,16 @@ try{
  await duty.request(`courses/rounds/${id}`,'POST',{title:'3학년 선택과목(연장)',grade:2,closes:day(9),groups:[{...groups[0],semester:3},groups[1]]},400);
  check('after answers arrive only the name, deadline and term change, and the change reaches the student page at once');
 
+ await duty.request(`courses/rounds/${id}/closed`,'POST',{group:0,course:'물리학Ⅱ',closed:true});
+ assert.deepEqual(host.context.load(one.token).groups[0].closed,['물리학Ⅱ']);assert.ok(host.context.load(one.token).picks[0].includes('물리학Ⅱ'));
+ assert.equal(host.context.submit(one.token,[['물리학Ⅱ','화학Ⅱ'],['경제']]).error,'invalid');
+ await duty.request(`courses/rounds/${id}/closed`,'POST',{group:0,course:'화학Ⅱ',closed:true},409);
+ await duty.request(`courses/rounds/${id}`,'POST',{title:'3학년 선택과목(연장)',grade:2,closes:day(9),groups:groups.map((g,i)=>({...g,semester:i+1}))});
+ assert.deepEqual((await duty.request(`courses/rounds/${id}/results`)).round.groups[0].closed,['물리학Ⅱ']);
+ await duty.request(`courses/rounds/${id}/closed`,'POST',{group:0,course:'물리학Ⅱ',closed:false});
+ assert.deepEqual(host.context.load(one.token).groups[0].closed,[]);
+ check('a course can be closed (폐강) after answers come in: no one can pick it, earlier answers stay, editing keeps it closed, and it can be opened again');
+
  const moved=[...read.students.filter(s=>s.name!=='가상이'),...pasted.students,{grade:2,classNo:1,number:2,name:'가상구'}];
  assert.ok(host.context.submit(link('가상이').token,[['물리학Ⅱ','화학Ⅱ'],['경제']]).ok);
  const swap=await duty.request('courses/students/import','POST',{grades:[2],students:moved});assert.deepEqual([swap.added,swap.removed],[1,1]);

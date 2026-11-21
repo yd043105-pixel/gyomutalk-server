@@ -16,7 +16,9 @@ public static class CourseSelection
 {
     public const int ScriptVersion = 1;
     // Semester 0 means the group runs all year (or the school does not split it); 1 or 2 is the term its courses run in.
-    public sealed record Group(string Name, int Pick, string[] Courses, int Semester = 0);
+    // Closed lists the courses the school dropped (폐강) after asking; they stay so earlier answers still read, but no one can pick them.
+    public sealed record Group(string Name, int Pick, string[] Courses, int Semester = 0, string[]? Closed = null);
+    record Closing(int Group, string? Course, bool Closed);
     public sealed record StudentRow(int Grade, int ClassNo, int Number, string Name);
     record Roster(int[]? Grades, StudentRow[]? Students);
     record RoundRequest(string? Title, int Grade, string? Closes, Group[]? Groups);
@@ -175,6 +177,20 @@ public static class CourseSelection
             var count = await Publish(store, review, id); Audit(store, c, "course.round.publish", id);
             return new { ok = true, students = count };
         }));
+        // 폐강 (or taking it back): the course stays on the list but no one can pick it; students who had it pick again.
+        api.MapPost("/courses/rounds/{id}/closed", (string id, Closing request, HttpContext c) => Guard(c, async () =>
+        {
+            var round = Round(store, id);
+            if (request.Group < 0 || request.Group >= round.Groups.Length || !round.Groups[request.Group].Courses.Contains(request.Course)) throw new CourseException("없는 과목입니다. 화면을 새로 고치세요.", 404);
+            var group = round.Groups[request.Group]; var closed = (group.Closed ?? []).Where(x => x != request.Course).ToList();
+            if (request.Closed) closed.Add(request.Course!);
+            if (group.Courses.Length - closed.Count < group.Pick) throw new CourseException($"{group.Name}: 남은 과목이 고를 과목 수({group.Pick})보다 적어져 폐강할 수 없습니다. ‘수정’에서 고를 과목 수를 줄이세요.", 409);
+            var groups = round.Groups.Select((g, i) => i == request.Group ? g with { Closed = [.. closed] } : g).ToArray();
+            store.Execute("UPDATE CourseRounds SET Groups=$groups WHERE Id=$id", ("$id", id), ("$groups", JsonSerializer.Serialize(groups, Web)));
+            if (round.PublishedAt is not null) await Publish(store, review, id);
+            Audit(store, c, request.Closed ? "course.round.close-course" : "course.round.open-course", id);
+            return new { ok = true };
+        }));
         api.MapPost("/courses/rounds/{id}/refresh", (string id, HttpContext c) => Guard(c, async () => { await Pull(store, review, id); return Summary(store, id); }));
         api.MapGet("/courses/rounds/{id}/results", (string id, HttpContext c) => Guard(c, () => Task.FromResult<object?>(Summary(store, id))));
         api.MapGet("/courses/rounds/{id}/links", (string id, HttpContext c) => Guard(c, () =>
@@ -219,7 +235,14 @@ public static class CourseSelection
         if (!DateOnly.TryParseExact(request.Closes, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)) throw new CourseException("마감일을 고르세요.");
         // A round closes when that day ends in Korea.
         var closes = new DateTimeOffset(day.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.FromHours(9)).ToUnixTimeMilliseconds();
-        var groups = (request.Groups ?? []).Select(g => new Group((g.Name ?? "").Trim(), g.Pick, (g.Courses ?? []).Select(x => (x ?? "").Trim()).Where(x => x.Length > 0).ToArray(), g.Semester)).ToArray();
+        var prior = id is null ? null : Round(store, id);
+        var groups = (request.Groups ?? []).Select(g =>
+        {
+            var name = (g.Name ?? "").Trim(); var courses = (g.Courses ?? []).Select(x => (x ?? "").Trim()).Where(x => x.Length > 0).ToArray();
+            // A form that does not mention closed courses keeps the ones already closed.
+            var closed = (g.Closed ?? prior?.Groups.FirstOrDefault(p => p.Name == name)?.Closed ?? []).Where(courses.Contains).Distinct().ToArray();
+            return new Group(name, g.Pick, courses, g.Semester, closed);
+        }).ToArray();
         if (groups.Length is 0 or > 20) throw new CourseException("선택군을 하나 이상 만드세요.");
         foreach (var g in groups)
         {
@@ -227,6 +250,7 @@ public static class CourseSelection
             if (g.Courses.Length is 0 or > 40 || g.Courses.Any(x => x.Length > 60) || g.Courses.Distinct().Count() != g.Courses.Length) throw new CourseException($"{g.Name}: 과목을 한 줄에 하나씩, 겹치지 않게 적으세요.");
             if (g.Pick < 1 || g.Pick > g.Courses.Length) throw new CourseException($"{g.Name}: 고를 과목 수는 1부터 과목 수({g.Courses.Length})까지입니다.");
             if (g.Semester is < 0 or > 2) throw new CourseException($"{g.Name}: 학기를 고르세요.");
+            if (g.Courses.Length - g.Closed!.Length < g.Pick) throw new CourseException($"{g.Name}: 폐강한 과목을 빼면 남은 과목이 고를 과목 수({g.Pick})보다 적습니다.");
         }
         if (groups.Select(g => g.Name).Distinct().Count() != groups.Length) throw new CourseException("선택군 이름이 겹칩니다.");
         var json = JsonSerializer.Serialize(groups, Web);
@@ -237,9 +261,9 @@ public static class CourseSelection
         }
         else
         {
-            var before = Round(store, id);
+            var before = prior!;
             // Answers were checked against the old courses; a changed course list asks students again. The term only sorts the results, so it may change.
-            static string Choices(Group[] list) => JsonSerializer.Serialize(list.Select(g => g with { Semester = 0 }), Web);
+            static string Choices(Group[] list) => JsonSerializer.Serialize(list.Select(g => g with { Semester = 0, Closed = null }), Web);
             if (before.PublishedAt is not null && (before.Grade != request.Grade || Choices(before.Groups) != Choices(groups)) && store.Query("SELECT 1 FROM CourseChoices WHERE RoundId=$id LIMIT 1", r => 1, ("$id", id)).Count > 0)
                 throw new CourseException("이미 제출한 학생이 있어 학년·선택군·과목은 바꿀 수 없습니다. 신청 이름·마감일·학기만 바꾸거나, 새 신청을 만드세요.", 409);
             store.Execute("UPDATE CourseRounds SET Title=$t,Grade=$g,Closes=$c,Groups=$groups WHERE Id=$id", ("$id", id), ("$t", title), ("$g", request.Grade), ("$c", closes), ("$groups", json));
