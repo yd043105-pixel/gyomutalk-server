@@ -16,6 +16,7 @@
      <Button x:Name="SurveyButton" Style="{StaticResource RailButton}" ToolTip="설문" AutomationProperties.Name="설문" Click="OpenSurveyClick"><StackPanel><Path Data="{StaticResource SurveyIcon}" Style="{StaticResource Glyph}" Width="22" Height="22"/><TextBlock Text="설문" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel></Button>
      <Button x:Name="TimetableButton" Style="{StaticResource RailButton}" ToolTip="시간표" AutomationProperties.Name="시간표" Visibility="Collapsed" Click="OpenTimetableClick"><StackPanel><Path Data="{StaticResource TimetableIcon}" Style="{StaticResource Glyph}" Width="22" Height="22"/><TextBlock Text="시간표" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel></Button>
      <Button x:Name="OfficeButton" Style="{StaticResource RailButton}" ToolTip="학사일정 · 특별실 예약" AutomationProperties.Name="학사일정 · 특별실 예약" Click="OpenOfficeClick"><StackPanel><Path Data="{StaticResource CalendarIcon}" Style="{StaticResource Glyph}" Width="22" Height="22"/><TextBlock Text="일정" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel></Button>
+     <Button x:Name="CourseButton" Style="{StaticResource RailButton}" ToolTip="수강신청" AutomationProperties.Name="수강신청" Visibility="Collapsed" Click="OpenCourseClick"><StackPanel><Path Data="{StaticResource ElectiveIcon}" Style="{StaticResource Glyph}" Width="22" Height="22"/><TextBlock Text="수강신청" HorizontalAlignment="Center" Margin="0,4,0,0"/></StackPanel></Button>
     </StackPanel>
    </DockPanel></Border>
    <Border DockPanel.Dock="Top" Padding="16,16,10,12">

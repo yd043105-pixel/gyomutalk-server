@@ -125,6 +125,7 @@ scheduled.Deliver=async(request,sender)=>
 StaffAccounts.Initialize(store);
 var roster = new RosterFolderStore(store);
 OfficeFeatures.Initialize(store);
+CourseSelection.Initialize(store);
 var hasher = app.Services.GetRequiredService<PasswordHasher<User>>();
 if (store.Users().Count == 0)
 {
@@ -159,7 +160,7 @@ app.Use(async (context, next) =>
         var limit = context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
         if (limit is { IsReadOnly: false }) limit.MaxRequestBodySize = context.Request.Path.StartsWithSegments("/api/surveys") ? 524_288 : 131_072;
     }
-    if(context.Request.Path=="/api/timetable/import")
+    if(context.Request.Path=="/api/timetable/import"||context.Request.Path.StartsWithSegments("/api/courses/students"))
     {
         var limit=context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>();
         if(limit is{IsReadOnly:false})limit.MaxRequestBodySize=12_582_912;
@@ -635,6 +636,7 @@ var adminApi = app.MapGroup("/api/admin").RequireAuthorization("Admin");
 AttachmentPolicy.Map(api,adminApi,attachmentPolicy);
 StaffAccounts.Map(app,adminApi,store,hasher);
 OfficeFeatures.Map(api,adminApi,store);
+CourseSelection.Map(api,store,deploymentReview,app.Configuration,app.Environment);
 CollaborationFeatures.Map(api, store);
 TaskFeatures.Map(api, store);
 SubmissionFeatures.Map(api, store, app.Configuration, app.Environment);

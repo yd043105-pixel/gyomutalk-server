@@ -443,6 +443,7 @@ public partial class MainWindow : Window
         if(administratorWindow is{IsVisible:true}){administratorWindow.Activate();return;}
         administratorWindow=new ServerManagementWindow(this,Api);administratorWindow.Closed+=(_,_)=>administratorWindow=null;administratorWindow.Show();
     }
+    void OpenCourseClick(object sender,RoutedEventArgs e){if(Api is not null&&CourseButton.IsVisible)new CourseWindow(this).Show();}
     void OpenOfficeClick(object sender,RoutedEventArgs e){if(Api is not null&&(Feature("calendar")||Feature("rooms")))new OfficeWindow(this).Show();}
     // There are no terms to agree to: the school runs this for its own staff. This says what is kept and who looks after it.
     void OpenPrivacyNotice(object sender,RoutedEventArgs e)=>Notice.Show(this,string.Join("\n\n",

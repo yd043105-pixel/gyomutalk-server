@@ -259,7 +259,7 @@ try{
  check('class-and-subject bundles trade periods together, only rule-keeping trades are offered, and the manager approves a request without a file');
  const setting='admin/timetable-feature', status='timetable/status';
  // Optional menus: every signed-in teacher reads them, only the administrator changes them.
- assert.deepEqual(await teacher.request('features'),{timetable:true,chat:true,tasks:true,survey:true,calendar:true,rooms:true,remote:true});
+ assert.deepEqual(await teacher.request('features'),{timetable:true,chat:true,tasks:true,survey:true,calendar:true,rooms:true,remote:true,courses:true});
  await new Client(base0).request('features','GET',undefined,401);
  await duty.request('admin/features','POST',{name:'chat',enabled:false},403);
  await admin.request('admin/features','POST',{name:'mail',enabled:false},400);

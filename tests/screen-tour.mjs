@@ -8,6 +8,7 @@ import {existsSync,mkdirSync,readFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import path from 'node:path';
 import net from 'node:net';
+import {startScriptHost} from './course-script-host.mjs';
 assert.equal(process.platform,'win32');
 const root=process.cwd(),services=path.resolve(process.env.YY_TEST_SERVICE_ROOT??root);
 const sdk=existsSync('.tools/dotnet/dotnet.exe')?path.resolve('.tools/dotnet/dotnet.exe'):process.env.DOTNET_ROOT?path.join(process.env.DOTNET_ROOT,'dotnet.exe'):'dotnet';
@@ -15,7 +16,10 @@ const fixture=path.join(root,'.test-data','screen-tour-'+randomUUID()),output=pa
 const password='Test-'+randomUUID(),personal='Personal-'+randomUUID();
 const listener=net.createServer();await new Promise(r=>listener.listen(0,'127.0.0.1',r));const address='http://127.0.0.1:'+listener.address().port;await new Promise(r=>listener.close(r));
 let logs='',ui;
-const server=spawn(sdk,[path.join(services,'src/SchoolMessenger.Server/bin/Debug/net10.0/SchoolMessenger.Server.dll'),'--urls',address],{cwd:services,windowsHide:true,env:{...process.env,ASPNETCORE_ENVIRONMENT:'Development',School__Name:'가상고등학교',School__DataDirectory:path.join(fixture,'server'),School__AdminPassword:password,FeedbackMail__Enabled:'false',Feedback__AutomaticReportsEnabled:'false',Operations__AlertMailEnabled:'false'}});
+// 수강신청 talks to a local stand-in for Google that runs the generated script.
+const scriptPort=await new Promise(r=>{const s=net.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>r(p));});});
+const scriptHost=await startScriptHost(scriptPort);
+const server=spawn(sdk,[path.join(services,'src/SchoolMessenger.Server/bin/Debug/net10.0/SchoolMessenger.Server.dll'),'--urls',address],{cwd:services,windowsHide:true,env:{...process.env,ASPNETCORE_ENVIRONMENT:'Development',School__Name:'가상고등학교',School__DataDirectory:path.join(fixture,'server'),School__AdminPassword:password,FeedbackMail__Enabled:'false',Feedback__AutomaticReportsEnabled:'false',Operations__AlertMailEnabled:'false',Courses__TestScriptUrl:scriptHost.url}});
 server.stdout.on('data',b=>logs+=b);server.stderr.on('data',b=>logs+=b);
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 class Client{
@@ -84,6 +88,22 @@ try{
     bundles=[['1학년 선택 A',[lesson(0,0),lesson(1,0)]],['1학년 선택 B',[lesson(2,3),lesson(3,3)]],['2학년 선택 A',[lesson(6,1),lesson(7,1)]]];
   } finally { db.close(); }
   await seed('bundles',async()=>{for(const [name,members] of bundles)await admin.request('timetable/bundle-rules','POST',{id:randomUUID().replaceAll('-',''),name,members});});
+  // 수강신청: 2학년 6개 반 168명, 선택군 셋, 120명쯤 제출. The administrator holds the curriculum duty so the tour reaches it.
+  await seed('courses',async()=>{
+    await admin.request('admin/office/permissions','POST',{userId:admin.user.id,calendarManager:true,roomManager:true,courseManager:true});
+    scriptHost.load((await admin.request('courses/script')).code);await admin.request('courses/connect','POST',{url:scriptHost.url});
+    const family='김이박최정강조윤장임한오서신권황안송류홍',given=['가온','나래','다온','라엘','마루','바다','사랑','아라','자람','하늘','도윤','서아','이안','지우','하람','연우','시온','유나','주원','태오','예린','건우','수아','민재','채원','도하','윤슬','로운'];
+    const students=[];for(let c=1;c<=6;c++)for(let n=1;n<=28;n++)students.push({grade:2,classNo:c,number:n,name:family[(c*7+n)%family.length]+given[(n+c)%given.length]});
+    await admin.request('courses/students/import','POST',{grades:[2],students});
+    const groups=[{name:'선택군 1 (과학)',pick:2,courses:['물리학Ⅱ','화학Ⅱ','생명과학Ⅱ','지구과학Ⅱ','융합과학 탐구']},{name:'선택군 2 (사회)',pick:2,courses:['경제','정치와 법','사회·문화','세계사','윤리와 사상']},{name:'선택군 3 (교양)',pick:1,courses:['철학','논리학','심리학','진로와 직업']}];
+    const korea=new Date(Date.now()+9*3600000+10*86400000).toISOString().slice(0,10);
+    const round=await admin.request('courses/rounds','POST',{title:'2027학년도 3학년 선택과목 신청',grade:2,closes:korea,groups});
+    await admin.request('courses/rounds','POST',{title:'1학년 진로 선택 희망 조사(준비 중)',grade:2,closes:korea,groups:[groups[2]]});
+    await admin.request(`courses/rounds/${round.id}/publish`,'POST');
+    const links=await admin.request(`courses/rounds/${round.id}/links`);
+    links.forEach((l,i)=>{if(i%7===3||i%11===5)return;const pick=(g,k)=>g.courses.filter((_,j)=>(j+i*k)%g.courses.length<g.pick);scriptHost.context.submit(new URL(l.link).searchParams.get('t'),[pick(groups[0],1),pick(groups[1],2),pick(groups[2],3)]);});
+    await admin.request(`courses/rounds/${round.id}/refresh`,'POST');
+  });
   ui=spawn(sdk,[path.join(root,'src/SchoolMessenger.Desktop/bin/Debug/net10.0-windows/SchoolMessenger.dll'),'--verify-ui'],{cwd:root,windowsHide:true,env:{...process.env,SCHOOL_UI_SERVER:address,SCHOOL_UI_USER:'admin',SCHOOL_UI_PASSWORD:password,SCHOOL_UI_OUTPUT:path.join(output,'client-preview.png'),SCHOOL_UI_LOCALDIR:path.join(fixture,'client'),YY_SCREEN_TOUR:output}});
   let timeout;const code=await Promise.race([new Promise((resolve,reject)=>{ui.once('error',reject);ui.once('exit',resolve);}),new Promise(resolve=>{timeout=setTimeout(()=>resolve(-1),17*60000);})]);clearTimeout(timeout);
   const report=existsSync(path.join(output,'report.txt'))?readFileSync(path.join(output,'report.txt'),'utf8'):'';
@@ -93,4 +113,4 @@ try{
   const faults=report.split('\n').slice(1).filter(l=>!l.startsWith('!')&&/글씨 잘림|자리 부족|가로 스크롤/.test(l)&&!l.includes('가장 작게 줄인 창'));
   for(const line of faults)console.log('FAULT '+line.split('\t').filter((_,i)=>i!==3).join(' | '));
   console.log(faults.length+' screens with layout faults. Pictures: '+path.join(output,'index.html'));
-}finally{if(ui?.exitCode===null)ui.kill();if(server.exitCode===null){const closed=new Promise(r=>server.once('exit',r));server.kill();await closed;}}
+}finally{await scriptHost.close();if(ui?.exitCode===null)ui.kill();if(server.exitCode===null){const closed=new Promise(r=>server.once('exit',r));server.kill();await closed;}}

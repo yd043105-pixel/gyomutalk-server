@@ -73,6 +73,7 @@ public partial class MainWindow
     // Menus the school's administrator switched off; an older server has no such list and shows everything.
     HashSet<string> featuresOff = [];
     public bool Feature(string name) => !featuresOff.Contains(name);
+    bool courseDuty;
     async Task RefreshFeatures()
     {
         var source=Api;if(source is null)return;
@@ -81,10 +82,16 @@ public partial class MainWindow
         catch(ApiRequestException e) when(e.StatusCode==System.Net.HttpStatusCode.NotFound) { }
         if(source!=Api)return;
         featuresOff=map?.Where(f=>!f.Value).Select(f=>f.Key).ToHashSet()??[];
+        // 수강신청 shows only for the curriculum duty; servers before it have no such route.
+        var courses=false;
+        try { courses=(await source.Get<JsonElement>("api/courses/access")).GetProperty("manager").GetBoolean(); }
+        catch(ApiRequestException e) when(e.StatusCode is System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Forbidden) { }
+        if(source!=Api)return;
+        courseDuty=courses;
         ShowFeatures();
         foreach(var window in SessionWindows)
         {
-            var open=window switch{ChatWindow=>Feature("chat"),SurveyWindow=>Feature("survey"),WorkWindow=>Feature("tasks"),OfficeWindow{Administrative:false}=>Feature("calendar")||Feature("rooms"),_=>true};
+            var open=window switch{CourseWindow=>courseDuty,ChatWindow=>Feature("chat"),SurveyWindow=>Feature("survey"),WorkWindow=>Feature("tasks"),OfficeWindow{Administrative:false}=>Feature("calendar")||Feature("rooms"),_=>true};
             if(!open)window.Close();
         }
         await RefreshTimetableAvailability();
@@ -93,7 +100,7 @@ public partial class MainWindow
     {
         Visibility Shown(bool on)=>on?Visibility.Visible:Visibility.Collapsed;
         ChatButton.Visibility=Shown(Feature("chat"));WorkButton.Visibility=Shown(Feature("tasks"));SurveyButton.Visibility=Shown(Feature("survey"));
-        OfficeButton.Visibility=Shown(Feature("calendar")||Feature("rooms"));
+        OfficeButton.Visibility=Shown(Feature("calendar")||Feature("rooms"));CourseButton.Visibility=Shown(courseDuty&&Feature("courses"));
         var office=Feature("calendar")&&Feature("rooms")?"학사일정 · 특별실 예약":Feature("rooms")?"특별실 예약":"학사일정";
         OfficeButton.ToolTip=office;System.Windows.Automation.AutomationProperties.SetName(OfficeButton,office);
     }

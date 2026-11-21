@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.SignalR;
 using System.Globalization;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
@@ -62,13 +63,16 @@ public static class OfficeFeatures
         {
             using var db=store.Open();return Results.Ok(new{calendarManager=Granted(db,null,User(c),"CalendarManager"),roomManager=Granted(db,null,User(c),"RoomManager"),userId=User(c),rooms=store.Query("SELECT Id,Name,Location,Active,Revision FROM OfficeRooms ORDER BY Name",r=>new Room(r.GetString(0),r.GetString(1),r.GetString(2),r.GetBoolean(3),r.GetInt32(4)))});
         });
-        admin.MapGet("/office/permissions",()=>store.Query("SELECT u.Id,u.Name,u.Department,COALESCE(p.CalendarManager,0),COALESCE(p.RoomManager,0) FROM Users u LEFT JOIN OfficePermissions p ON p.UserId=u.Id WHERE u.Active=1 ORDER BY u.Department,u.Name",r=>new{userId=r.GetString(0),name=r.GetString(1),department=r.GetString(2),calendarManager=r.GetBoolean(3),roomManager=r.GetBoolean(4)}));
-        admin.MapPost("/office/permissions",IResult(OfficePermissionRequest request,HttpContext c)=>
+        admin.MapGet("/office/permissions",()=>store.Query("SELECT u.Id,u.Name,u.Department,COALESCE(p.CalendarManager,0),COALESCE(p.RoomManager,0),COALESCE(p.CourseManager,0) FROM Users u LEFT JOIN OfficePermissions p ON p.UserId=u.Id WHERE u.Active=1 ORDER BY u.Department,u.Name",r=>new{userId=r.GetString(0),name=r.GetString(1),department=r.GetString(2),calendarManager=r.GetBoolean(3),roomManager=r.GetBoolean(4),courseManager=r.GetBoolean(5)}));
+        admin.MapPost("/office/permissions",async Task<IResult>(OfficePermissionRequest request,HttpContext c,Microsoft.AspNetCore.SignalR.IHubContext<MessageHub> hub)=>
         {
             using var db=store.Open();using var tx=db.BeginTransaction(deferred:false);
             using(var find=Store.Command(db,"SELECT 1 FROM Users WHERE Id=$id AND Active=1",tx,("$id",request.UserId)))if(find.ExecuteScalar() is null)return Results.NotFound();
-            using(var command=Store.Command(db,"INSERT INTO OfficePermissions VALUES($id,$calendar,$rooms) ON CONFLICT(UserId) DO UPDATE SET CalendarManager=$calendar,RoomManager=$rooms",tx,("$id",request.UserId),("$calendar",request.CalendarManager),("$rooms",request.RoomManager)))command.ExecuteNonQuery();
-            StaffAccounts.Audit(db,tx,User(c),"office.permissions",request.UserId);tx.Commit();return Results.Ok();
+            using(var command=Store.Command(db,"INSERT INTO OfficePermissions(UserId,CalendarManager,RoomManager,CourseManager) VALUES($id,$calendar,$rooms,COALESCE($course,0)) ON CONFLICT(UserId) DO UPDATE SET CalendarManager=$calendar,RoomManager=$rooms,CourseManager=COALESCE($course,CourseManager)",tx,("$id",request.UserId),("$calendar",request.CalendarManager),("$rooms",request.RoomManager),("$course",request.CourseManager)))command.ExecuteNonQuery();
+            StaffAccounts.Audit(db,tx,User(c),"office.permissions",request.UserId);tx.Commit();
+            // A duty can bring a menu (수강신청) with it, so connected programs read their menus again.
+            try{await hub.Clients.Group(request.UserId).SendAsync("FeaturesChanged");}catch{/* Programs also read it when they sign in. */}
+            return Results.Ok();
         });
         api.MapGet("/office/events",IResult(string? from,string? to)=>!Range(from,to,out var start,out var end)?Error("조회 범위는 yyyy-MM-dd 형식으로 최대 366일입니다."):Results.Ok(store.Query(Events+" WHERE e.Cancelled=0 AND e.Start<$end AND e.End>$start ORDER BY e.Start LIMIT 1000",ReadEvent,("$start",start),("$end",end))));
         api.MapPost("/office/events",(OfficeEventRequest request,HttpContext c)=>SaveEvent(store,c,request,null));

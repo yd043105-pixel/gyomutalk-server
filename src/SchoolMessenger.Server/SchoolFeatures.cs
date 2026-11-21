@@ -7,7 +7,7 @@ namespace SchoolMessenger.Server;
 // A switched-off feature disappears from every connected teacher program; its data is kept and comes back when it is switched on again.
 public static class SchoolFeatures
 {
-    public static readonly string[] Names = ["timetable", "chat", "tasks", "survey", "calendar", "rooms", "remote"];
+    public static readonly string[] Names = ["timetable", "chat", "tasks", "survey", "calendar", "rooms", "remote", "courses"];
     record Change(string? Name, bool? Enabled);
 
     public static void Map(WebApplication app, Store store, Timetables timetables)

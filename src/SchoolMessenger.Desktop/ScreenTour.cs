@@ -26,7 +26,7 @@ namespace SchoolMessenger.Desktop;
 sealed class ScreenTour(string folder)
 {
     // Presses that end the session, start another program or would show the real desktop.
-    static readonly Regex Skip=new("로그아웃|프로그램 종료|^닫기$|끝내기|업데이트|다시 시작|서버 중지|서버 멈춤|서버 시작|시간표 생성기|원격|메모장|관리 프로그램|백업|복구|옮기|설치|최대화|최소화|잠금|잠그|^인쇄",RegexOptions.CultureInvariant);
+    static readonly Regex Skip=new("로그아웃|프로그램 종료|^닫기$|끝내기|업데이트|다시 시작|서버 중지|서버 멈춤|서버 시작|시간표 생성기|원격|메모장|브라우저|관리 프로그램|백업|복구|옮기|설치|최대화|최소화|잠금|잠그|^인쇄",RegexOptions.CultureInvariant);
     // Pressed after everything else, because they change what the other screens look like or remove what they show.
     static readonly Regex Late=new("화면 색상|삭제|지우|초기화|회수|나가기|비활성|거절|취소",RegexOptions.CultureInvariant);
     // YY_SCREEN_TOUR_ONLY narrows the first window to the buttons whose name matches, to look at one part again.

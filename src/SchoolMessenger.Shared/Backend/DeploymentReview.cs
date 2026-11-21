@@ -94,7 +94,7 @@ public sealed class DeploymentReview
             var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach(var connection in value.ExternalServices)
             {
-                if(connection is null||connection.Purpose is not ("tunnel" or "school-bridge" or "error-mail" or "operations-mail" or "neis")||!Label(connection.Host)||Uri.CheckHostName(connection.Host)==UriHostNameType.Unknown||connection.Port is <1 or >65535||!Label(connection.Provider)||!Countries(connection.ProcessingCountries)||!value.Documents.ContainsKey(connection.EvidenceId??""))throw Invalid("review-connection-invalid");
+                if(connection is null||connection.Purpose is not ("tunnel" or "school-bridge" or "error-mail" or "operations-mail" or "neis" or "course-selection")||!Label(connection.Host)||Uri.CheckHostName(connection.Host)==UriHostNameType.Unknown||connection.Port is <1 or >65535||!Label(connection.Provider)||!Countries(connection.ProcessingCountries)||!value.Documents.ContainsKey(connection.EvidenceId??""))throw Invalid("review-connection-invalid");
                 if(connection.Kind is not ("school-owned" or "third-party-cloud" or "public-data"))throw Invalid("review-provider-kind-invalid");
                 if(connection.Purpose=="tunnel"&&connection.Kind!="third-party-cloud")throw Invalid("review-tunnel-provider-invalid");
                 if(connection.Purpose is "error-mail" or "operations-mail")

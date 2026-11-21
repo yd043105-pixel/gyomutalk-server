@@ -4,7 +4,8 @@ public record StaffAccountRequest(string LoginName, string Name, string Departme
 public record StaffSeatRequest(string? SeatIp);
 // Earlier programs also send a number and an agreement to terms; neither is asked for any more.
 public record StaffActivation(string NewPassword);
-public record OfficePermissionRequest(string UserId, bool CalendarManager, bool RoomManager);
+// CourseManager: the curriculum duty (수강신청). Null keeps what is saved; earlier programs send none.
+public record OfficePermissionRequest(string UserId, bool CalendarManager, bool RoomManager, bool? CourseManager = null);
 // Periods: the lessons an all-day event takes on each of its days, shown on every timetable. Null keeps what is saved (earlier programs send none).
 public record OfficeEventRequest(string ClientId, string Title, string Description, string Start, string End, bool AllDay, int Revision = 0, int[]? Periods = null);
 public record OfficeRoomRequest(string Name, string Location, bool Active = true, int Revision = 0);

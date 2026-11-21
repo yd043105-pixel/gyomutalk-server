@@ -173,6 +173,7 @@ public sealed partial class LocalServerWindow
         ("calendar","학사일정","학교 일정 달력."),
         ("rooms","특별실 예약","특별실 예약 표. 특별실 목록은 왼쪽 ‘특별실’에서 관리합니다."),
         ("remote","원격 지원","다른 교직원의 PC 화면을 함께 보며 돕는 원격 지원."),
+        ("courses","수강신청","학생 개별 링크로 선택과목을 받는 기능. ‘교육과정 담당’ 권한을 받은 선생님에게만 보이고, 학생 화면은 학교가 만든 구글 계정에서 열립니다."),
     ];
     async Task ShowFeatures(Api source,int revision)
     {

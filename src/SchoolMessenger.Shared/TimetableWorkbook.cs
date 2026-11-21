@@ -20,7 +20,17 @@ public static class TimetableWorkbook
         try{return ReadCore(path,kind);}catch(FilePolicyException){throw;}catch(Exception e)when(e is InvalidDataException or XmlException or ArgumentException or FormatException or OverflowException or InvalidOperationException)
         {throw new FilePolicyException("손상되었거나 지원하지 않는 시간표 엑셀입니다.");}
     }
-    static TimetableWorkbookData ReadCore(string path,string kind)
+    public sealed record Sheet(string Name,Dictionary<(int Row,int Col),string> Values,((int Row,int Col) Start,(int Row,int Col) End)[] Merges)
+    {
+        public string Get(int r,int c){if(Values.TryGetValue((r,c),out var v)&&v.Length>0)return v;var m=Merges.FirstOrDefault(m=>r>=m.Start.Row&&r<=m.End.Row&&c>=m.Start.Col&&c<=m.End.Col);return m==default?"":Values.GetValueOrDefault(m.Start,"");}
+    }
+    /// <summary>Every sheet's cell values, with the same safety checks as the timetable: no macros, external links or formulas.</summary>
+    public static List<Sheet> Sheets(string path)
+    {
+        try{return SheetsCore(path);}catch(FilePolicyException){throw;}catch(Exception e)when(e is InvalidDataException or XmlException or ArgumentException or FormatException or OverflowException or InvalidOperationException)
+        {throw new FilePolicyException("손상되었거나 지원하지 않는 엑셀입니다.");}
+    }
+    static List<Sheet> SheetsCore(string path)
     {
         using var zip=ZipFile.OpenRead(path);
         if(zip.Entries.Count>256||zip.Entries.Sum(e=>e.Length)>50_000_000||zip.Entries.Any(e=>e.Length>12_000_000)||zip.Entries.Select(e=>e.FullName).Distinct(StringComparer.OrdinalIgnoreCase).Count()!=zip.Entries.Count)
@@ -36,10 +46,10 @@ public static class TimetableWorkbook
         var shared=zip.GetEntry("xl/sharedStrings.xml") is null?[]:Xml("xl/sharedStrings.xml").Descendants().Where(e=>e.Name.LocalName=="si").Select(Text).ToArray();
         var workbook=Xml("xl/workbook.xml");var relationships=Xml("xl/_rels/workbook.xml.rels").Descendants().Where(e=>e.Name.LocalName=="Relationship").ToArray();
         if(relationships.Any(r=>(string?)r.Attribute("TargetMode")=="External"))throw new FilePolicyException("외부 연결이 있는 엑셀은 사용할 수 없습니다.");
-        var cells=new List<TimetableRawCell>();int year=0,semester=0;string? date=null;var seenSheets=0;
+        var sheets=new List<Sheet>();var seenSheets=0;
         foreach(var sheet in workbook.Descendants().Where(e=>e.Name.LocalName=="sheet"))
         {
-            if(++seenSheets>30)throw new FilePolicyException("시간표 시트가 너무 많습니다.");
+            if(++seenSheets>30)throw new FilePolicyException("엑셀 시트가 너무 많습니다.");
             var relationship=relationships.SingleOrDefault(r=>(string?)r.Attribute("Id")==sheet.Attributes().FirstOrDefault(a=>a.Name.LocalName=="id")?.Value);
             var target=(string?)relationship?.Attribute("Target")??"";
             var file=target.StartsWith("/",StringComparison.Ordinal)?target.TrimStart('/') : "xl/"+target;
@@ -49,14 +59,23 @@ public static class TimetableWorkbook
             {
                 if(cell.Elements().Any(e=>e.Name.LocalName=="f"))throw new FilePolicyException("수식 셀은 값으로 저장한 뒤 올려주세요: "+cell.Attribute("r")?.Value);
                 var at=Coordinate((string?)cell.Attribute("r")??"");
-                if(at.Row>1000||at.Col>300||values.Count>=MaxCells)throw new FilePolicyException("시간표 행·열 제한을 넘었습니다.",413);
+                if(at.Row>3000||at.Col>300||values.Count>=MaxCells)throw new FilePolicyException("엑셀 행·열 제한을 넘었습니다.",413);
                 var raw=cell.Elements().FirstOrDefault(e=>e.Name.LocalName=="v")?.Value??"";
                 var value=(string?)cell.Attribute("t") switch{"s"=>int.TryParse(raw,out var n)&&n>=0&&n<shared.Length?shared[n]:throw new FilePolicyException("엑셀 문자열 참조 오류입니다."),"inlineStr"=>Text(cell),_=>raw};
                 if(value.Length>500||!values.TryAdd(at,value.Trim()))throw new FilePolicyException("중복되거나 너무 긴 셀입니다.");
             }
             var merges=xml.Descendants().Where(e=>e.Name.LocalName=="mergeCell").Select(e=>Range((string?)e.Attribute("ref")??"")).ToArray();
             if(merges.Length>4000)throw new FilePolicyException("병합 셀이 너무 많습니다.");
-            string Get(int r,int c){if(values.TryGetValue((r,c),out var v)&&v.Length>0)return v;var m=merges.FirstOrDefault(m=>r>=m.Start.Row&&r<=m.End.Row&&c>=m.Start.Col&&c<=m.End.Col);return m==default?"":values.GetValueOrDefault(m.Start,"");}
+            sheets.Add(new((string?)sheet.Attribute("name")??"",values,merges));
+        }
+        return sheets;
+    }
+    static TimetableWorkbookData ReadCore(string path,string kind)
+    {
+        var cells=new List<TimetableRawCell>();int year=0,semester=0;string? date=null;
+        foreach(var sheet in SheetsCore(path))
+        {
+            var values=sheet.Values;string Get(int r,int c)=>sheet.Get(r,c);
             var heading=values.Values.Select(v=>Regex.Match(v,@"(\d{4})\s*(?:학년도|년도|년)\s*(\d)\s*학기")).FirstOrDefault(m=>m.Success);
             if(heading is null)continue;
             var y=int.Parse(heading.Groups[1].Value);var s=int.Parse(heading.Groups[2].Value);
@@ -109,7 +128,7 @@ public static class TimetableWorkbook
                 var lesson=Regex.Match(value,@"^(.*)\(([^()]*)\)$",RegexOptions.Singleline);var subject=lesson.Success?lesson.Groups[1].Value.Trim():value;var teacher=lesson.Success?lesson.Groups[2].Value.Trim():"";
                 if(value.Length>0&&(!lesson.Success||subject.Length==0||teacher.Length==0))throw new FilePolicyException("과목(교사) 양식을 확인하세요: "+address);
                 if(subject.Length>200||teacher.Length>100)throw new FilePolicyException("과목·교사 이름이 너무 깁니다: "+address);
-                cells.Add(new($"{grade}학년 {number}반",grade,number,day,period,subject,teacher,(string?)sheet.Attribute("name")+"!"+address,when));
+                cells.Add(new($"{grade}학년 {number}반",grade,number,day,period,subject,teacher,sheet.Name+"!"+address,when));
             }
         }
         if(kind=="auto")throw new FilePolicyException("시간표 머리글을 찾을 수 없습니다.");
@@ -119,6 +138,6 @@ public static class TimetableWorkbook
     }
     static int Period(string value)=>decimal.TryParse(value.Replace("교시",""),NumberStyles.Float,CultureInfo.InvariantCulture,out var p)&&p==decimal.Truncate(p)&&p is >=1 and <=12?(int)p:0;
     static (int Row,int Col) Coordinate(string value){var match=Regex.Match(value,@"^([A-Z]{1,3})([1-9]\d{0,3})$");if(!match.Success)throw new FilePolicyException("셀 주소 오류입니다.");var col=0;foreach(var c in match.Groups[1].Value)col=checked(col*26+c-'A'+1);return(int.Parse(match.Groups[2].Value),col);}
-    static ((int Row,int Col) Start,(int Row,int Col) End) Range(string value){var parts=value.Split(':');if(parts.Length!=2)throw new FilePolicyException("병합 범위 오류입니다.");var a=Coordinate(parts[0]);var b=Coordinate(parts[1]);if(a.Row>b.Row||a.Col>b.Col||b.Row>1000||b.Col>300)throw new FilePolicyException("병합 범위 제한을 넘었습니다.");return(a,b);}
+    static ((int Row,int Col) Start,(int Row,int Col) End) Range(string value){var parts=value.Split(':');if(parts.Length!=2)throw new FilePolicyException("병합 범위 오류입니다.");var a=Coordinate(parts[0]);var b=Coordinate(parts[1]);if(a.Row>b.Row||a.Col>b.Col||b.Row>3000||b.Col>300)throw new FilePolicyException("병합 범위 제한을 넘었습니다.");return(a,b);}
     static string Address(int r,int c){var s="";while(c>0){c--;s=(char)('A'+c%26)+s;c/=26;}return s+r;}
 }
