@@ -17,7 +17,9 @@ sealed class CourseRows : StackPanel
     public static Grid Columns() { var grid = new Grid(); foreach (var w in new[] { 0, 8, 150, 8, 104, 6, 34 }) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = w == 0 ? new GridLength(1, GridUnitType.Star) : new GridLength(w) }); return grid; }
 
     public (string Name, string[] Kind)[] Items => Children.OfType<Grid>().Select(r => ((ComboBox Course, ComboBox Area, ComboBox Type))r.Tag)
-        .Select(r => (Name: r.Course.Text.Trim(), Kind: new[] { r.Area.SelectedItem as string ?? "", r.Type.SelectedItem as string ?? "" })).Where(r => r.Name.Length > 0).ToArray();
+        .Select(r => (Name: Official(r.Course.Text), Kind: new[] { r.Area.SelectedItem as string ?? "", r.Type.SelectedItem as string ?? "" })).Where(r => r.Name.Length > 0).ToArray();
+
+    static string Official(string text) => CourseCatalog.Find(text)?.Name ?? text.Trim();
 
     public ComboBox Add(string text, string[]? kind = null, int at = -1, bool focus = false)
     {
@@ -39,6 +41,8 @@ sealed class CourseRows : StackPanel
             if (CourseCatalog.Find(course.Text) is { } hit) { area.SelectedItem = hit.Area; type.SelectedItem = hit.Type; auto = true; }
             else if (auto) { area.SelectedIndex = -1; type.SelectedIndex = -1; auto = false; }
         }));
+        // "미적분 1" becomes "미적분Ⅰ" once the teacher leaves the box, so every school's results use the same names.
+        course.IsKeyboardFocusWithinChanged += (_, e) => { if (e.NewValue is false && Official(course.Text) != course.Text) course.Text = Official(course.Text); };
         area.DropDownClosed += (_, _) => auto = false; type.DropDownClosed += (_, _) => auto = false;
         DataObject.AddPastingHandler(course, (_, e) =>
         {

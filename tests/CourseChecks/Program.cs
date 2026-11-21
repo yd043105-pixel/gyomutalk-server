@@ -31,6 +31,9 @@ partial class Program
             Check(Kind(first) == "|", "a half-typed name picks nothing yet");
             Type(first, "미적분 1");
             Check(Kind(first) == "수학|일반선택", "typing a listed name picks its 교과(군) and 유형");
+            Check(rows.Items[0].Name == "미적분Ⅰ", "a listed course is saved under its official name however it was typed");
+            window.Activate(); Inner(first).Focus(); Settle(); Inner(mine).Focus(); Settle();
+            Check(first.Text == "미적분Ⅰ", "leaving the box shows the official name");
             Type(first, "미적분 심화(학교 지정)");
             Check(Kind(first) == "|", "changing the name to one not on the list clears what was filled in for it");
             Type(mine, "우리학교 특강 2");
