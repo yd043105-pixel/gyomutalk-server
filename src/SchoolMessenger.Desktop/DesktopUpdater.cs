@@ -87,6 +87,16 @@ internal static class DesktopUpdater
     internal static void Settings(Window window)
     {
         if(!initialized){Notice.Show(window,"업데이트 확인을 시작할 수 없습니다.\n"+error,"프로그램 업데이트");return;}
+        SettingsWindow(window).ShowDialog();
+    }
+    // The server-manager check captures the dialog as a server PC with and without the automatic-update task sees it.
+    internal static Window PreviewSettings(Window window,bool ready)
+    {
+        product="server";taskReady=ready;autoInstall=true;setting=Path.Combine(Path.GetTempPath(),"gyomutalk-update-preview","enabled.txt");
+        return SettingsWindow(window);
+    }
+    static Window SettingsWindow(Window window)
+    {
         var dialog=new Window{Title="프로그램 업데이트",Owner=window,Width=460,SizeToContent=SizeToContent.Height,ResizeMode=ResizeMode.NoResize,WindowStartupLocation=WindowStartupLocation.CenterOwner,Style=(Style)Application.Current.FindResource("SchoolWindow")};
         var page=new StackPanel{Margin=new Thickness(24)};var heading=AdminUi.PageTitle("프로그램 업데이트","지금 버전 "+typeof(App).Assembly.GetName().Version!.ToString(3)+" · GitHub의 정식 릴리즈를 확인하고, 설치파일은 서명을 검증한 뒤 실행합니다.");heading.Margin=new Thickness(0,0,0,16);page.Children.Add(heading);
         var panel=new StackPanel();page.Children.Add(AdminUi.Card(panel));dialog.SetResourceReference(Window.BackgroundProperty,"Soft");
@@ -96,11 +106,11 @@ internal static class DesktopUpdater
         {
             var install=new CheckBox{Content="새 버전을 자동으로 설치",IsChecked=taskReady&&autoInstall,IsEnabled=taskReady,Margin=new Thickness(0,10,0,0)};
             install.Click+=(_,_)=>{try{Directory.CreateDirectory(Folder);File.WriteAllText(Path.Combine(Folder,"automatic.txt"),install.IsChecked==true?"true":"false");autoInstall=install.IsChecked==true;if(!autoInstall)pending=null;}catch(IOException e){install.IsChecked=autoInstall;Notice.Show(dialog,e.Message,"설정 저장 실패");}};panel.Children.Add(install);
-            var when=AdminUi.Label(taskReady?"관리자 프로그램을 켤 때나 평일 저녁 6시~아침 7시·주말에 새 버전이 보이면, 서버를 멈추고 백업한 뒤 설치하고 다시 켭니다. Windows 확인 창은 뜨지 않습니다.":"이 PC에서는 쓸 수 없습니다. 서버 설치파일로 기본 폴더(C:\\Program Files)에 한 번 설치하거나 업데이트하면 켜집니다.","Muted",12);
+            var when=AdminUi.Label(taskReady?"관리자 프로그램을 켤 때나 평일 저녁 6시~아침 7시·주말에 새 버전이 보이면, 서버를 멈추고 백업한 뒤 설치하고 다시 켭니다. Windows 확인 창은 뜨지 않습니다.":"이 PC에서는 쓸 수 없습니다. 서버 설치파일을 기본 설치 폴더에 한 번 다시 설치하면 켜집니다.","Muted",12);
             when.TextWrapping=TextWrapping.Wrap;when.Margin=new Thickness(26,4,0,0);panel.Children.Add(when);
         }
         var note=AdminUi.Label("학교 네트워크에서 GitHub 연결을 허용해야 합니다.","Muted",12);note.Margin=new Thickness(0,8,0,0);panel.Children.Add(note);
-        var check=new Button{Content="지금 확인",HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,16,0,0)};check.SetResourceReference(FrameworkElement.StyleProperty,"PrimaryButton");check.Click+=async(_,_)=>{check.IsEnabled=false;check.Content="확인하는 중…";await Check(dialog,true,dialog.Close);};panel.Children.Add(check);dialog.Content=page;dialog.ShowDialog();
+        var check=new Button{Content="지금 확인",HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,16,0,0)};check.SetResourceReference(FrameworkElement.StyleProperty,"PrimaryButton");check.Click+=async(_,_)=>{check.IsEnabled=false;check.Content="확인하는 중…";await Check(dialog,true,dialog.Close);};panel.Children.Add(check);dialog.Content=page;return dialog;
     }
     static string Folder=>Path.GetDirectoryName(setting)!;
     static DateTimeOffset LastCheck(){try{return DateTimeOffset.FromUnixTimeSeconds(long.Parse(File.ReadAllText(Path.Combine(Folder,"last-check.txt"))));}catch(Exception e)when(e is IOException or FormatException or OverflowException or ArgumentException){return DateTimeOffset.MinValue;}}

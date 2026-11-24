@@ -20,15 +20,19 @@ function TaskInfo{Get-ScheduledTaskInfo -TaskName $taskName}
 # Runs PowerShell as the standard user and waits; the user's own profile gets the helper's last-result.json.
 function AsUser([string[]]$Arguments){
     $credential=New-Object Management.Automation.PSCredential($user,(ConvertTo-SecureString $password -AsPlainText -Force))
-    $process=Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Credential $credential -LoadUserProfile -WorkingDirectory $shared -ArgumentList (@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass')+$Arguments) -WindowStyle Hidden -Wait -PassThru
+    $log=Join-Path $shared 'as-user.log';$errors=Join-Path $shared 'as-user-errors.log'
+    $process=Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Credential $credential -LoadUserProfile -WorkingDirectory $shared -ArgumentList (@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass')+$Arguments) -RedirectStandardOutput $log -RedirectStandardError $errors -Wait -PassThru
+    Write-Host "  as $user exit $($process.ExitCode) $((Get-Content -LiteralPath $log,$errors -Raw -ErrorAction SilentlyContinue) -join ' ')"
     $process.ExitCode
 }
 function Helper([string]$Staged,[string]$Signature){
-    $result=Join-Path $env:SystemDrive "Users\$user\AppData\Local\GyomutalkUpdater\server\last-result.json"
+    # The helper writes its outcome next to itself, as it does in the 관리자 프로그램's update folder.
+    $result=Join-Path $shared 'result.txt'
     Remove-Item -LiteralPath $result -Force -ErrorAction SilentlyContinue
     $hash=(Get-FileHash -LiteralPath $Staged -Algorithm SHA256).Hash
     [void](AsUser @('-File',(Quote (Join-Path $shared 'Finish-DesktopUpdate.ps1')),'-ParentId','999999','-ParentStart','0','-Installer',(Quote $Staged),'-ExpectedHash',$hash,'-Application',(Quote (Join-Path $shared 'none.exe')),'-Product','server','-Signature',$Signature,'-Unattended'))
-    Get-Content -LiteralPath $result -Raw | ConvertFrom-Json
+    $message=(Get-Content -LiteralPath $result -Raw).Trim()
+    [pscustomobject]@{success=($message -eq 'installed');message=$message}
 }
 try{
     $setup=Start-Process -FilePath $Installer -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-','/TYPE=office',('/LOG='+(Quote (Join-Path $shared 'install.log')))) -Wait -PassThru

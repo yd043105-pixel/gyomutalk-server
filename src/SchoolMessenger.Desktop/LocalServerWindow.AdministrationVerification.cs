@@ -93,6 +93,14 @@ public sealed partial class LocalServerWindow
         await Wait(()=>ViewControls<Button>(administrationView).Any(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="중지된 가상교사 계정 삭제"&&b.IsVisible),"중지한 계정에 삭제 버튼이 없습니다.");
         ViewControls<Button>(administrationView).Single(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="중지된 가상교사 계정 삭제").BringIntoView();await Task.Delay(300);UpdateLayout();
         capture("administrator-member-stopped.png",this);
+        // 업데이트 확인 on a server PC with the automatic-update task, and on one installed outside Program Files.
+        foreach(var ready in new[]{true,false})
+        {
+            var updates=DesktopUpdater.PreviewSettings(this,ready);updates.Show();await Task.Delay(300);updates.UpdateLayout();
+            var boxes=ViewControls<CheckBox>(updates).ToArray();var install=boxes.Single(b=>b.Content?.ToString()=="새 버전을 자동으로 설치");
+            check(install.IsEnabled==ready&&install.IsChecked==ready&&ViewControls<TextBlock>(updates).Any(t=>t.Text.Contains(ready?"Windows 확인 창은 뜨지 않습니다":"이 PC에서는 쓸 수 없습니다")),ready?"a server PC with the update task installs new versions automatically unless turned off":"a server PC without the update task says how to get automatic installs");
+            capture(ready?"administrator-updates.png":"administrator-updates-unavailable.png",updates);updates.Close();
+        }
         await source.Send<JsonElement>(HttpMethod.Post,"api/admin/users/"+stoppedId+"/delete");await OpenAdministration("members","office");
         await Wait(()=>HasText("교직원·권한")&&!ViewControls<Button>(administrationView).Any(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="중지된 가상교사 계정 설정"),"삭제한 계정이 목록에 남아 있습니다.");
         check(true,"a stopped account offers 계정 삭제 and a deleted account leaves the staff list");
