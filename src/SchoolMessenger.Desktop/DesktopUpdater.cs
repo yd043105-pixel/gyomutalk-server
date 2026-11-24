@@ -27,6 +27,11 @@ internal static class DesktopUpdater
     static readonly HttpClient http=new(){Timeout=TimeSpan.FromSeconds(20)};
     static bool checking;
     static bool initialized,prepared,enabled=true;
+    // Server PCs whose installer registered the SYSTEM task install updates on their own (see Install-ServerUpdate.ps1).
+    const string UpdateTask="GyomuTalk Server Update";
+    static bool taskReady,autoInstall=true,installing;
+    static UpdateOffer? shown,pending;
+    static readonly HttpClient download=new(){Timeout=TimeSpan.FromMinutes(30)};
     static Task<bool>? preparation;
     static string? staged;
     internal static void Start(Window window,bool manager)
@@ -42,6 +47,7 @@ internal static class DesktopUpdater
             if(config.RootElement.GetProperty("repository").GetString()!=repository)throw new InvalidOperationException("업데이트 저장소가 일치하지 않습니다.");
             setting=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"GyomutalkUpdater",product,"enabled.txt");
             enabled=!File.Exists(setting)||File.ReadAllText(setting)!="false";
+            if(manager){taskReady=TaskRegistered();var choice=Path.Combine(Folder,"automatic.txt");autoInstall=!File.Exists(choice)||File.ReadAllText(choice)!="false";}
             Native.win_sparkle_set_app_details("Gyomutalk",manager?"교무톡 관리자":"교무톡",typeof(App).Assembly.GetName().Version!.ToString(3));
             appcast="https://github.com/"+repository+"/releases/latest/download/appcast.xml";Native.win_sparkle_set_appcast_url(appcast);
             if(Native.win_sparkle_set_eddsa_public_key(config.RootElement.GetProperty("publicKey").GetString()!)!=1)throw new InvalidOperationException("업데이트 서명 키를 확인하세요.");
@@ -56,13 +62,21 @@ internal static class DesktopUpdater
             var timer=new DispatcherTimer{Interval=TimeSpan.FromSeconds(1)};
             // Every start looks for a new version once; a program left running looks again a day after the last look.
             var started=true;
-            timer.Tick+=(_,_)=>{timer.Interval=TimeSpan.FromHours(1);if(enabled&&(started||DateTimeOffset.UtcNow-LastCheck()>TimeSpan.FromDays(1)))_=Check(owner,false);started=false;};timer.Start();
+            timer.Tick+=(_,_)=>
+            {
+                timer.Interval=TimeSpan.FromHours(1);
+                if(enabled&&(started||DateTimeOffset.UtcNow-LastCheck()>TimeSpan.FromDays(1)))_=Check(owner,false,null,started);
+                else if(pending is not null&&Quiet())_=AutoInstall();
+                started=false;
+            };timer.Start();
             var result=Path.Combine(Path.GetDirectoryName(setting)!,"last-result.json");
             if(File.Exists(result))
             {
                 try
                 {
                     using var outcome=JsonDocument.Parse(File.ReadAllText(result));var success=outcome.RootElement.GetProperty("success").GetBoolean();File.Delete(result);
+                    // A version installed automatically once is tried automatically only once; after a failure it is offered instead.
+                    if(success)File.Delete(Path.Combine(Folder,"automatic-attempt.txt"));
                     Application.Current.Dispatcher.BeginInvoke(new Action(()=>Notice.Show(window,success?"프로그램 업데이트 설치를 완료했습니다. 서버관리자는 두 서버의 가동 상태를 확인하세요.":"업데이트 설치가 완료되지 않았습니다. 기존 프로그램으로 돌아왔습니다. 공식 릴리즈 설치파일과 Windows 권한을 확인하세요.","프로그램 업데이트")));
                 }
                 catch(Exception e)when(e is IOException or JsonException or InvalidOperationException or KeyNotFoundException) { }
@@ -78,12 +92,19 @@ internal static class DesktopUpdater
         var panel=new StackPanel();page.Children.Add(AdminUi.Card(panel));dialog.SetResourceReference(Window.BackgroundProperty,"Soft");
         var automatic=new CheckBox{Content="시작할 때와 하루에 한 번 새 버전 자동 확인",IsChecked=enabled};
         automatic.Click+=(_,_)=>{try{Directory.CreateDirectory(Path.GetDirectoryName(setting)!);File.WriteAllText(setting,automatic.IsChecked==true?"true":"false");enabled=automatic.IsChecked==true;}catch(IOException e){automatic.IsChecked=enabled;Notice.Show(dialog,e.Message,"설정 저장 실패");}};panel.Children.Add(automatic);
+        if(product=="server")
+        {
+            var install=new CheckBox{Content="새 버전을 자동으로 설치",IsChecked=taskReady&&autoInstall,IsEnabled=taskReady,Margin=new Thickness(0,10,0,0)};
+            install.Click+=(_,_)=>{try{Directory.CreateDirectory(Folder);File.WriteAllText(Path.Combine(Folder,"automatic.txt"),install.IsChecked==true?"true":"false");autoInstall=install.IsChecked==true;if(!autoInstall)pending=null;}catch(IOException e){install.IsChecked=autoInstall;Notice.Show(dialog,e.Message,"설정 저장 실패");}};panel.Children.Add(install);
+            var when=AdminUi.Label(taskReady?"관리자 프로그램을 켤 때나 평일 저녁 6시~아침 7시·주말에 새 버전이 보이면, 서버를 멈추고 백업한 뒤 설치하고 다시 켭니다. Windows 확인 창은 뜨지 않습니다.":"이 PC에서는 쓸 수 없습니다. 서버 설치파일로 기본 폴더(C:\\Program Files)에 한 번 설치하거나 업데이트하면 켜집니다.","Muted",12);
+            when.TextWrapping=TextWrapping.Wrap;when.Margin=new Thickness(26,4,0,0);panel.Children.Add(when);
+        }
         var note=AdminUi.Label("학교 네트워크에서 GitHub 연결을 허용해야 합니다.","Muted",12);note.Margin=new Thickness(0,8,0,0);panel.Children.Add(note);
         var check=new Button{Content="지금 확인",HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,16,0,0)};check.SetResourceReference(FrameworkElement.StyleProperty,"PrimaryButton");check.Click+=async(_,_)=>{check.IsEnabled=false;check.Content="확인하는 중…";await Check(dialog,true,dialog.Close);};panel.Children.Add(check);dialog.Content=page;dialog.ShowDialog();
     }
     static string Folder=>Path.GetDirectoryName(setting)!;
     static DateTimeOffset LastCheck(){try{return DateTimeOffset.FromUnixTimeSeconds(long.Parse(File.ReadAllText(Path.Combine(Folder,"last-check.txt"))));}catch(Exception e)when(e is IOException or FormatException or OverflowException or ArgumentException){return DateTimeOffset.MinValue;}}
-    static async Task Check(Window? from,bool manual,Action? before=null)
+    static async Task Check(Window? from,bool manual,Action? before=null,bool startup=false)
     {
         if(checking){before?.Invoke();return;}checking=true;
         var current=typeof(App).Assembly.GetName().Version!.ToString(3);
@@ -93,8 +114,14 @@ internal static class DesktopUpdater
             try{Directory.CreateDirectory(Folder);File.WriteAllText(Path.Combine(Folder,"last-check.txt"),DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString());}catch(IOException){}
             before?.Invoke();from=from is {IsVisible:true}?from:owner;
             if(offer is null||offer.Version<=Version.Parse(current)){if(manual)Notice.Show(from,"최신 버전("+current+")을 사용하고 있습니다.","프로그램 업데이트");return;}
+            if(!manual&&taskReady&&autoInstall&&!TriedAutomatically(offer))
+            {
+                // Installed right away when the program has just opened, otherwise in the evening, at night or at the weekend.
+                pending=offer;if(startup||Quiet())await AutoInstall();return;
+            }
             var skipped=Path.Combine(Folder,"skipped.txt");
             if(!manual&&File.Exists(skipped)&&File.ReadAllText(skipped)==offer.Version.ToString())return;
+            shown=offer;
             switch(ShowOffer(from,offer,current,product=="server"?"교무톡 관리자":"교무톡"))
             {
                 // WinSparkle fetches the same feed again, verifies the signature and shows download progress.
@@ -106,7 +133,7 @@ internal static class DesktopUpdater
         {before?.Invoke();if(manual)Notice.Show(from is {IsVisible:true}?from:owner,"새 버전을 확인하지 못했습니다. 학교 네트워크에서 GitHub 연결을 허용했는지 확인하세요.","프로그램 업데이트");}
         finally{checking=false;}
     }
-    internal sealed record UpdateOffer(Version Version,IReadOnlyList<(string Name,string[] Items)> Sections)
+    internal sealed record UpdateOffer(Version Version,IReadOnlyList<(string Name,string[] Items)> Sections,string Url="",string Signature="",long Length=0)
     {
         const string Sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle",Notes="https://gyomutalk-downloads.vercel.app/ns/update";
         internal static UpdateOffer? Parse(string feed)
@@ -114,12 +141,13 @@ internal static class DesktopUpdater
             using var reader=XmlReader.Create(new StringReader(feed),new XmlReaderSettings{DtdProcessing=DtdProcessing.Prohibit,XmlResolver=null});
             return XDocument.Load(reader).Descendants("item").Select(item=>
             {
-                var version=item.Element("enclosure")?.Attribute(XName.Get("shortVersionString",Sparkle))?.Value;
+                var enclosure=item.Element("enclosure");
+                var version=enclosure?.Attribute(XName.Get("shortVersionString",Sparkle))?.Value;
                 if(version is null)return null;
                 var notes=item.Element(XName.Get("notes",Notes))?.Value;
                 var sections=new List<(string,string[])>();
                 if(!string.IsNullOrWhiteSpace(notes)){using var json=System.Text.Json.JsonDocument.Parse(notes);foreach(var section in json.RootElement.EnumerateObject())sections.Add((section.Name,section.Value.EnumerateArray().Select(n=>n.GetString()!).ToArray()));}
-                return new UpdateOffer(Version.Parse(version),sections);
+                return new UpdateOffer(Version.Parse(version),sections,enclosure!.Attribute("url")?.Value??"",enclosure.Attribute(XName.Get("edSignature",Sparkle))?.Value??"",long.TryParse(enclosure.Attribute("length")?.Value,out var length)?length:0);
             }).Where(o=>o is not null).MaxBy(o=>o!.Version);
         }
     }
@@ -177,7 +205,8 @@ internal static class DesktopUpdater
         {Notice.Show(owner,"작성 중인 메시지와 다른 업무 창을 저장하고 닫은 뒤 업데이트를 다시 실행하세요.","업데이트 대기");preparation=null;return false;}
         return prepared=true;
     }
-    static int Install(string verifiedFile)
+    static int Install(string verifiedFile)=>Stage(verifiedFile,shown?.Signature??"",false);
+    static int Stage(string verifiedFile,string signature,bool unattended)
     {
         // Run a shipped helper after this process exits, avoiding installer file locks.
         try
@@ -190,13 +219,50 @@ internal static class DesktopUpdater
             var copy=Path.Combine(cache,"Finish-DesktopUpdate.ps1");File.Copy(helper,copy,false);
             using var parent=Process.GetCurrentProcess();
             var start=new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"System32","WindowsPowerShell","v1.0","powershell.exe")){UseShellExecute=false,CreateNoWindow=true};
-            foreach(var arg in new[]{"-NoProfile","-NonInteractive","-File",copy,"-ParentId",parent.Id.ToString(),"-ParentStart",parent.StartTime.ToUniversalTime().Ticks.ToString(),"-Installer",staged,"-ExpectedHash",hash,"-Application",Environment.ProcessPath!,"-Product",product})start.ArgumentList.Add(arg);
+            foreach(var arg in new[]{"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",copy,"-ParentId",parent.Id.ToString(),"-ParentStart",parent.StartTime.ToUniversalTime().Ticks.ToString(),"-Installer",staged,"-ExpectedHash",hash,"-Application",Environment.ProcessPath!,"-Product",product})start.ArgumentList.Add(arg);
+            // The SYSTEM task checks this signature itself; the helper falls back to the administrator prompt without it.
+            if(signature.Length>0){start.ArgumentList.Add("-Signature");start.ArgumentList.Add(signature);}
+            if(unattended)start.ArgumentList.Add("-Unattended");
             using var process=Process.Start(start)??throw new IOException("업데이트 설치 도우미를 열지 못했습니다.");return 1;
         }
         catch(Exception e)
         {
             Application.Current.Dispatcher.BeginInvoke(new Action(async()=>{if(owner is LocalServerWindow manager)await manager.CancelUpdate();preparation=null;prepared=false;Notice.Show(owner,e.Message,"업데이트 시작 실패");}));return -1;
         }
+    }
+    static bool Quiet(){var now=DateTime.Now;return now.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday||now.Hour>=18||now.Hour<7;}
+    static bool TriedAutomatically(UpdateOffer offer){try{return File.ReadAllText(Path.Combine(Folder,"automatic-attempt.txt"))==offer.Version.ToString();}catch(Exception e)when(e is IOException or UnauthorizedAccessException){return false;}}
+    static bool TaskRegistered()
+    {
+        try
+        {
+            using var query=Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory,"schtasks.exe")){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true,ArgumentList={"/Query","/TN",UpdateTask}});
+            if(query is null)return false;query.StandardOutput.ReadToEnd();query.StandardError.ReadToEnd();return query.WaitForExit(10000)&&query.ExitCode==0;
+        }
+        catch(Exception e)when(e is System.ComponentModel.Win32Exception or IOException){return false;}
+    }
+    // Downloads the release named in the feed, then the 관리자 프로그램 stops and backs up the servers as for a clicked update.
+    static async Task AutoInstall()
+    {
+        if(installing||pending is not {} offer||owner is not LocalServerWindow manager)return;
+        installing=true;string? cache=null;
+        try
+        {
+            if(!offer.Url.StartsWith("https://github.com/yd043105-pixel/gyomutalk-"+product+"/releases/download/",StringComparison.Ordinal)||offer.Signature.Length==0||offer.Length<=0){pending=null;return;}
+            // Someone working in the program: look again in an hour.
+            if(manager.UpdateBusy)return;
+            cache=Path.Combine(Folder,Guid.NewGuid().ToString("N"));Directory.CreateDirectory(cache);var file=Path.Combine(cache,"update.exe");
+            using(var response=await download.GetAsync(offer.Url,HttpCompletionOption.ResponseHeadersRead))
+            {response.EnsureSuccessStatusCode();await using var target=File.Create(file);await response.Content.CopyToAsync(target);}
+            if(new FileInfo(file).Length!=offer.Length)return;
+            if(manager.UpdateBusy)return;
+            pending=null;
+            if(!(prepared=await manager.PrepareForUpdate(true)))return;
+            File.WriteAllText(Path.Combine(Folder,"automatic-attempt.txt"),offer.Version.ToString());
+            if(Stage(file,offer.Signature,true)==1)Quit();
+        }
+        catch(Exception e)when(e is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException){}
+        finally{installing=false;if(cache is not null)try{Directory.Delete(cache,true);}catch(Exception e)when(e is IOException or UnauthorizedAccessException){}}
     }
     static void Quit()=>Application.Current.Dispatcher.BeginInvoke(new Action(()=>{if(owner is LocalServerWindow manager)manager.CompleteUpdateShutdown();else Application.Current.Shutdown();}));
     static void OnFailure()=>Application.Current.Dispatcher.BeginInvoke(new Action(async()=>{if(prepared&&owner is LocalServerWindow manager)await manager.CancelUpdate();prepared=false;preparation=null;}));

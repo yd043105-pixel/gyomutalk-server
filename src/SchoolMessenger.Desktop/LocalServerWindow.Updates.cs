@@ -5,10 +5,12 @@ namespace SchoolMessenger.Desktop;
 public sealed partial class LocalServerWindow
 {
     readonly List<ServerCard> updateRestart=new();
-    internal async Task<bool> PrepareForUpdate()
+    internal bool UpdateBusy=>cards.Any(c=>c.Busy)||OwnedWindows.Cast<Window>().Any(w=>w.IsVisible);
+    // unattended: the automatic update, which nobody is there to confirm.
+    internal async Task<bool> PrepareForUpdate(bool unattended=false)
     {
-        if(cards.Any(c=>c.Busy)||OwnedWindows.Cast<Window>().Any(w=>w.IsVisible))return false;
-        if(Notice.Show(this,"서버를 정상 중지하고 전체 백업을 완료한 뒤 업데이트합니다. 연결된 사용자의 서비스가 잠시 중단됩니다. 진행할까요?","서버 업데이트",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return false;
+        if(UpdateBusy)return false;
+        if(!unattended&&Notice.Show(this,"서버를 정상 중지하고 전체 백업을 완료한 뒤 업데이트합니다. 연결된 사용자의 서비스가 잠시 중단됩니다. 진행할까요?","서버 업데이트",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return false;
         updateRestart.Clear();updateRestart.AddRange(cards.Where(c=>c.Host.Running));
         foreach(var card in cards)card.Busy=true;Refresh();
         try
@@ -46,7 +48,7 @@ public sealed partial class LocalServerWindow
         {
             using var config=System.Text.Json.JsonDocument.Parse(File.ReadAllText(card.Config.Text));
             if(!config.RootElement.TryGetProperty("attachmentBackup",out var attachments)||!attachments.GetBoolean())throw new IOException("업데이트 전 전체 백업을 위해 운영 설정의 attachmentBackup을 true로 설정하세요.");
-            foreach(var value in new[]{"-NoProfile","-NonInteractive","-File",Path.Combine(root,"scripts","Server-Operations.ps1"),"-Mode","Backup","-ConfigurationPath",card.Config.Text})start.ArgumentList.Add(value);
+            foreach(var value in new[]{"-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",Path.Combine(root,"scripts","Server-Operations.ps1"),"-Mode","Backup","-ConfigurationPath",card.Config.Text})start.ArgumentList.Add(value);
         }
         using var process=Process.Start(start)??throw new IOException("백업 프로그램을 시작하지 못했습니다.");
         var stdout=process.StandardOutput.ReadToEndAsync();var stderr=process.StandardError.ReadToEndAsync();await process.WaitForExitAsync();

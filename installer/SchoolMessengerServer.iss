@@ -95,15 +95,19 @@ Name: "{group}\서버 프로그램 제거"; Filename: "{uninstallexe}"
 ; Teacher PCs on the same network reach the server over HTTPS and get its discovery reply (UDP 45983); other networks stay blocked.
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""GyomuTalk Office Server"""; Components: office; Flags: runhidden
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""GyomuTalk Office Server"" dir=in action=allow program=""{app}\server\SchoolMessenger.Server.exe"" profile=any remoteip=localsubnet enable=yes"; Components: office; Flags: runhidden
+; Lets the 관리자 프로그램 install signed updates without the Windows administrator prompt (only under Program Files).
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\scripts\Register-ServerUpdateTask.ps1"""; Components: admin; Flags: runhidden
 #endif
-Filename: "{app}\admin\SchoolMessenger.exe"; Parameters: "--server-manager --configure-startup enable --startup-entry-name {#StartupEntryName}"; Components: admin; Tasks: autostart; Flags: runhidden runasoriginaluser
-Filename: "{app}\admin\SchoolMessenger.exe"; Parameters: "--server-manager --configure-startup disable --startup-entry-name {#StartupEntryName}"; Components: admin; Tasks: not autostart; Flags: runhidden runasoriginaluser
+; An automatic update runs as SYSTEM, which has no sign-in of its own to start the 관리자 프로그램 with; the choice stays as it was.
+Filename: "{app}\admin\SchoolMessenger.exe"; Parameters: "--server-manager --configure-startup enable --startup-entry-name {#StartupEntryName}"; Components: admin; Tasks: autostart; Flags: runhidden runasoriginaluser; Check: not AutomaticUpdate
+Filename: "{app}\admin\SchoolMessenger.exe"; Parameters: "--server-manager --configure-startup disable --startup-entry-name {#StartupEntryName}"; Components: admin; Tasks: not autostart; Flags: runhidden runasoriginaluser; Check: not AutomaticUpdate
 Filename: "{app}\admin\SchoolMessenger.exe"; Parameters: "--server-manager"; Components: admin; Description: "관리자 프로그램 실행"; Flags: nowait postinstall skipifsilent runasoriginaluser
 Filename: "{app}\서버 설치 안내.txt"; Description: "서버 설치·설정 안내 열기"; Flags: shellexec postinstall skipifsilent runasoriginaluser unchecked
 
 #ifndef InstallerTest
 [UninstallRun]
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""GyomuTalk Office Server"""; Components: office; Flags: runhidden; RunOnceId: "Firewall1"
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\scripts\Register-ServerUpdateTask.ps1"" -Remove"; Flags: runhidden; RunOnceId: "UpdateTask"
 #endif
 
 [InstallDelete]
@@ -112,6 +116,11 @@ Type: files; Name: "{group}\관리자 메신저.lnk"
 Type: files; Name: "{group}\서버 관리 프로그램.lnk"
 
 [Code]
+function AutomaticUpdate(): Boolean;
+begin
+  Result := ExpandConstant('{param:AUTOUPDATE|0}') = '1';
+end;
+
 function MaintenanceBlock(Uninstalling: Boolean): String;
 var Locator, Services, Processes, Process, Scheduler, Tasks, Task, Actions, Action: Variant;
     I, J: Integer; Base, Executable, Arguments, Name: String;
