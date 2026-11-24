@@ -26,7 +26,7 @@ public partial class ComposeWindow : Window
         this.main = main; this.people = people;
         main.RegisterWorkWindow(this); Resources = main.Resources;
         InitializeComponent(); StatusTone.Watch(Feedback);
-        InitializeEditor();
+        InitializeEditor(); InitializeAi();
         SubmissionDate.SelectedDate = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(9)).Date.AddDays(7);
         // Collected files are handed in through the task list, so the option goes with that menu.
         if (!main.Feature("tasks") && CollectFiles.Parent is FrameworkElement collect) collect.Visibility = Visibility.Collapsed;
@@ -126,6 +126,7 @@ public partial class ComposeWindow : Window
             (!people.Any(p => p.Selected) && Department.SelectedIndex <= 0 && SendAll.IsChecked != true)))
         { Feedback.Text = "본문과 받는 사람을 확인하세요."; return; }
         if (pending is null && SendAll.IsChecked == true && Notice.Show(this, $"전체 교직원 {people.Length}명에게 보내시겠습니까?", "전체 발송 확인", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+        if (pending is null && !StyleChecked()) return;
         long? schedule=null;try{if(pending is null)schedule=ScheduledAt();}catch(Exception error){Feedback.Text=error.Message;return;}
         if (pending is null)
         {

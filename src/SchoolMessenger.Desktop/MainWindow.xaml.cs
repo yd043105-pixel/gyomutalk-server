@@ -38,7 +38,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent(); StatusTone.Watch(StatusLabel);
-        CertificatePins.UseFolder(LocalDirectory);
+        CertificatePins.UseFolder(LocalDirectory); Ai.Load(LocalDirectory);
         InitializeActivity();
         InitializeNavigation();
         MinHeight = Math.Min(580, SystemParameters.WorkArea.Height - 30);
@@ -85,6 +85,7 @@ public partial class MainWindow : Window
     }
     public void SavePreferences() => File.WriteAllText(Path.Combine(LocalDirectory, "preferences.json"), JsonSerializer.Serialize(new Preferences(ServerAddress.Text, UsernameBox.Text, Quiet.IsChecked, Favorites.ToArray(), DoNotDisturb.IsChecked, RememberLogin.IsChecked == true, Appearance.Selected, Appearance.Glass,AutomaticAwayMinutes,schoolPick.Selected?.Name ?? SchoolSearch.Text.Trim(),schoolPick.Selected?.Address ?? "",MutedRooms.ToArray())));
     void OpenAppearance(object sender, RoutedEventArgs e) => new AppearanceWindow(this).ShowDialog();
+    void OpenAi(object sender, RoutedEventArgs e) => new AiWindow(this).ShowDialog();
     public void RefreshAppearance()
     {
         void Chip(System.Windows.Controls.Button chip,bool on)

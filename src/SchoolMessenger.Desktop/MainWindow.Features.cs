@@ -100,7 +100,7 @@ public partial class MainWindow
     {
         Visibility Shown(bool on)=>on?Visibility.Visible:Visibility.Collapsed;
         ChatButton.Visibility=Shown(Feature("chat"));WorkButton.Visibility=Shown(Feature("tasks"));SurveyButton.Visibility=Shown(Feature("survey"));
-        OfficeButton.Visibility=Shown(Feature("calendar")||Feature("rooms"));CourseButton.Visibility=Shown(courseDuty&&Feature("courses"));
+        OfficeButton.Visibility=Shown(Feature("calendar")||Feature("rooms"));CourseButton.Visibility=Shown(courseDuty&&Feature("courses"));AiMenu.Visibility=Shown(Feature("ai"));
         var office=Feature("calendar")&&Feature("rooms")?"학사일정 · 특별실 예약":Feature("rooms")?"특별실 예약":"학사일정";
         OfficeButton.ToolTip=office;System.Windows.Automation.AutomationProperties.SetName(OfficeButton,office);
     }

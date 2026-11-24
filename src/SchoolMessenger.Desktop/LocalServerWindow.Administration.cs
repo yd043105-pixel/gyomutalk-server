@@ -173,6 +173,7 @@ public sealed partial class LocalServerWindow
         ("calendar","학사일정","학교 일정 달력."),
         ("rooms","특별실 예약","특별실 예약 표. 특별실 목록은 왼쪽 ‘특별실’에서 관리합니다."),
         ("remote","원격 지원","다른 교직원의 PC 화면을 함께 보며 돕는 원격 지원."),
+        ("ai","AI 글 다듬기","선생님이 자기 ChatGPT 계정이나 OpenRouter·Google AI Studio 열쇠를 PC에 연결해 메시지 초안을 다듬는 기능. 글은 그 선생님이 고른 AI 회사로 전송되고, 학교 서버는 열쇠를 받지 않습니다."),
         ("courses","수강신청","학생 개별 링크로 선택과목을 받는 기능. ‘교육과정 담당’ 권한을 받은 선생님에게만 보이고, 학생 화면은 학교가 만든 구글 계정에서 열립니다."),
     ];
     async Task ShowFeatures(Api source,int revision)

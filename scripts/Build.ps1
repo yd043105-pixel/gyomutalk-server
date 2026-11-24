@@ -29,7 +29,7 @@ try {
             node "tests/$test.mjs"
             if ($LASTEXITCODE -ne 0) { throw "PC verification failed: $test" }
         }
-        foreach ($test in @('IdleChecks','DiscoveryChecks','TaskChecks','PcOnlyChecks','CourseChecks')) {
+        foreach ($test in @('IdleChecks','DiscoveryChecks','TaskChecks','PcOnlyChecks','CourseChecks','AiChecks')) {
             & $dotnetExecutable run --project "tests/$test" -p:RestoreLockedMode=true
             if ($LASTEXITCODE -ne 0) { throw "Verification failed: $test" }
         }
