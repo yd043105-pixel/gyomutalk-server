@@ -36,7 +36,7 @@ try {
 } catch { $result=$_.Exception.Message }
 finally {
     $result | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'result.txt') -Encoding UTF8
-    $state=Join-Path $env:LOCALAPPDATA ('GyomutalkUpdater\'+$Product)
+    $state=Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) ('GyomutalkUpdater\'+$Product)
     New-Item -ItemType Directory -Force $state | Out-Null
     @{success=($result -eq 'installed');message=$result}|ConvertTo-Json|Set-Content -LiteralPath (Join-Path $state 'last-result.json') -Encoding UTF8
     if(Test-Path -LiteralPath $Application){if($Product -eq 'server'){Start-Process -FilePath $Application -ArgumentList '--server-manager'}else{Start-Process -FilePath $Application}}
