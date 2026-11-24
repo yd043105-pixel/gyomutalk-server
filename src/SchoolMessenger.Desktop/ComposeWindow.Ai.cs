@@ -35,27 +35,20 @@ public partial class ComposeWindow
     // 보내기 전 확인: only when the check finds something, and the teacher may still send it as it is.
     bool StyleChecked()
     {
-        var found = StyleCheck.Check(TitleBox.Text + "
-" + BodyBox.Text);
+        var found = StyleCheck.Check(TitleBox.Text + "\n" + BodyBox.Text);
         if (found.Length == 0) return true;
-        var lines = string.Join("
-", found.Take(6).Select(f => $"· [{f.Kind}] ‘{f.Found}’ → {f.Instead}")) + (found.Length > 6 ? $"
-· 그 밖에 {found.Length - 6}건" : "");
-        if (Notice.Show(this, $"보내기 전에 확인할 표현이 {found.Length}건 있습니다.
-
-{lines}
-
-그대로 보낼까요? ‘아니요’를 누르면 고칠 수 있습니다.", "보내기 전 확인", MessageBoxButton.YesNo) == MessageBoxResult.Yes) return true;
+        var lines = string.Join("\n", found.Take(6).Select(f => $"· [{f.Kind}] ‘{f.Found}’ → {f.Instead}")) + (found.Length > 6 ? $"\n· 그 밖에 {found.Length - 6}건" : "");
+        if (Notice.Show(this, $"보내기 전에 확인할 표현이 {found.Length}건 있습니다.\n\n{lines}\n\n그대로 보낼까요? ‘아니요’를 누르면 고칠 수 있습니다.", "보내기 전 확인", MessageBoxButton.YesNo) == MessageBoxResult.Yes) return true;
         Feedback.Text = "표현을 고친 뒤 다시 보내세요." + (aiButton is null ? "" : " ‘AI로 다듬기’로 고칠 수도 있습니다."); return false;
     }
 
     async Task Rewrite(Ai.Rewrite rewrite)
     {
+        // Nothing connected yet: the connection window opens right away, and the rewrite goes on once a model is picked.
         if (!Ai.Ready)
         {
-            if (Notice.Show(this, "먼저 AI를 연결하세요.\n\n설정 → AI 연결에서 ChatGPT로 로그인하거나 OpenRouter·Google AI Studio 열쇠를 넣고 모델을 고르면 됩니다. 지금 열까요?", "AI로 다듬기", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
-                new AiWindow(this).ShowDialog();
-            if (!Ai.Ready) return;
+            new AiWindow(this, "‘AI로 다듬기’를 쓰려면 먼저 AI를 연결하세요. 아래에서 하나를 연결하고 ‘완료’를 누르면 바로 다듬습니다.").ShowDialog();
+            if (!Ai.Ready) { Feedback.Text = "AI를 연결하지 않아 다듬지 않았습니다."; return; }
         }
         var selection = BodyBox.Selection;
         var whole = selection.IsEmpty;

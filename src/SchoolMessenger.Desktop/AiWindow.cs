@@ -19,9 +19,11 @@ public sealed class AiWindow : Window
     readonly HashSet<string> loading = [];
     CancellationTokenSource? signing;
     string? problem, busy;
+    readonly string? reason;
 
-    public AiWindow(Window owner)
+    public AiWindow(Window owner, string? reason = null)
     {
+        this.reason = reason;
         Owner = owner; Title = "AI 연결"; Width = 520; Height = Math.Min(760, SystemParameters.WorkArea.Height - 24); MinWidth = 440; MinHeight = 420;
         WindowStartupLocation = WindowStartupLocation.CenterOwner; Style = (Style)FindResource("SchoolWindow");
         Content = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
@@ -36,8 +38,14 @@ public sealed class AiWindow : Window
     {
         stack.Children.Clear();
         stack.Children.Add(AdminUi.Heading("AI 연결", 22));
-        var intro = AdminUi.Label("메시지를 쓸 때 ‘AI로 다듬기’로 맞춤법과 말투를 고칩니다. 선생님 본인의 계정이나 열쇠를 이 PC에 연결해 씁니다.", "Muted", 13);
+        var intro = AdminUi.Label("메시지의 ‘AI로 다듬기’와 수강신청 분반 편성의 ‘AI로 설명 듣기’에 씁니다. 선생님 본인의 계정이나 열쇠를 이 PC에 연결합니다.", "Muted", 13);
         intro.TextWrapping = TextWrapping.Wrap; intro.Margin = new Thickness(0, 6, 0, 16); stack.Children.Add(intro);
+        if (reason is not null && !Ai.Ready)
+        {
+            var why = AdminUi.Label(reason, "Blue", 13, true); why.TextWrapping = TextWrapping.Wrap;
+            var banner = new Border { Child = why, Padding = new Thickness(14, 10, 14, 10), CornerRadius = new CornerRadius(10), Margin = new Thickness(0, 0, 0, 16) };
+            banner.SetResourceReference(Border.BackgroundProperty, "Pale"); stack.Children.Add(banner);
+        }
 
         var connected = Ai.Providers.Where(Ai.Current.Connected).ToArray();
         if (connected.Length > 0)

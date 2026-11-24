@@ -16,7 +16,7 @@ namespace SchoolMessenger.Desktop;
 
 // 수강신청 for the curriculum duty: rounds and their results, the student roster, and the one-time Google connection.
 // Students answer on the school's own Apps Script page; this window only talks to the school server.
-public sealed class CourseWindow : Window
+public sealed partial class CourseWindow : Window
 {
     public sealed record Round(string Id, string Title, int Grade, long Closes, long? PublishedAt, long? PulledAt, int Students, int Submitted);
     public sealed record Student(string Id, int Grade, int ClassNo, int Number, string Name);
@@ -189,7 +189,7 @@ public sealed class CourseWindow : Window
         var redo = results.Students.Where(s => Lost(round, s).Length > 0).ToArray();
         var choices = new System.Collections.Generic.List<(string Key, string Label)> { ("counts", $"과목별 인원 · 제출 {answered} / {total}명"), ("overlap", "함께 듣는 학생 수"), ("waiting", $"미제출 {total - answered}명") };
         if (redo.Length > 0) choices.Add(("redo", $"폐강 재선택 {redo.Length}명"));
-        choices.Add(("print", "확인서 인쇄"));
+        choices.Add(("sections", "분반 편성")); choices.Add(("print", "확인서 인쇄"));
         if (resultView == "redo" && redo.Length == 0) resultView = "counts";
         foreach (var (key, label) in choices)
         {
@@ -220,6 +220,7 @@ public sealed class CourseWindow : Window
                 ByClass(list, redo, s => $"({string.Join(", ", Lost(round, s))})");
                 content.Children.Add(AdminUi.Card(list, 18)); return;
             }
+            if (resultView == "sections") { var box = new StackPanel(); SectionsView(results, box); content.Children.Add(AdminUi.Card(box, 18)); return; }
             if (resultView == "print") { var box = new StackPanel(); Slips(results, box); content.Children.Add(AdminUi.Card(box, 18)); return; }
             foreach (var (group, index) in results.Groups.Select((g, i) => (g, i)))
             {

@@ -18,6 +18,25 @@ partial class Program
     {
         try
         {
+            // 분반 편성: 42 students in 3 classes chose 물리학, 10 chose 화학, nobody chose 지구과학, 생명과학 is closed.
+            var pupils = Enumerable.Range(0, 60).Select(i => new Sections.Pupil("s" + i, i % 3 + 1, i / 3 + 1, "학생" + i)).ToArray();
+            var answers = pupils.Select((p, i) => new Sections.Answer(p, i < 52 ? [[i < 10 ? "화학" : "물리학", "생명과학"]] : null)).ToArray();
+            var courses = Sections.Courses([new Sections.Choice("과학", 1, ["물리학", "화학", "지구과학", "생명과학"], ["생명과학"])], answers);
+            Check(courses.Select(c => c.Name).SequenceEqual(["물리학", "화학", "지구과학"]) && courses[0].Pupils.Length == 42 && courses[1].Pupils.Length == 10 && courses[2].Pupils.Length == 0,
+                "each open course gets the students who chose it; a closed course and students who have not answered are left out");
+            var keep = Sections.Split(courses[0], new Sections.Options(Most: 15));
+            Check(keep.Select(s => s.Pupils.Length).SequenceEqual([14, 14, 14]) && keep.Select(s => s.Label).SequenceEqual(["물리학 A", "물리학 B", "물리학 C"]),
+                "42 students with at most 15 in a section make 3 sections of 14, labelled A, B, C");
+            Check(keep.All(s => s.Pupils.Select(p => p.ClassNo).Distinct().Count() <= 2) && keep.SelectMany(s => s.Pupils).Select(p => p.Id).Distinct().Count() == 42,
+                "keeping homerooms together cuts the class-ordered list into runs: every student once, a homeroom split at most once");
+            var mixed = Sections.Split(courses[0], new Sections.Options(Most: 15, KeepClasses: false));
+            Check(mixed.All(s => s.Pupils.GroupBy(p => p.ClassNo).All(g => g.Count() is >= 4 and <= 5)), "mixing homerooms gives every section a near-equal share of each homeroom");
+            var chosen = Sections.Split(courses[0], new Sections.Options(Most: 15, Counts: new Dictionary<string, int> { [Sections.Key(courses[0])] = 4 }));
+            Check(chosen.Select(s => s.Pupils.Length).SequenceEqual([11, 11, 10, 10]) && Sections.Split(courses[2], new Sections.Options()).Length == 0,
+                "a number of sections the teacher sets is used, sizes differ by at most one, and a course nobody chose has no section");
+            var summary = Sections.Summary(courses, new Sections.Options(Most: 15, Fewest: 12));
+            Check(summary.Contains("물리학: 신청 42명 → 3개 분반(14/14/14명)") && summary.Contains("12명보다 적은") && !pupils.Any(p => summary.Contains(p.Name) || summary.Contains(p.Id + ",")), "what the AI is given to explain has the numbers only, never a student");
+
             Check(CourseCatalog.All.Length > 150 && CourseCatalog.All.All(c => CourseCatalog.Areas.Contains(c.Area) && CourseCatalog.Types.Contains(c.Type)) && CourseCatalog.All.DistinctBy(c => c.Name).Count() == CourseCatalog.All.Length,
                 "every listed course has one of the 10 교과(군) and 4 유형, and no name twice");
             Check(CourseCatalog.Find("미적분 1")?.Name == "미적분Ⅰ" && CourseCatalog.Find("기술가정")?.Area == "기술가정/정보" && CourseCatalog.Find("영어II")?.Name == "영어Ⅱ" && CourseCatalog.Find("물리학Ⅱ") is null,

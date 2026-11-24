@@ -94,7 +94,7 @@ public sealed partial class OfficeWindow:Window
             foreach(var row in rows.Where(r=>Covers(r,date)))
             {
                 var title=row.GetProperty("title").GetString()??"";var lessons=SchoolDay.PeriodText(Periods(row));var text=new TextBlock{FontSize=11,FontWeight=FontWeights.SemiBold,TextTrimming=TextTrimming.CharacterEllipsis,Foreground=Avatar.Ink(title)};
-                if(lessons.Length>0)text.Inlines.Add(new System.Windows.Documents.Run(lessons+" "){FontWeight=FontWeights.Normal});text.Inlines.Add(new System.Windows.Documents.Run(title));
+                if(lessons.Length>0)text.Inlines.Add(new System.Windows.Documents.Run(lessons+" "){FontWeight=FontWeights.Normal});text.Inlines.Add(new System.Windows.Documents.Run(title));text.Inlines.Add(new System.Windows.Documents.LineBreak());text.Inlines.Add(new System.Windows.Documents.Run(row.GetProperty("ownerName").GetString()+" 등록"){FontSize=10,FontWeight=FontWeights.Normal});
                 var tip=title+"\n"+(lessons.Length>0?lessons:row.GetProperty("allDay").GetBoolean()?"종일":Date(row,"start")+" ~ "+Date(row,"end"))+" · "+row.GetProperty("ownerName").GetString()+" 등록"+(row.GetProperty("description").GetString() is{Length:>0} about?"\n"+about:"");
                 var chip=new Border{Child=text,Padding=new Thickness(6,3,6,3),Margin=new Thickness(0,4,0,0),CornerRadius=new CornerRadius(6),ToolTip=tip,Background=Avatar.Back(title)};
                 // An event its teacher may change is a button, reachable with the keyboard and by the screen tour.
