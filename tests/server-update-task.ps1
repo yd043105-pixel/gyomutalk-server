@@ -21,7 +21,13 @@ function TaskInfo{Get-ScheduledTaskInfo -TaskName $taskName}
 function AsUser([string[]]$Arguments){
     $credential=New-Object Management.Automation.PSCredential($user,(ConvertTo-SecureString $password -AsPlainText -Force))
     $log=Join-Path $shared 'as-user.log';$errors=Join-Path $shared 'as-user-errors.log'
-    $process=Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Credential $credential -LoadUserProfile -WorkingDirectory $shared -ArgumentList (@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass')+$Arguments) -RedirectStandardOutput $log -RedirectStandardError $errors -Wait -PassThru
+    # Start-Process -Credential hands over this process's environment; give the user Windows PowerShell's modules and
+    # their own folders, as when the 관리자 프로그램 starts the helper in that user's session.
+    $profileRoot=Join-Path $env:SystemDrive "Users\$user"
+    $environment=@{PSModulePath=(Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\Modules')+';'+(Join-Path $env:ProgramFiles 'WindowsPowerShell\Modules');USERPROFILE=$profileRoot;LOCALAPPDATA=(Join-Path $profileRoot 'AppData\Local');APPDATA=(Join-Path $profileRoot 'AppData\Roaming');TEMP=$shared;TMP=$shared}
+    $saved=@{};foreach($name in $environment.Keys){$saved[$name]=[Environment]::GetEnvironmentVariable($name);[Environment]::SetEnvironmentVariable($name,$environment[$name])}
+    try{$process=Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') -Credential $credential -LoadUserProfile -WorkingDirectory $shared -ArgumentList (@('-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass')+$Arguments) -RedirectStandardOutput $log -RedirectStandardError $errors -Wait -PassThru}
+    finally{foreach($name in $saved.Keys){[Environment]::SetEnvironmentVariable($name,$saved[$name])}}
     Write-Host "  as $user exit $($process.ExitCode) $((Get-Content -LiteralPath $log,$errors -Raw -ErrorAction SilentlyContinue) -join ' ')"
     $process.ExitCode
 }
