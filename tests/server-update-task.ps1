@@ -78,7 +78,7 @@ try{
 
     # The standard user may start the task, but not change it or the script it runs.
     $probe=Join-Path $shared 'probe.txt'
-    $commands="`$r=@();try{Add-Content -LiteralPath '$(Join-Path $app 'scripts\Install-ServerUpdate.ps1')' -Value 'whoami';`$r+='script-changed'}catch{};try{Disable-ScheduledTask -TaskName '$taskName' -ErrorAction Stop|Out-Null;`$r+='task-disabled'}catch{};try{Unregister-ScheduledTask -TaskName '$taskName' -Confirm:`$false -ErrorAction Stop;`$r+='task-removed'}catch{};Set-Content -LiteralPath '$probe' -Value ('done '+(`$r -join ' '))"
+    $commands="`$r=@();try{Add-Content -LiteralPath '$(Join-Path $app 'scripts\Install-ServerUpdate.ps1')' -Value 'whoami' -ErrorAction Stop;`$r+='script-changed'}catch{};try{Disable-ScheduledTask -TaskName '$taskName' -ErrorAction Stop|Out-Null;`$r+='task-disabled'}catch{};try{Unregister-ScheduledTask -TaskName '$taskName' -Confirm:`$false -ErrorAction Stop;`$r+='task-removed'}catch{};Set-Content -LiteralPath '$probe' -Value ('done '+(`$r -join ' '))"
     [void](AsUser @('-Command',$commands))
     $text=(Get-Content -LiteralPath $probe -Raw).Trim()
     if($text -ne 'done'){throw "A standard user changed the update task or its script: $text"}
