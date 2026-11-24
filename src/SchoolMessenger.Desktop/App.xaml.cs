@@ -36,7 +36,7 @@ public partial class App : System.Windows.Application
             if(MainWindow is MainWindow main)main.StatusLabel.Text="처리하지 못한 오류가 있었습니다. 같은 문제가 계속되면 오류 신고로 알려 주세요.";
         };
         WindowCorners.Register();
-        Appearance.Apply(Appearance.Selected, Appearance.Glass);
+        Appearance.Apply(Appearance.Selected, Appearance.Glass); Ime.Watch();
         SystemParameters.StaticPropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(SystemParameters.HighContrast))

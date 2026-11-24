@@ -41,9 +41,17 @@ export async function officeChecks({Client,admin,password,address,data,check,sta
  await admin.request(rosterPath,'PUT',{revision:0,folders:[{...rootFolder,name:'미분류'}]},400);
  await admin.request(rosterPath,'PUT',{revision:0,folders:[rootFolder,{...rootFolder,id:id(),name:' '+rootFolder.name+' '}]},400);
  await admin.request(rosterPath,'PUT',{revision:0,folders:[{...rootFolder,memberIds:[id()]}]},400);
- assert.deepEqual(await admin.request(rosterPath,'PUT',{...rosterValues,folders:[{...rootFolder,memberIds:[registered.id,registered.id]},childFolder]}),{...rosterValues,revision:1});
+ assert.deepEqual(await admin.request(rosterPath,'PUT',{...rosterValues,folders:[{...rootFolder,memberIds:[registered.id,registered.id]},childFolder]}),{...rosterValues,revision:1,ordered:false});
  await admin.request(rosterPath,'PUT',rosterValues,409);
- assert.deepEqual(await peer.request(readRoster),{...rosterValues,revision:1});
+ assert.deepEqual(await peer.request(readRoster),{...rosterValues,revision:1,ordered:false});
+ // An administrator's order of folders and of people is kept and handed to teachers; a later save by an older program does not undo it.
+ const secondRoot={id:id(),parentId:null,name:'가나다 앞 폴더',memberIds:[other.id,registered.id]};
+ const orderedSave=await admin.request(rosterPath,'PUT',{revision:1,folders:[rootFolder,secondRoot,childFolder],ordered:true});
+ assert.deepEqual(orderedSave.folders.map(f=>f.name),['가상 프로젝트','가나다 앞 폴더','준비팀']);assert.equal(orderedSave.ordered,true);
+ assert.deepEqual((await peer.request(readRoster)).folders.find(f=>f.id===secondRoot.id).memberIds,[other.id,registered.id]);
+ const older=await admin.request(rosterPath,'PUT',{revision:2,folders:[rootFolder,secondRoot,childFolder]});
+ assert.equal(older.ordered,true);assert.equal((await peer.request(readRoster)).ordered,true);
+ await admin.request(rosterPath,'PUT',{revision:3,folders:[rootFolder,childFolder],ordered:true});
  assert.ok((await admin.request('/api/admin/office/audit')).some(a=>a.action==='staff.roster-folders'));
  await teacher.request('/api/admin/office/permissions','POST',{userId:registered.id,calendarManager:true,roomManager:true},403);
  const begin=new Date(Date.now()+2*86400000);begin.setUTCHours(1,0,0,0);const iso=n=>new Date(begin.getTime()+n*3600000).toISOString();
@@ -101,9 +109,9 @@ export async function officeChecks({Client,admin,password,address,data,check,sta
  // Start the separate reactivation scenario with a new in-memory limiter; DB lockout tests above remain persistent.
  await stop();start();await ready();teacher.csrf=(await teacher.request('/api/session')).csrfToken;
  admin.csrf=(await admin.request('/api/session')).csrfToken;
- assert.deepEqual(await admin.request(readRoster),{...rosterValues,revision:1});
- await admin.request(rosterPath,'PUT',{revision:1,folders:[]});
- assert.deepEqual(await admin.request(readRoster),{revision:2,folders:[]});
+ assert.deepEqual(await admin.request(readRoster),{...rosterValues,revision:4,ordered:true});
+ await admin.request(rosterPath,'PUT',{revision:4,folders:[]});
+ assert.deepEqual(await admin.request(readRoster),{revision:5,folders:[],ordered:true});
  check('roster folders enforce authorization, two levels and revisions; changes are audited and persist across restarts');
  await teacher.request('/api/activate','POST',{newPassword:password},400);
  await teacher.request('/api/activate','POST',{newPassword:personal+'-again'});await teacher.login(request.loginName,false,personal+'-again');
@@ -148,6 +156,24 @@ export async function officeChecks({Client,admin,password,address,data,check,sta
  }
  await admin.request(rosterPath,'PUT',{revision:0,folders:[]});
  await stop(); start(); await ready();
- assert.deepEqual(await admin.request(rosterPath),{revision:1,folders:[]});
+ assert.deepEqual(await admin.request(rosterPath),{revision:1,folders:[],ordered:false});
  check('existing grade and duty assignments migrate once into editable folders without recreating deleted folders');
+
+ // 계정 삭제: only a stopped account; the person disappears from lists and folders, cannot sign in, the login name is free again, and their event stays as "삭제된 사용자".
+ admin.csrf=(await admin.request('/api/session')).csrfToken;
+ const leaving=await admin.request('/api/admin/users','POST',{username:'office.leaving',name:'떠날교사',department:'수업부',password,isAdmin:false,canBroadcast:false});
+ const leaver=new Client();await leaver.login('office.leaving');
+ const ymd=n=>new Date(Date.now()+n*86400000).toISOString().slice(0,10);
+ const leftEvent=await leaver.request('/api/office/events','POST',{clientId:id(),title:'남길 행사',description:'',start:ymd(1)+'T01:00:00.000Z',end:ymd(1)+'T02:00:00.000Z',allDay:false});
+ await admin.request(rosterPath,'PUT',{revision:1,folders:[{id:id(),parentId:null,name:'떠날 폴더',memberIds:[leaving.id]}]});
+ await admin.request(`/api/admin/users/${leaving.id}/delete`,'POST',undefined,400);
+ await admin.request(`/api/admin/users/${leaving.id}`,'PATCH',{name:'떠날교사',department:'수업부',position:'',password:'',isAdmin:false,canBroadcast:false,active:false});
+ await admin.request(`/api/admin/users/${leaving.id}/delete`,'POST');
+ assert.ok(!(await admin.request('/api/admin/users')).some(u=>u.id===leaving.id));
+ assert.deepEqual((await admin.request(rosterPath)).folders[0].memberIds,[]);
+ assert.equal((await admin.request(`/api/office/events?from=${ymd(0)}&to=${ymd(3)}`)).find(e=>e.id===leftEvent.id).ownerName,'삭제된 사용자');
+ const gone=new Client();gone.csrf=(await gone.request('/api/session')).csrfToken;await gone.request('/api/login','POST',{username:'office.leaving',password},401);
+ await admin.request('/api/admin/users','POST',{username:'office.leaving',name:'새교사',department:'수업부',password,isAdmin:false,canBroadcast:false});
+ await admin.request(`/api/admin/users/${leaving.id}/delete`,'POST',undefined,404);
+ check('only a stopped account can be deleted: the person leaves the lists and folders, cannot sign in, the login name is free again and their event shows 삭제된 사용자');
 }

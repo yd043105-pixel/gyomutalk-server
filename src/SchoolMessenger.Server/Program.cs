@@ -694,6 +694,26 @@ adminApi.MapPatch("/users/{id}", IResult (string id, UpdateUser request, HttpCon
     if (request.Active != user.Active) store.Execute("INSERT INTO OfficeAudit(ActorId,Action,ResourceId,CreatedAt) VALUES($actor,$action,$id,$now)", ("$actor", UserId(c)), ("$action", request.Active ? "staff.resume" : "staff.stop"), ("$id", id), ("$now", Maintenance.Now));
     return Results.Ok();
 });
+// 계정 삭제: only a stopped account, never the top administrator or oneself, an administrator account only by the top
+// administrator. Name, department, title, login name and password go; permissions, seat and folders go; messages and
+// events stay and show "삭제된 사용자". It cannot be undone.
+adminApi.MapPost("/users/{id}/delete", IResult (string id, HttpContext c) =>
+{
+    var user = store.GetUser(id);
+    if (user is null || store.Query("SELECT Deleted FROM Users WHERE Id=$id", r => r.GetBoolean(0), ("$id", id))[0]) return Results.NotFound();
+    if (id == UserId(c) || store.Query("SELECT 1 FROM BackendRoot WHERE UserId=$id", r => r.GetInt32(0), ("$id", id)).Count == 1) return Error("이 계정은 삭제할 수 없습니다.", 403);
+    if (user.IsAdmin && !Root(c)) return Error("관리자 계정은 최고관리자만 삭제할 수 있습니다.", 403);
+    if (user.Active) return Error("먼저 ‘사용 중지’한 계정만 삭제할 수 있습니다.");
+    using var db = store.Open();
+    using var tx = db.BeginTransaction();
+    void Run(string sql) { using var command = Store.Command(db, sql, tx, ("$id", id), ("$name", "deleted-" + id), ("$hash", hasher.HashPassword(user, Convert.ToHexString(RandomNumberGenerator.GetBytes(32))))); command.ExecuteNonQuery(); }
+    Run("UPDATE Users SET Username=$name,Name='삭제된 사용자',Department='',Position='',PasswordHash=$hash,IsAdmin=0,CanBroadcast=0,Active=0,Deleted=1,SessionVersion=SessionVersion+1 WHERE Id=$id");
+    foreach (var table in new[] { "StaffProfiles", "OfficePermissions", "TimetableManagers" }) Run($"DELETE FROM {table} WHERE UserId=$id");
+    RosterFolderStore.Remove(db, tx, id);
+    using (var audit = Store.Command(db, "INSERT INTO OfficeAudit(ActorId,Action,ResourceId,CreatedAt) VALUES($actor,'staff.delete',$id,$now)", tx, ("$actor", UserId(c)), ("$id", id), ("$now", Maintenance.Now))) audit.ExecuteNonQuery();
+    tx.Commit();
+    return Results.Ok();
+});
 adminApi.MapGet("/status", (Maintenance maintenance, Presence presence) =>
 {
     var drive = new DriveInfo(Path.GetPathRoot(store.Root)!);

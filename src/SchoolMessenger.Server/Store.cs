@@ -90,6 +90,8 @@ public sealed class Store : IDisposable
             """;
         command.ExecuteNonQuery();
         if(!Query("PRAGMA table_info(Users)",r=>r.GetString(1)).Contains("Position"))Execute("ALTER TABLE Users ADD COLUMN Position TEXT NOT NULL DEFAULT ''");
+        // A deleted account keeps its row so old messages and events still point somewhere, but nothing that identifies the person.
+        if(!Query("PRAGMA table_info(Users)",r=>r.GetString(1)).Contains("Deleted"))Execute("ALTER TABLE Users ADD COLUMN Deleted INTEGER NOT NULL DEFAULT 0");
         var chatColumns=Query("PRAGMA table_info(ChatMembers)",r=>r.GetString(1));
         if(!chatColumns.Contains("Alias"))Execute("ALTER TABLE ChatMembers ADD COLUMN Alias TEXT NOT NULL DEFAULT ''");
         if(!chatColumns.Contains("Hidden"))Execute("ALTER TABLE ChatMembers ADD COLUMN Hidden INTEGER NOT NULL DEFAULT 0");
@@ -135,7 +137,7 @@ public sealed class Store : IDisposable
     }
     public User? GetUser(string id) => Query("SELECT * FROM Users WHERE Id=$id", ReadUser, ("$id", id)).FirstOrDefault();
     public User? FindUser(string username) => Query("SELECT * FROM Users WHERE Username=$name", ReadUser, ("$name", username)).FirstOrDefault();
-    public List<User> Users() => Query("SELECT * FROM Users ORDER BY Department,Name", ReadUser);
+    public List<User> Users() => Query("SELECT * FROM Users WHERE Deleted=0 ORDER BY Department,Name", ReadUser);
     public Registration? FindRegistration(string username) => Query("SELECT * FROM Registrations WHERE Username=$username", ReadRegistration, ("$username", username)).FirstOrDefault();
     public List<Registration> PendingRegistrations() => Query("SELECT * FROM Registrations WHERE Status='pending' ORDER BY CreatedAt", ReadRegistration);
     public static Registration ReadRegistration(SqliteDataReader r) => new(r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4), r.GetString(5), r.GetInt64(6));

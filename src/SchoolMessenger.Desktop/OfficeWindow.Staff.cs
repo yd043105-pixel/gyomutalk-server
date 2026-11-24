@@ -136,7 +136,17 @@ public sealed partial class OfficeWindow
             var reset=new Button{Content="계정 초기화",ToolTip="초기 비밀번호 12345678로 되돌립니다. 다시 로그인하면 개인 비밀번호를 새로 정합니다."};reset.SetResourceReference(StyleProperty,"DangerButton");actions.Children.Add(reset);
             var save=new Button{Content="변경 저장",Margin=new Thickness(8,0,0,0)};save.SetResourceReference(StyleProperty,"PrimaryButton");DockPanel.SetDock(save,Dock.Right);
             var toggleActive=new Button{Content=s.Active?"사용 중지":"다시 사용",Margin=new Thickness(8,0,0,0)};DockPanel.SetDock(toggleActive,Dock.Right);
-            actions.Children.Add(save);actions.Children.Add(toggleActive);actions.Children.Add(new Border());stack.Children.Add(actions);
+            actions.Children.Add(save);actions.Children.Add(toggleActive);
+            // Only a stopped account can be deleted, so a click on the wrong row cannot remove someone still at work.
+            var remove=new Button{Content="계정 삭제",Margin=new Thickness(8,0,0,0),Visibility=s.Active?Visibility.Collapsed:Visibility.Visible,ToolTip="중지한 계정만 삭제할 수 있습니다. 되돌릴 수 없습니다."};remove.SetResourceReference(StyleProperty,"DangerButton");
+            System.Windows.Automation.AutomationProperties.SetName(remove,s.Name+" 계정 삭제");DockPanel.SetDock(remove,Dock.Right);actions.Children.Add(remove);
+            actions.Children.Add(new Border());stack.Children.Add(actions);
+            if(!s.Active){var hint=AdminUi.Label("중지된 계정입니다. 다시 쓰지 않을 계정이면 ‘계정 삭제’로 이름·로그인 정보를 지웁니다.","Muted",12);hint.TextWrapping=TextWrapping.Wrap;hint.Margin=new Thickness(0,8,0,0);stack.Children.Add(hint);}
+            remove.Click+=async(_,_)=>await Run(async()=>
+            {
+                if(Notice.Show(InteractionOwner,s.Name+" 님의 계정을 삭제할까요?\n\n이름·부서·직책·로그인 이름·비밀번호를 지우고, 권한·좌석 IP·조직도 폴더에서도 뺍니다. 이미 주고받은 메시지와 등록한 일정은 남고 보낸 사람은 ‘삭제된 사용자’로 보입니다.\n\n되돌릴 수 없습니다. 같은 분이 다시 오면 새로 등록해야 합니다.","계정 삭제",MessageBoxButton.YesNo)!=MessageBoxResult.Yes)return;
+                await api.Send<JsonElement>(HttpMethod.Post,"api/admin/users/"+s.Id+"/delete");selectedStaff=null;await StaffList();error.Text=s.Name+" 님의 계정을 삭제했습니다.";
+            });
             save.Click+=async(_,_)=>await Run(async()=>
             {
                 if (name.Text.Trim() != s.Name || department.Text.Trim() != s.Department || position.Text.Trim() != s.Position ||
@@ -167,7 +177,7 @@ public sealed partial class OfficeWindow
     // The server records short codes; the page says them in words.
     static string AuditAction(string code)=>code switch
     {
-        "staff.create"=>"교직원 등록","staff.reset"=>"계정 초기화","staff.stop"=>"계정 사용 중지","staff.resume"=>"계정 다시 사용","staff.seat"=>"좌석 IP 변경","staff.activate"=>"첫 설정 완료","staff.roster-folders"=>"조직도 폴더 변경",
+        "staff.create"=>"교직원 등록","staff.reset"=>"계정 초기화","staff.stop"=>"계정 사용 중지","staff.resume"=>"계정 다시 사용","staff.delete"=>"계정 삭제","staff.seat"=>"좌석 IP 변경","staff.activate"=>"첫 설정 완료","staff.roster-folders"=>"조직도 폴더 변경",
         "office.permissions"=>"업무 권한 변경","room.save"=>"특별실 저장","booking.save"=>"특별실 예약","booking.cancel"=>"특별실 예약 취소","event.save"=>"학교 일정 저장","event.cancel"=>"학교 일정 취소","attachment.limit"=>"첨부 용량 변경",
         "timetable.enable"=>"시간표 기능 켬","timetable.disable"=>"시간표 기능 끔",
         _=>code.Split('.') is["feature",var name,var change]?(name switch{"chat"=>"채팅","tasks"=>"할 일","survey"=>"설문","calendar"=>"학사일정","rooms"=>"특별실 예약","remote"=>"원격 지원",_=>name})+" 기능 "+(change=="enable"?"켬":"끔"):code

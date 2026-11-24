@@ -21,10 +21,12 @@ internal sealed class RosterFolderStore
             )
             """, tx);
         table.ExecuteNonQuery();
+        using (var columns = Store.Command(db, "SELECT 1 FROM pragma_table_info('RosterFolderSettings') WHERE name='Ordered'", tx))
+            if (columns.ExecuteScalar() is null) { using var add = Store.Command(db, "ALTER TABLE RosterFolderSettings ADD COLUMN Ordered INTEGER NOT NULL DEFAULT 0", tx); add.ExecuteNonQuery(); }
         using var exists = Store.Command(db, "SELECT 1 FROM RosterFolderSettings WHERE Id=1", tx);
         if (exists.ExecuteScalar() is null)
         {
-            using var seed = Store.Command(db, "INSERT INTO RosterFolderSettings VALUES(1,0,$folders)", tx,
+            using var seed = Store.Command(db, "INSERT INTO RosterFolderSettings(Id,Revision,Folders) VALUES(1,0,$folders)", tx,
                 ("$folders", JsonSerializer.Serialize(ImportLegacy(db, tx))));
             seed.ExecuteNonQuery();
         }
@@ -60,9 +62,21 @@ internal sealed class RosterFolderStore
         return folders.ToArray();
     }
 
+    // A deleted person leaves every folder; the revision moves so an open folder editor reloads before saving.
+    public static void Remove(SqliteConnection db, SqliteTransaction tx, string userId)
+    {
+        using var read = Store.Command(db, "SELECT Folders FROM RosterFolderSettings WHERE Id=1", tx);
+        if (read.ExecuteScalar() is not string json) return;
+        var folders = JsonSerializer.Deserialize<RosterFolder[]>(json)!;
+        if (!folders.Any(folder => folder.MemberIds.Contains(userId))) return;
+        using var write = Store.Command(db, "UPDATE RosterFolderSettings SET Revision=Revision+1,Folders=$folders WHERE Id=1", tx,
+            ("$folders", JsonSerializer.Serialize(folders.Select(folder => folder with { MemberIds = folder.MemberIds.Where(id => id != userId).ToArray() }))));
+        write.ExecuteNonQuery();
+    }
+
     public RosterFolders Read() =>
-        store.Query("SELECT Revision,Folders FROM RosterFolderSettings WHERE Id=1",
-            reader => new RosterFolders(reader.GetInt32(0), JsonSerializer.Deserialize<RosterFolder[]>(reader.GetString(1))!)).Single();
+        store.Query("SELECT Revision,Folders,Ordered FROM RosterFolderSettings WHERE Id=1",
+            reader => new RosterFolders(reader.GetInt32(0), JsonSerializer.Deserialize<RosterFolder[]>(reader.GetString(1))!, reader.GetBoolean(2))).Single();
 
     public IResult Save(RosterFolders request, string actor)
     {
@@ -96,11 +110,12 @@ internal sealed class RosterFolderStore
         using var db = store.Open();
         using var tx = db.BeginTransaction();
         using var update = Store.Command(db, """
-            UPDATE RosterFolderSettings SET Revision=Revision+1,Folders=$folders WHERE Id=1 AND Revision=$revision
-            """, tx, ("$folders", JsonSerializer.Serialize(folders.Values)), ("$revision", request.Revision));
+            UPDATE RosterFolderSettings SET Revision=Revision+1,Folders=$folders,Ordered=MAX(Ordered,$ordered) WHERE Id=1 AND Revision=$revision
+            """, tx, ("$folders", JsonSerializer.Serialize(folders.Values)), ("$revision", request.Revision), ("$ordered", request.Ordered ? 1 : 0));
         if (update.ExecuteNonQuery() != 1) return Error("다른 관리자가 조직도를 수정했습니다. 조직도 폴더 관리를 다시 열어 주세요.", 409);
         StaffAccounts.Audit(db, tx, actor, "staff.roster-folders", "school");
         tx.Commit();
-        return Results.Ok(new RosterFolders(request.Revision + 1, folders.Values.ToArray()));
+        // Once an administrator has set an order it stays, even if an older program saves the folders later.
+        return Results.Ok(Read());
     }
 }

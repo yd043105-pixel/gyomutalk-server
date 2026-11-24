@@ -85,6 +85,17 @@ public sealed partial class LocalServerWindow
         var search=ViewControls<TextBox>(administrationView).Single(t=>System.Windows.Automation.AutomationProperties.GetName(t)=="교직원 검색");search.Text="존재하지않는가상교사";UpdateLayout();check(HasText("일치하는 교직원이 없습니다.")&&!ViewControls<Button>(administrationView).Any(b=>System.Windows.Automation.AutomationProperties.GetName(b).EndsWith(" 계정 설정",StringComparison.Ordinal)),"member search filters the actual loaded directory and reports an empty result");
         await Click(ViewControls<Button>(administrationView).Single(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="교직원 등록 · 승인"));await Wait(()=>HasText("새 교직원 등록")&&HasText("대기 중인 가입 신청이 없습니다."),"교직원 등록 · 승인 화면이 열리지 않았습니다.");
         check(!ViewControls<Button>(administrationView).Any(b=>b.Content?.ToString()=="특별실 목록"),"the registration page leaves navigation to the rail instead of repeating shortcut buttons");capture("administrator-registration.png",this);
+        // A stopped account offers 계정 삭제; deleting it takes it off the list.
+        var stoppedLogin="stopped"+Guid.NewGuid().ToString("N")[..8];var stopped=await source.Send<JsonElement>(HttpMethod.Post,"api/admin/users",new{username=stoppedLogin,name="중지된 가상교사",department="가상 교무부",password,isAdmin=false,canBroadcast=false});
+        var stoppedId=stopped.GetProperty("id").GetString()!;await source.Send<JsonElement>(HttpMethod.Patch,"api/admin/users/"+stoppedId,new{name="중지된 가상교사",department="가상 교무부",position="",password="",isAdmin=false,canBroadcast=false,active=false});
+        await OpenAdministration("members","office");await Wait(()=>ViewControls<Button>(administrationView).Any(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="중지된 가상교사 계정 설정"),"중지한 계정이 목록에 없습니다.");
+        await Click(ViewControls<Button>(administrationView).Single(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="중지된 가상교사 계정 설정"));
+        await Wait(()=>ViewControls<Button>(administrationView).Any(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="중지된 가상교사 계정 삭제"&&b.IsVisible),"중지한 계정에 삭제 버튼이 없습니다.");
+        ViewControls<Button>(administrationView).Single(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="중지된 가상교사 계정 삭제").BringIntoView();await Task.Delay(300);UpdateLayout();
+        capture("administrator-member-stopped.png",this);
+        await source.Send<JsonElement>(HttpMethod.Post,"api/admin/users/"+stoppedId+"/delete");await OpenAdministration("members","office");
+        await Wait(()=>HasText("교직원·권한")&&!ViewControls<Button>(administrationView).Any(b=>System.Windows.Automation.AutomationProperties.GetName(b)=="중지된 가상교사 계정 설정"),"삭제한 계정이 목록에 남아 있습니다.");
+        check(true,"a stopped account offers 계정 삭제 and a deleted account leaves the staff list");
         await OpenAdministration("rooms","office");await Wait(()=>ViewControls<Button>(administrationView).Any(b=>b.Content?.ToString()=="특별실 추가"),"특별실 설정이 로드되지 않았습니다.");
         var roomFields=ViewControls<TextBox>(administrationView).ToArray();var original=roomFields[0];var roomName="가상 특별실 "+Guid.NewGuid().ToString("N")[..6];roomFields[0].Text=roomName;roomFields[1].Text="가상 본관";await Click(Action("특별실 추가"));
         await Wait(()=>!ViewControls<TextBox>(administrationView).Contains(original)&&ViewControls<TextBox>(administrationView).Any(t=>t.Text==roomName),"특별실 저장이 반영되지 않았습니다.");

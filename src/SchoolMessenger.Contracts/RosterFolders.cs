@@ -5,14 +5,15 @@ using System.Linq;
 namespace SchoolMessenger.Contracts;
 
 public record RosterFolder(string Id, string? ParentId, string Name, string[] MemberIds);
-public record RosterFolders(int Revision, RosterFolder[] Folders);
+// Ordered: an administrator has set the order of the folders and of the people in each; otherwise both read 가나다 order.
+public record RosterFolders(int Revision, RosterFolder[] Folders, bool Ordered = false);
 
 public record RosterGroup(string Key, string Name, string[] DirectIds, RosterGroup[] Children)
 {
     public string[] AllIds() => DirectIds.Concat(Children.SelectMany(child => child.DirectIds)).Distinct().ToArray();
 
     public static RosterGroup[] Build(RosterFolder[]? folders, (string Id, string Label, string Department)[] people,
-        string query, bool hideEmpty = false)
+        string query, bool hideEmpty = false, bool ordered = false)
     {
         bool Matches(string text) => text.Contains(query, StringComparison.OrdinalIgnoreCase);
         if (folders is null)
@@ -29,12 +30,13 @@ public record RosterGroup(string Key, string Name, string[] DirectIds, RosterGro
             var matches = ancestorMatches || Matches(folder.Name);
             return new("folder:" + folder.Id, folder.Name,
                 folder.MemberIds.Where(id => labels.TryGetValue(id, out var label) && (matches || Matches(label))).ToArray(),
-                root ? children[folder.Id].OrderBy(child => child.Name).Select(child => Project(child, matches, false))
+                root ? Arrange(children[folder.Id]).Select(child => Project(child, matches, false))
                     .Where(Visible).ToArray() : []);
         }
         bool Visible(RosterGroup group) => group.DirectIds.Length > 0 || group.Children.Length > 0 ||
             !hideEmpty && query.Length == 0;
-        var groups = children[null].OrderBy(folder => folder.Name).Select(folder => Project(folder, false, true))
+        IEnumerable<RosterFolder> Arrange(IEnumerable<RosterFolder> list) => ordered ? list : list.OrderBy(folder => folder.Name);
+        var groups = Arrange(children[null]).Select(folder => Project(folder, false, true))
             .Where(Visible).ToList();
         var unassigned = people.Where(person => !assigned.Contains(person.Id) &&
             (Matches(person.Label) || Matches("미분류"))).Select(person => person.Id).ToArray();

@@ -52,7 +52,8 @@ internal static class DesktopUpdater
             Native.win_sparkle_set_user_run_installer_callback(installer);
             Native.win_sparkle_set_error_callback(failed);
             Native.win_sparkle_init();initialized=true;
-            var timer=new DispatcherTimer{Interval=TimeSpan.FromSeconds(20)};
+            // Looked for as soon as the program opens, on the sign-in screen, so the offer does not pop up over a name being typed.
+            var timer=new DispatcherTimer{Interval=TimeSpan.FromSeconds(1)};
             // Every start looks for a new version once; a program left running looks again a day after the last look.
             var started=true;
             timer.Tick+=(_,_)=>{timer.Interval=TimeSpan.FromHours(1);if(enabled&&(started||DateTimeOffset.UtcNow-LastCheck()>TimeSpan.FromDays(1)))_=Check(owner,false);started=false;};timer.Start();

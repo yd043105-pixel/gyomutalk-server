@@ -24,7 +24,7 @@ public partial class MainWindow : Window
     bool syncingRosterChecks;
     readonly HashSet<long> knownTimetables = new();
     Person[] people = [];
-    RosterFolder[]? rosterFolders;
+    RosterFolder[]? rosterFolders; bool rosterOrdered;
     string schoolName="학교";
     bool favoritesOnly, onlineOnly, awayOnly, onlineFirst = true, schoolExpanded = true, refreshing, exiting;
     int unreadCount, peopleRefreshVersion;
@@ -255,13 +255,13 @@ public partial class MainWindow : Window
         await Task.WhenAll(peopleTask, foldersTask);
         if (api != Api || version != peopleRefreshVersion) return;
         people = await peopleTask;
-        rosterFolders = await foldersTask;
+        (rosterFolders, rosterOrdered) = await foldersTask; SortButton.Content = onlineFirst ? (rosterOrdered ? "지정순 ↕" : "이름순 ↕") : "접속순 ↕";
         selectedPeople.IntersectWith(people.Select(p => p.Id)); RenderTree(); UpdateRosterHint();
 
-        async Task<RosterFolder[]?> ReadRosterFolders()
+        async Task<(RosterFolder[]?, bool)> ReadRosterFolders()
         {
-            try { return (await api.Get<RosterFolders>("api/roster-folders")).Folders; }
-            catch (ApiRequestException error) when (error.StatusCode == System.Net.HttpStatusCode.NotFound) { return null; }
+            try { var read = await api.Get<RosterFolders>("api/roster-folders"); return (read.Folders, read.Ordered); }
+            catch (ApiRequestException error) when (error.StatusCode == System.Net.HttpStatusCode.NotFound) { return (null, false); }
         }
     }
     void UpdateRosterHint()
@@ -299,7 +299,7 @@ public partial class MainWindow : Window
             (!favoritesOnly || Favorites.Contains(p.Id)) && (!onlineOnly || p.Available) && (!awayOnly || p.Online && p.Away))
             .ToDictionary(person => person.Id);
         var groups = RosterGroup.Build(rosterFolders, filtered.Values.Select(person => (person.Id, person.Label, person.Department)).ToArray(),
-            query, favoritesOnly || onlineOnly || awayOnly);
+            query, favoritesOnly || onlineOnly || awayOnly, rosterOrdered);
         RosterEmpty.Visibility = groups.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         OrganizationTree.Visibility = groups.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
         if (groups.Length == 0)
@@ -322,7 +322,7 @@ public partial class MainWindow : Window
             var row = GroupRow(group.Name, group.Key, group.AllIds(), !collapsedGroups.Contains(group.Key) || query.Length > 0);
             parent.Items.Add(row);
             foreach (var child in group.Children) AddGroup(row, child);
-            foreach (var person in group.DirectIds.Select(id => filtered[id]).OrderBy(p => onlineFirst?(p.Online?(p.Away?2:0):p.Mobile?1:3):0).ThenBy(p => p.Name))
+            foreach (var person in group.DirectIds.Select(id => filtered[id]).OrderBy(p => onlineFirst?(p.Online?(p.Away?2:0):p.Mobile?1:3):0).ThenBy(p => rosterOrdered ? Array.IndexOf(group.DirectIds, p.Id) : 0).ThenBy(p => p.Name))
             {
                 var check = new CheckBox { Margin = new Thickness(0, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center };
                 System.Windows.Automation.AutomationProperties.SetName(check, person.Name + " 선택");
@@ -404,7 +404,7 @@ public partial class MainWindow : Window
     }
     async Task Run(Func<Task> action) { try { await action(); } catch (Exception error) { StatusLabel.Text = error.Message; } }
     void SearchPeople(object sender, TextChangedEventArgs e) => RenderTree();
-    void ToggleSort(object sender, RoutedEventArgs e) { onlineFirst = !onlineFirst; SortButton.Content = onlineFirst ? "이름순 ↕" : "접속순 ↕"; SortButton.ToolTip = onlineFirst ? "현재 접속자 우선 · 클릭하면 이름순" : "현재 이름순 · 클릭하면 접속자 우선"; RenderTree(); }
+    void ToggleSort(object sender, RoutedEventArgs e) { onlineFirst = !onlineFirst; SortButton.Content = onlineFirst ? (rosterOrdered ? "지정순 ↕" : "이름순 ↕") : "접속순 ↕"; var plain = rosterOrdered ? "관리자가 정한 순서" : "이름순"; SortButton.ToolTip = onlineFirst ? "현재 접속자 우선 · 클릭하면 " + plain : "현재 " + plain + " · 클릭하면 접속자 우선"; RenderTree(); }
     void FilterAll(object sender, RoutedEventArgs e) { onlineOnly = awayOnly = false; UpdateFilters(); }
     void FilterOnline(object sender, RoutedEventArgs e) { onlineOnly = true;awayOnly=false; UpdateFilters(); }
     void FilterAway(object sender,RoutedEventArgs e){awayOnly=true;onlineOnly=false;UpdateFilters();}

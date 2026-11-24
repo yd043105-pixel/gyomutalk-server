@@ -18,12 +18,15 @@ public sealed partial class OfficeWindow
         var users = (await api.Get<JsonElement>("api/admin/users")).EnumerateArray().Select(user =>
             (Id: Value(user, "id"), Label: Value(user, "name") + " · " + Value(user, "department") +
                 (Flag(user, "active") ? "" : " · 중지"))).OrderBy(user => user.Label).ToArray();
-        var folders = snapshot.Folders.ToDictionary(folder => folder.Id);
+        var labels = users.ToDictionary(user => user.Id, user => user.Label);
+        // Until an administrator sets an order, folders and people read 가나다 order; that is where the arrows start from.
+        var folders = snapshot.Folders.Select(folder => snapshot.Ordered ? folder : folder with { MemberIds = folder.MemberIds.OrderBy(id => labels.GetValueOrDefault(id, "")).ToArray() }).ToDictionary(folder => folder.Id);
+        var order = (snapshot.Ordered ? snapshot.Folders.AsEnumerable() : snapshot.Folders.OrderBy(folder => folder.Name)).Select(folder => folder.Id).ToList();
         string? selected = null;
         Page(false);
         var save = new Button { Content = "변경 저장", IsEnabled = false };
         save.SetResourceReference(StyleProperty, "PrimaryButton");
-        Heading("조직도 폴더 관리", "학교 아래 두 단계까지 폴더를 만들 수 있습니다. 폴더를 선택한 뒤 들어갈 교직원을 체크하세요.", save,
+        Heading("조직도 폴더 관리", "학교 아래 두 단계까지 폴더를 만들 수 있습니다. 폴더를 선택한 뒤 들어갈 교직원을 체크하고, ▲▼로 폴더와 교직원의 순서를 정하세요.", save,
             ("교직원 목록", async () =>
             {
                 if (!save.IsEnabled || Notice.Show(InteractionOwner, "저장하지 않은 조직도 변경을 취소할까요?", "조직도",
@@ -57,6 +60,8 @@ public sealed partial class OfficeWindow
         var add = FolderAction("폴더 추가");
         var child = FolderAction("하위 폴더");
         var rename = FolderAction("이름 변경");
+        var up = FolderAction("▲ 위로"); var down = FolderAction("▼ 아래로");
+        AutomationProperties.SetName(up, "폴더를 위로"); AutomationProperties.SetName(down, "폴더를 아래로");
         var delete = FolderAction("삭제"); delete.SetResourceReference(StyleProperty, "DangerButton");
         var caption = AdminUi.Heading("폴더의 교직원", 16);
         right.Children.Add(caption);
@@ -83,6 +88,7 @@ public sealed partial class OfficeWindow
             { error.Text = "같은 위치에 이미 그 이름의 폴더가 있습니다."; return; }
             var folderId = id ?? Guid.NewGuid().ToString("N");
             folders[folderId] = new(folderId, parent, label, id is null ? [] : folders[id].MemberIds);
+            if (!order.Contains(folderId)) order.Add(folderId);
             save.IsEnabled = true; Render(folderId);
         }
         void Render(string? select)
@@ -94,10 +100,11 @@ public sealed partial class OfficeWindow
                 var node = new TreeViewItem { Header = folder.Name, Tag = folder.Id, IsExpanded = true };
                 nodes.Add(folder.Id, node); return node;
             }
-            foreach (var root in folders.Values.Where(folder => folder.ParentId is null).OrderBy(folder => folder.Name))
+            IEnumerable<RosterFolder> Under(string? parent) => order.Select(id => folders[id]).Where(folder => folder.ParentId == parent);
+            foreach (var root in Under(null))
             {
                 var item = Node(root); tree.Items.Add(item);
-                foreach (var subfolder in folders.Values.Where(folder => folder.ParentId == root.Id).OrderBy(folder => folder.Name))
+                foreach (var subfolder in Under(root.Id))
                     item.Items.Add(Node(subfolder));
             }
             if (select is not null && nodes.TryGetValue(select, out var row)) row.IsSelected = true;
@@ -109,6 +116,9 @@ public sealed partial class OfficeWindow
             name.Text = folder?.Name ?? "";
             child.IsEnabled = folder is { ParentId: null };
             rename.IsEnabled = delete.IsEnabled = search.IsEnabled = folder is not null;
+            var siblings = folder is null ? [] : order.Where(id => folders[id].ParentId == folder.ParentId).ToList();
+            up.IsEnabled = folder is not null && siblings.IndexOf(folder.Id) > 0;
+            down.IsEnabled = folder is not null && siblings.IndexOf(folder.Id) < siblings.Count - 1;
             caption.Text = folder is null ? "폴더의 교직원" : folder.Name + " · 교직원";
             ShowMembers();
         }
@@ -117,17 +127,33 @@ public sealed partial class OfficeWindow
             members.Children.Clear();
             if (Current() is not { } folder)
             { members.Children.Add(AdminUi.Label("폴더를 만들거나 왼쪽에서 선택하세요.", "Muted")); return; }
-            var assigned = folder.MemberIds.ToHashSet();
-            foreach (var user in users.Where(user => user.Label.Contains(search.Text.Trim(), StringComparison.OrdinalIgnoreCase)))
+            // People in the folder come first, in their order, each with arrows; everyone else follows to be checked in.
+            var inFolder = folder.MemberIds.Where(labels.ContainsKey).ToList();
+            var query = search.Text.Trim();
+            bool Shown(string id) => labels[id].Contains(query, StringComparison.OrdinalIgnoreCase);
+            void Change(List<string> ids) { folders[folder.Id] = folder with { MemberIds = [.. ids] }; save.IsEnabled = true; ShowMembers(); }
+            if (inFolder.Count > 0) members.Children.Add(AdminUi.Label($"이 폴더의 교직원 {inFolder.Count}명 · 위에서부터 조직도에 보이는 순서", "Muted", 12));
+            foreach (var (id, at) in inFolder.Select((id, i) => (id, i)).Where(x => Shown(x.id)))
             {
-                var check = new CheckBox { Content = user.Label, IsChecked = assigned.Contains(user.Id), Margin = new Thickness(0, 4, 0, 4) };
-                void Assign(object sender, RoutedEventArgs e)
+                var row = new DockPanel { Margin = new Thickness(0, 2, 0, 2) };
+                Button Arrow(string text, int step, string what)
                 {
-                    if (check.IsChecked == true) assigned.Add(user.Id); else assigned.Remove(user.Id);
-                    folders[folder.Id] = folder with { MemberIds = assigned.ToArray() };
-                    save.IsEnabled = true;
+                    var arrow = new Button { Content = text, Width = 26, Padding = new Thickness(0), Margin = new Thickness(4, 0, 0, 0), IsEnabled = at + step >= 0 && at + step < inFolder.Count };
+                    AutomationProperties.SetName(arrow, labels[id] + " " + what);
+                    arrow.Click += (_, _) => { var ids = inFolder.ToList(); (ids[at], ids[at + step]) = (ids[at + step], ids[at]); Change(ids); };
+                    DockPanel.SetDock(arrow, Dock.Right); return arrow;
                 }
-                check.Checked += Assign; check.Unchecked += Assign;
+                row.Children.Add(Arrow("▼", 1, "아래로")); row.Children.Add(Arrow("▲", -1, "위로"));
+                var check = new CheckBox { Content = labels[id], IsChecked = true, VerticalAlignment = VerticalAlignment.Center };
+                check.Unchecked += (_, _) => Change(inFolder.Where(other => other != id).ToList());
+                row.Children.Add(check); members.Children.Add(row);
+            }
+            var others = users.Where(user => !inFolder.Contains(user.Id) && Shown(user.Id)).ToArray();
+            if (others.Length > 0 && inFolder.Count > 0) { var rest = AdminUi.Label("넣을 교직원", "Muted", 12); rest.Margin = new Thickness(0, 10, 0, 2); members.Children.Add(rest); }
+            foreach (var user in others)
+            {
+                var check = new CheckBox { Content = user.Label, IsChecked = false, Margin = new Thickness(0, 4, 0, 4) };
+                check.Checked += (_, _) => Change([.. inFolder, user.Id]);
                 members.Children.Add(check);
             }
         }
@@ -136,21 +162,30 @@ public sealed partial class OfficeWindow
         add.Click += (_, _) => ChangeName(null, null);
         child.Click += (_, _) => ChangeName(selected, null);
         rename.Click += (_, _) => ChangeName(Current()?.ParentId, selected);
+        void Move(int step)
+        {
+            if (Current() is not { } folder) return;
+            var siblings = order.Where(id => folders[id].ParentId == folder.ParentId).ToList();
+            var at = siblings.IndexOf(folder.Id); if (at + step < 0 || at + step >= siblings.Count) return;
+            var other = siblings[at + step]; int a = order.IndexOf(folder.Id), b = order.IndexOf(other);
+            (order[a], order[b]) = (order[b], order[a]); save.IsEnabled = true; Render(folder.Id);
+        }
+        up.Click += (_, _) => Move(-1); down.Click += (_, _) => Move(1);
         delete.Click += (_, _) =>
         {
             if (Current() is not { } folder) return;
             if (Notice.Show(InteractionOwner, $"‘{folder.Name}’ 폴더와 그 아래 폴더를 삭제할까요? 교직원 계정은 그대로 유지됩니다.",
                 "조직도 폴더 삭제", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
             foreach (var id in folders.Values.Where(item => item.ParentId == folder.Id).Select(item => item.Id).ToArray())
-                folders.Remove(id);
-            folders.Remove(folder.Id);
+            { folders.Remove(id); order.Remove(id); }
+            folders.Remove(folder.Id); order.Remove(folder.Id);
             error.Text = ""; save.IsEnabled = true; Render(folder.ParentId);
         };
         save.Click += async (_, _) => await Run(async () =>
         {
-            snapshot = await api.Send<RosterFolders>(HttpMethod.Put, path, new RosterFolders(snapshot.Revision, folders.Values.ToArray()));
+            snapshot = await api.Send<RosterFolders>(HttpMethod.Put, path, new RosterFolders(snapshot.Revision, order.Select(id => folders[id]).ToArray(), true));
             save.IsEnabled = false; error.Text = "조직도 폴더를 저장했습니다.";
         });
-        Render(folders.Values.FirstOrDefault(folder => folder.ParentId is null)?.Id);
+        Render(order.FirstOrDefault(id => folders[id].ParentId is null));
     }
 }
