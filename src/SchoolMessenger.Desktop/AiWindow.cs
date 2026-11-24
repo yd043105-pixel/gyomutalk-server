@@ -58,7 +58,7 @@ public sealed class AiWindow : Window
         }
         if (problem is not null) { var p = AdminUi.Label(problem, "Danger", 12); p.TextWrapping = TextWrapping.Wrap; p.Margin = new Thickness(0, 0, 0, 12); stack.Children.Add(p); }
 
-        stack.Children.Add(Card(Ai.ChatGpt, "ChatGPT Plus·Pro 계정으로 로그인하면 그 플랜의 사용량으로 씁니다. 따로 내는 돈은 없습니다(무료 계정은 쓸 수 없습니다).", null));
+        stack.Children.Add(Card(Ai.ChatGpt, "ChatGPT 계정으로 로그인하면 그 계정의 사용량으로 씁니다. 무료 계정도 됩니다(무료는 Luna처럼 쓸 수 있는 모델이 정해져 있습니다). 따로 내는 돈은 없습니다.", null));
         stack.Children.Add(Card(Ai.OpenRouter, "열쇠 하나로 여러 회사 모델(Claude, Gemini, Llama 등)을 씁니다. 이름이 ‘:free’로 끝나는 모델은 무료이고, 나머지는 충전한 만큼 씁니다.", Ai.OpenRouterKeys));
         stack.Children.Add(Card(Ai.Google, "구글 계정으로 무료 열쇠를 받습니다. 무료 사용분은 하루 한도가 있고, 구글이 입력한 글을 서비스 개선에 쓸 수 있습니다.", Ai.GoogleKeys));
 
@@ -178,7 +178,7 @@ public sealed class AiWindow : Window
         {
             Ai.Google => list.FirstOrDefault(id => id.Contains("flash", StringComparison.OrdinalIgnoreCase) && !id.Contains("lite", StringComparison.OrdinalIgnoreCase) && !id.Contains("preview", StringComparison.OrdinalIgnoreCase)),
             Ai.OpenRouter => list.FirstOrDefault(id => id.EndsWith(":free", StringComparison.Ordinal)),
-            _ => list.FirstOrDefault(id => id.Contains("mini", StringComparison.OrdinalIgnoreCase))
+            _ => list.FirstOrDefault(id => id.Contains("luna", StringComparison.OrdinalIgnoreCase)) ?? list.FirstOrDefault(id => id.Contains("mini", StringComparison.OrdinalIgnoreCase))
         } ?? list[0];
         Ai.Save(Ai.Current.With(provider, account with { Model = model }));
     }

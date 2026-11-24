@@ -321,7 +321,7 @@ public static class Ai
         {
             "subscription_sharing_usage_limit_exceeded" => "ChatGPT 플랜의 사용 한도에 도달했습니다. ChatGPT 설정 → 사용량에서 확인하세요.",
             "subscription_sharing_usage_unavailable" => "ChatGPT 플랜을 지금 쓸 수 없습니다. 잠시 뒤 다시 하세요.",
-            "subscription_sharing_user_not_eligible" => "이 ChatGPT 계정은 다른 앱에서 플랜을 쓸 수 없습니다(Plus·Pro만 됩니다). OpenRouter나 Google AI Studio를 연결하세요.",
+            "subscription_sharing_user_not_eligible" => "OpenAI가 이 ChatGPT 계정은 지금 이 프로그램에서 쓸 수 없다고 알려 왔습니다. 잠시 뒤 다시 하거나 OpenRouter·Google AI Studio를 연결하세요.",
             "subscription_sharing_invalid_user" => "ChatGPT 로그인이 해제되었습니다. 설정 → AI 연결에서 다시 로그인하세요.",
             _ when status is HttpStatusCode.Unauthorized => "ChatGPT 로그인이 해제되었습니다. 설정 → AI 연결에서 다시 로그인하세요.",
             _ => "ChatGPT가 요청을 처리하지 못했습니다" + (code is null ? "." : $" ({code}).")
