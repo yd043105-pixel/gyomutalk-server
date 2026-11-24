@@ -24,7 +24,8 @@ try {
         if($state -eq 'Running'){throw 'The automatic installer did not finish in 30 minutes.'}
         $code=$info.LastTaskResult
         if($code -eq 0){$result='installed'}
-        elseif($code -notin @(10,11)){throw "Automatic installer returned $code. Existing application will be reopened."}
+        # The installer itself failed (100+), or the programs did not close (12): asking for administrator rights would not help.
+        elseif($code -ge 100 -or $code -eq 12){throw "Automatic installer returned $code. Existing application will be reopened."}
     }
     if($result -ne 'installed'){
         # Nobody is at the PC for an unattended update, so the administrator prompt would only wait; try again later instead.
