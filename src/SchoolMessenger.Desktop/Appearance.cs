@@ -7,14 +7,15 @@ namespace SchoolMessenger.Desktop;
 
 public static class Appearance
 {
-    public sealed record Palette(string Id, string Name, string Accent, string Dark, string Tint);
+    // Roof is the light color of the roof in the 교무톡 mark, which takes the chosen color with the rest of the screen.
+    public sealed record Palette(string Id, string Name, string Accent, string Dark, string Tint, string Roof);
     public static readonly Palette[] Palettes =
     [
-        new("blue", "맑은 청", "#2463EB", "#0F1B2D", "#E8F0FE"),
-        new("green", "숲 그린", "#17745D", "#193D35", "#E3F1EB"),
-        new("lavender", "라벤더", "#7050B0", "#34294C", "#EEE8F7"),
-        new("rose", "로즈", "#AD4865", "#4D2935", "#F7E7ED"),
-        new("slate", "슬레이트", "#506277", "#253341", "#E9EDF2")
+        new("blue", "맑은 청", "#2463EB", "#0F1B2D", "#E8F0FE", "#A9D9EC"),
+        new("green", "숲 그린", "#17745D", "#193D35", "#E3F1EB", "#A2C7BE"),
+        new("lavender", "라벤더", "#7050B0", "#34294C", "#EEE8F7", "#C6B9DF"),
+        new("rose", "로즈", "#AD4865", "#4D2935", "#F7E7ED", "#DEB6C1"),
+        new("slate", "슬레이트", "#506277", "#253341", "#E9EDF2", "#B9C0C9")
     ];
     public static string Selected { get; private set; } = "blue";
     public static bool Glass { get; private set; } = true;
@@ -32,6 +33,7 @@ public static class Appearance
         Brush("GlassLine", glass ? "#FFFFFFFF" : "#E3E8EF"); Brush("OnAccent", "#FFFFFF");
         Brush("MessageSectionTint",palette.Tint);Brush("SchoolSectionTint","#E3F1EB");
         resources["Canvas"] = new SolidColorBrush(ColorOf("#F4F7FB"));
+        Branding.Tint(resources, ColorOf(palette.Accent), ColorOf(palette.Roof));
         if (SystemParameters.HighContrast)
         {
             foreach (var key in new[] { "Surface", "Glass", "Canvas", "Soft", "Pale", "MessageSectionTint", "SchoolSectionTint" }) resources[key] = SystemColors.WindowBrush;

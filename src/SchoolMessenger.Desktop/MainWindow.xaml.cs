@@ -61,7 +61,7 @@ public partial class MainWindow : Window
         loginOptionsReady = true;
         // First run: look for the school server on the LAN so the teacher only picks it and confirms the code.
         if (string.IsNullOrWhiteSpace(ServerAddress.Text) && !Environment.GetCommandLineArgs().Any(x => x.StartsWith("--", StringComparison.Ordinal))) Loaded += async (_, _) => await FindSchoolServer();
-        tray = new System.Windows.Forms.NotifyIcon { Icon = Branding.TrayIcon, Text = "교무톡", Visible = true };
+        tray = new System.Windows.Forms.NotifyIcon { Icon = Branding.TrayIcon, Text = "교무톡", Visible = true }; Branding.TrayFor(tray);
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("교무실 열기", null, (_, _) => Dispatcher.Invoke(ShowWindow));
         menu.Items.Add("종료", null, (_, _) => Dispatcher.Invoke(CloseApp)); tray.ContextMenuStrip = menu;
@@ -93,7 +93,7 @@ public partial class MainWindow : Window
             chip.SetResourceReference(System.Windows.Controls.Button.ForegroundProperty,on?"OnAccent":"Muted");
         }
         Chip(AllFilter,!onlineOnly&&!awayOnly);Chip(OnlineFilter,onlineOnly);Chip(AwayFilter,awayOnly);
-        RosterTitle.Text=favoritesOnly?"즐겨찾기":"교직원";
+        RosterTitle.Text=favoritesOnly?"즐겨찾기":"교직원";if(tray is not null)Branding.TrayFor(tray);
         OrganizationButton.Tag=favoritesOnly?null:"selected";FavoritesButton.Tag=favoritesOnly?"selected":null;
         RenderTree();
     }
@@ -620,6 +620,8 @@ public partial class MainWindow : Window
                 var preferences = JsonSerializer.Deserialize<Preferences>(File.ReadAllText(Path.Combine(LocalDirectory, "preferences.json")))!;
                 if (preferences.ThemeId != palette.Id || ((SolidColorBrush)FindResource("Blue")).Color != (Color)ColorConverter.ConvertFromString(palette.Accent)) throw new InvalidOperationException("화면 색상 적용·저장 실패");
                 if (((SolidColorBrush)themedInbox.ReceivedTab.Foreground).Color != ((SolidColorBrush)FindResource("Blue")).Color) throw new InvalidOperationException("열린 메시지 창의 테마 변경 실패");
+                var tile = ((GeometryDrawing)((DrawingGroup)((DrawingImage)FindResource("ProductMark")).Drawing).Children[0]).Brush;
+                if (((SolidColorBrush)tile).Color != (Color)ColorConverter.ConvertFromString(palette.Accent) || !ReferenceEquals(Icon, FindResource("AppIcon")) || !ReferenceEquals(themedInbox.Icon, Icon)) throw new InvalidOperationException("마크·창 아이콘이 화면 색상을 따라가지 않음");
                 SavePreview(this, Path.Combine(directory, "theme-" + palette.Id + ".png"));
             }
             glass.IsChecked = false;

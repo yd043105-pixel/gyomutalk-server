@@ -31,7 +31,7 @@
    <GeometryDrawing Brush="#12306B"><GeometryDrawing.Geometry><EllipseGeometry Center="94,107.75" RadiusX="2" RadiusY="2"/></GeometryDrawing.Geometry></GeometryDrawing>
   </DrawingGroup></DrawingImage.Drawing></DrawingImage>
   <Style x:Key="SchoolWindow" TargetType="Window">
-   <Setter Property="Icon" Value="/Assets/brand_mark.ico"/>
+   <Setter Property="Icon" Value="{DynamicResource AppIcon}"/>
    <Setter Property="FontFamily" Value="Malgun Gothic"/><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="{DynamicResource Ink}"/><Setter Property="Background" Value="{DynamicResource Surface}"/>
    <Setter Property="WindowStyle" Value="None"/><Setter Property="UseLayoutRounding" Value="True"/>
    <Setter Property="shell:WindowChrome.WindowChrome"><Setter.Value><shell:WindowChrome CaptionHeight="38" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/></Setter.Value></Setter>

@@ -37,6 +37,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern windows11
 SetupIconFile=..\src\SchoolMessenger.Shared\Branding\brand_mark.ico
+ChangesAssociations=yes
 DisableWelcomePage=no
 DisableDirPage=no
 DisableProgramGroupPage=no
