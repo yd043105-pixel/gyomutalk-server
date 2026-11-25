@@ -153,7 +153,13 @@ public partial class MainWindow
         var chat = new ChatWindow(this, people); chat.Show();
         await chat.CreateRoom([other.Id], "1학년 담임 협의");
         for (var i = 0; i < 30 && chat.RoomId is null; i++) await Task.Delay(50);
+        // The box stays usable while a line goes out, so the next one can be typed right after Enter.
+        var boxDisabled = false; chat.BodyBox.IsEnabledChanged += (_, _) => { if (!chat.BodyBox.IsEnabled) boxDisabled = true; };
         chat.BodyBox.Text = "내일 조회 때 체험학습 안내문을 같이 나눠 주세요."; await chat.SendMessage();
+        if (boxDisabled || chat.BodyBox.IsReadOnly || chat.BodyBox.Text.Length != 0) throw new InvalidOperationException("채팅 전송 중 입력 칸이 막혀 다음 글을 바로 쓸 수 없음");
+        var capture = new System.Windows.Media.Imaging.WriteableBitmap(40, 30, 96, 96, System.Windows.Media.PixelFormats.Bgra32, null);
+        var pasted = new DataObject(); pasted.SetImage(capture);
+        if (!await chat.VerifyPaste(pasted)) throw new InvalidOperationException("붙여넣은 사진이 채팅 첨부로 들어가지 않음");
         if (!Archive.ChatEntries(chat.RoomId!).Any(m => m.Body.Contains("체험학습 안내문"))) throw new InvalidOperationException("채팅 UI 전송 실패");
         if ((await Api!.Get<ChatEntry[]>($"api/chats/{chat.RoomId}/messages")).Length != 0) throw new InvalidOperationException("이 PC가 저장한 채팅을 서버가 다시 내줌");
         SavePreview(chat, Path.Combine(directory, "chat-preview.png"));
@@ -165,6 +171,7 @@ public partial class MainWindow
         async Task Gone(string id) { try { await Api.Send<JsonElement>(HttpMethod.Delete, $"api/attachments/{id}"); } catch (ApiRequestException error) when ((int)error.StatusCode == 404) { return; } throw new InvalidOperationException("대기 목록에서 뺀 파일이 서버에 남음"); }
         await Gone(await chat.VerifyTakeBack(waiting));
         var writing = new ComposeWindow(this, people, other.Id, "파일 빼기 확인"); writing.Show(); await Gone(await writing.VerifyTakeBack(waiting)); File.Delete(waiting);
+        var named = new ComposeWindow(this, people, null, null); named.Show(); named.VerifyRecipientInput(other); named.UpdateLayout(); await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Render); SavePreview(named, Path.Combine(directory, "compose-recipient-input-preview.png")); named.Close();
         var verifiedRoom = chat.RoomId!;
         await Api.Send<JsonElement>(HttpMethod.Post, $"api/chats/{verifiedRoom}/name", new { name = "내 이름표" }); await chat.ShowRoom(verifiedRoom);
         if (chat.RoomTitle.Text != "내 이름표") throw new InvalidOperationException("대화방 이름 바꾸기 표시 실패");

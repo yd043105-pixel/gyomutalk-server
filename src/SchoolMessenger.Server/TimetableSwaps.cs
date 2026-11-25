@@ -12,6 +12,7 @@ public sealed partial class Timetables
         CREATE INDEX IF NOT EXISTS TimetableSwapStatus ON TimetableSwaps(Status, CreatedAt);
         CREATE TABLE IF NOT EXISTS TimetableBundles(Id TEXT PRIMARY KEY, Payload TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS TimetableBundleRules(Id TEXT PRIMARY KEY, Payload TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS TimetableUnavailable(UserId TEXT NOT NULL, Date TEXT NOT NULL, Period INTEGER NOT NULL, PRIMARY KEY(UserId, Date, Period));
         """);
 
     void MapSwaps(RouteGroupBuilder api)
@@ -25,6 +26,10 @@ public sealed partial class Timetables
             WithSchedule(c, () => DecideSwap(id, request, User(c))));
         api.MapPost("/swap-options", (TimetableSwapOptionsRequest request, HttpContext c) =>
             WithSchedule(c, () => SwapOptions(request, User(c))));
+        api.MapPut("/unavailable", (TimetableUnavailableUpdate request, HttpContext c) =>
+            WithSchedule(c, () => SaveUnavailable(request, User(c))));
+        api.MapPost("/swap-suggestions", (TimetableSuggestionRequest request, HttpContext c) =>
+            WithSchedule(c, () => Suggest(request, User(c))));
         api.MapPost("/swaps/approve", async Task<IResult> (TimetableCommit request, HttpContext c) =>
         {
             await gate.WaitAsync(c.RequestAborted);
@@ -148,7 +153,14 @@ public sealed partial class Timetables
         var preceding = OrderSwaps(SwapIds(request.Dependencies, 20));
         // The request being drafted may reach into another week than the one shown.
         var projection = Project(Data.Batches(), request.Dates.Concat(DatesOf(request.Exchanges)), preceding);
-        if (request.Exchanges is { Length: > 0 } draft) ApplySwap(projection, Trial(projection, ValidExchanges(draft)));
+        TimetablePosition[] overlaps = [];
+        if (request.Exchanges is { Length: > 0 } draft)
+        {
+            // A request being drafted may leave a teacher in two classes until the next trade untangles it.
+            var trial = Trial(projection, ValidExchanges(draft));
+            ApplySwap(projection, trial, teachers: false);
+            overlaps = trial.Changes.Select(c => c.Position).SelectMany(p => Clashes(projection, p) is { Length: > 0 } other ? other.Append(p) : []).Distinct().ToArray();
+        }
         var dates = request.Dates.ToHashSet();
         var uniqueName = UniqueName(user);
         var bundles = projection.Bundles.SelectMany(b => b.Slots.Select(p => (Position: p, b.Name)))
@@ -157,7 +169,7 @@ public sealed partial class Timetables
             .OrderBy(p => p.Key.Date).ThenBy(p => p.Value.ClassName).ThenBy(p => p.Key.Period)
             .Select(p => new TimetablePlanSlot(p.Key, p.Value, Owns(p.Value, user, uniqueName),
                 bundles.GetValueOrDefault(p.Key) ?? RuleOf(projection, p.Key.ClassId, p.Value)?.Name));
-        return Results.Ok(new TimetableSwapPlan(Data.Revision, slots.ToArray()));
+        return Results.Ok(new TimetableSwapPlan(Data.Revision, slots.ToArray(), overlaps, UnavailableOn(request.Dates)));
     }
 
     static IEnumerable<string> DatesOf(TimetableExchange[]? exchanges) =>
@@ -219,26 +231,34 @@ public sealed partial class Timetables
         var preceding = OrderSwaps(SwapIds(request.Dependencies, 20));
         var projection = Project(Data.Batches(), request.Dates.Append(pick.Date).Concat(DatesOf(request.Exchanges)), preceding);
         var draft = request.Exchanges is { Length: > 0 } ? ValidExchanges(request.Exchanges) : [];
-        if (draft.Length > 0) ApplySwap(projection, Trial(projection, draft));
+        if (draft.Length > 0) ApplySwap(projection, Trial(projection, draft), teachers: false);
         if (!projection.Lessons.TryGetValue(pick, out var lesson) || lesson.Subject.Length == 0)
             throw new FilePolicyException("옮길 수업을 선택하세요.");
+        var marks = Marks(request.Dates);
         var uniqueName = UniqueName(user);
         if (!Manager(user) && !Group(projection, pick).Any(p => Owns(projection.Lessons[p], user, uniqueName)))
             throw new FilePolicyException("내 수업 또는 내 수업과 함께 움직이는 묶음만 옮길 수 있습니다.", 403);
         var taken = draft.SelectMany(e => new[] { e.First, e.Second }).ToHashSet();
         var dates = request.Dates.ToHashSet();
         var options = new List<TimetableSwapOption>();
-        if (string.CompareOrdinal(pick.Date, TimetableData.Today) < 0) return Results.Ok(options);
+        if (Past(pick, projection.Grades)) return Results.Ok(options);
         foreach (var target in projection.Lessons.Where(p => p.Key.ClassId == pick.ClassId && p.Key != pick && dates.Contains(p.Key.Date) &&
-            p.Value.Subject.Length > 0 && string.CompareOrdinal(p.Key.Date, TimetableData.Today) >= 0 && !SameLesson(p.Value, lesson))
+            p.Value.Subject.Length > 0 && !Past(p.Key, projection.Grades) && !SameLesson(p.Value, lesson))
             .Select(p => p.Key).OrderBy(p => p.Date).ThenBy(p => p.Period).ToArray())
         {
             var exchanges = Closure(projection, pick, target);
-            if (exchanges.Length > 12 || exchanges.SelectMany(e => new[] { e.First, e.Second }).Any(taken.Contains)) continue;
+            var moved = exchanges.SelectMany(e => new[] { e.First, e.Second }).ToArray();
+            if (exchanges.Length > 12 || moved.Any(taken.Contains) || moved.Any(p => Past(p, projection.Grades))) continue;
             try
             {
-                ApplySwap(projection with { Lessons = new(projection.Lessons), Bundles = [.. projection.Bundles] }, Trial(projection, exchanges));
-                options.Add(new(target, exchanges));
+                var trial = projection with { Lessons = new(projection.Lessons), Bundles = [.. projection.Bundles] };
+                var swap = Trial(projection, exchanges);
+                ApplySwap(trial, swap, teachers: false);
+                if (Blocked(trial, swap.Changes, marks) is not null) continue;
+                // Green when the whole request is clean after this trade; otherwise only offered to a board that can untangle it.
+                var overlap = taken.Concat(moved).Any(p => Clashes(trial, p).Length > 0);
+                if (overlap && !request.AllowOverlap) continue;
+                options.Add(new(target, exchanges, overlap));
             }
             catch (FilePolicyException) { /* This trade breaks a rule, so it is not offered. */ }
         }
@@ -323,8 +343,11 @@ public sealed partial class Timetables
         if (!Manager(user) && (ownPositions.Count == 0 || request.Exchanges.Any(e => !connected.Contains(e.First) && !connected.Contains(e.Second))))
             throw new FilePolicyException("내 수업 또는 내 수업과 함께 움직이는 묶음을 신청하세요.", 403);
 
+        if (positions.Any(p => Past(p, projection.Grades))) throw new FilePolicyException("이미 시작했거나 지난 수업은 바꿀 수 없습니다.", 409);
         var changes = ChangesOf(projection, request.Exchanges);
         if (changes.All(c => SameLesson(c.Before, c.After))) throw new FilePolicyException("교체하면 달라지는 수업이 있어야 합니다.");
+        if (Blocked(projection, changes, Marks(positions.Select(p => p.Date))) is { } marked)
+            throw new FilePolicyException($"{marked} 선생님이 수업할 수 없다고 표시한 시간으로 옮기는 교체가 있습니다.", 409);
         var swap = new TimetableSwap(request.Id, user, school.GetUser(user)!.Name, "pending", reason, Now,
             dependencies, request.Exchanges, changes);
         ApplySwap(projection, swap);
@@ -434,7 +457,7 @@ public sealed partial class Timetables
             throw new FilePolicyException("묶음수업은 같은 날짜의 연속 교시 또는 같은 시간에 진행되는 수업으로 옮겨야 합니다.", 409);
     }
 
-    static void ApplySwap(SwapProjection projection, TimetableSwap swap)
+    static void ApplySwap(SwapProjection projection, TimetableSwap swap, bool teachers = true)
     {
         var moves = swap.Exchanges.SelectMany(e => new[] { (e.First, e.Second), (e.Second, e.First) })
             .ToDictionary(e => e.Item1, e => e.Item2);
@@ -460,28 +483,150 @@ public sealed partial class Timetables
             projection.Bundles[i] = moved;
         }
         foreach (var change in swap.Changes) projection.Lessons[change.Position] = change.After with { Period = change.Position.Period };
-        ValidateTeacherConflicts(projection, swap.Changes.Select(c => c.Position));
+        if (teachers) ValidateTeacherConflicts(projection, swap.Changes.Select(c => c.Position));
+    }
+
+    static string TeacherOf(SwapProjection projection, TimetableSlot lesson) => lesson.TeacherId.Length > 0 ? lesson.TeacherId :
+        projection.TeacherIds.GetValueOrDefault(lesson.TeacherName, lesson.TeacherName);
+
+    // Other lessons its teacher has at the same time (a shared or bundled lesson is one lesson, not two).
+    static TimetablePosition[] Clashes(SwapProjection projection, TimetablePosition position)
+    {
+        if (!projection.Lessons.TryGetValue(position, out var lesson) || lesson.Subject.Length == 0) return [];
+        var teacher = TeacherOf(projection, lesson);
+        var clock = Clock(position, projection.Grades);
+        var shared = projection.Bundles.FirstOrDefault(b => b.Kind == "simultaneous" && b.Slots.Contains(position));
+        var together = Group(projection, position);
+        return projection.Lessons.Where(p => p.Key.Date == position.Date && p.Key != position &&
+            p.Value.Subject.Length > 0 && TeacherOf(projection, p.Value) == teacher && shared?.Slots.Contains(p.Key) != true && !together.Contains(p.Key) &&
+            (Clock(p.Key, projection.Grades) is { } other && clock is { } time
+                ? string.CompareOrdinal(time.Start, other.End) < 0 && string.CompareOrdinal(other.Start, time.End) < 0
+                : p.Key.Period == position.Period)).Select(p => p.Key).ToArray();
     }
 
     static void ValidateTeacherConflicts(SwapProjection projection, IEnumerable<TimetablePosition> positions)
     {
-
-        string Teacher(TimetableSlot lesson) => lesson.TeacherId.Length > 0 ? lesson.TeacherId :
-            projection.TeacherIds.GetValueOrDefault(lesson.TeacherName, lesson.TeacherName);
         foreach (var position in positions)
+            if (Clashes(projection, position).Length > 0)
+                throw new FilePolicyException($"{projection.Lessons[position].TeacherName} 선생님의 수업 시간이 겹칩니다.", 409);
+    }
+
+    // A lesson that has started or ended cannot be moved, and nothing can be moved into its period.
+    static bool Past(TimetablePosition position, Dictionary<string, int> grades)
+    {
+        var order = string.CompareOrdinal(position.Date, TimetableData.Today);
+        if (order != 0) return order < 0;
+        var now = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(9)).ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        return Clock(position, grades) is { } time && string.CompareOrdinal(time.Start, now) <= 0;
+    }
+
+    // ── Periods teachers cannot teach ──
+    TimetableUnavailable[] UnavailableOn(IEnumerable<string> dates)
+    {
+        var wanted = dates.ToHashSet();
+        var names = school.Users().ToDictionary(u => u.Id, u => u.Name);
+        return Data.Query("SELECT UserId,Date,Period FROM TimetableUnavailable WHERE Date>=$today ORDER BY Date,Period",
+                r => new TimetableUnavailable(r.GetString(0), names.GetValueOrDefault(r.GetString(0), ""), r.GetString(1), r.GetInt32(2)), ("$today", TimetableData.Today))
+            .Where(u => wanted.Contains(u.Date) && u.TeacherName.Length > 0).ToArray();
+    }
+    HashSet<(string Teacher, string Date, int Period)> Marks(IEnumerable<string> dates) =>
+        UnavailableOn(dates).Select(u => (u.TeacherId, u.Date, u.Period)).ToHashSet();
+    // The teacher a change would put into a period they marked, or null.
+    static string? Blocked(SwapProjection projection, IEnumerable<TimetableSwapChange> changes, HashSet<(string Teacher, string Date, int Period)> marks) =>
+        changes.Where(c => !SameLesson(c.Before, c.After) && marks.Contains((TeacherOf(projection, c.After), c.Position.Date, c.Position.Period)))
+            .Select(c => c.After.TeacherName).FirstOrDefault();
+
+    IResult SaveUnavailable(TimetableUnavailableUpdate request, string user)
+    {
+        if (request.Dates is not { Length: >= 1 and <= 7 } || request.Dates.Any(d => d is null || !DateOnly.TryParseExact(d, "yyyy-MM-dd", out _)))
+            throw new FilePolicyException("날짜를 확인하세요.");
+        var open = request.Dates.Where(d => string.CompareOrdinal(d, TimetableData.Today) >= 0).ToHashSet();
+        var times = (request.Times ?? []).Distinct().ToArray();
+        if (times.Length > 100 || times.Any(t => t is null || !open.Contains(t.Date) || t.Period is < 1 or > 12))
+            throw new FilePolicyException("수업할 수 없는 시간을 확인하세요. 지난 날짜는 바꿀 수 없습니다.");
+        foreach (var date in open) Data.Execute("DELETE FROM TimetableUnavailable WHERE UserId=$user AND Date=$date", ("$user", user), ("$date", date));
+        foreach (var time in times)
+            Data.Execute("INSERT OR IGNORE INTO TimetableUnavailable VALUES($user,$date,$period)", ("$user", user), ("$date", time.Date), ("$period", time.Period));
+        return Results.Ok(UnavailableOn(request.Dates).Where(u => u.TeacherId == user).ToArray());
+    }
+
+    // ── Ways to empty periods ──
+    // A trade within the same class on the same day comes first, then one on another day of the week; when the partner teacher
+    // would then have two lessons at once, one more trade frees them. Every way keeps the rules a request is checked against.
+    IResult Suggest(TimetableSuggestionRequest request, string user)
+    {
+        if (request.Dates is not { Length: >= 1 and <= 7 } || request.Dates.Any(string.IsNullOrEmpty) ||
+            request.Vacate is not { Length: >= 1 and <= 12 } || request.Vacate.Any(t => t is null || !request.Dates.Contains(t.Date) || t.Period is < 1 or > 12))
+            throw new FilePolicyException("비울 날짜와 교시를 선택하세요.");
+        var preceding = OrderSwaps(SwapIds(request.Dependencies, 20));
+        var projection = Project(Data.Batches(), request.Dates, preceding);
+        var draft = request.Exchanges is { Length: > 0 } ? ValidExchanges(request.Exchanges) : [];
+        if (draft.Length > 0) ApplySwap(projection, Trial(projection, draft));
+        var uniqueName = UniqueName(user);
+        var vacate = request.Vacate.Select(t => (t.Date, t.Period)).ToHashSet();
+        bool MineAt(SwapProjection state, string date, int period) => state.Lessons.Any(l => l.Key.Date == date && l.Key.Period == period &&
+            l.Value.Subject.Length > 0 && Owns(l.Value, user, uniqueName));
+        var lessons = projection.Lessons.Where(p => vacate.Contains((p.Key.Date, p.Key.Period)) && p.Value.Subject.Length > 0 && Owns(p.Value, user, uniqueName))
+            .Select(p => p.Key).OrderBy(p => p.Date).ThenBy(p => p.Period).ToArray();
+        if (lessons.Length == 0) throw new FilePolicyException("비울 시간에 선생님의 수업이 없습니다.");
+        if (lessons.Any(p => Past(p, projection.Grades))) throw new FilePolicyException("이미 시작했거나 지난 수업은 옮길 수 없습니다.");
+        var marks = Marks(request.Dates);
+        var dates = request.Dates.ToHashSet();
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        static int Day(string date) => DateOnly.ParseExact(date, "yyyy-MM-dd").DayNumber;
+        static TimetablePosition[] Ends(IEnumerable<TimetableExchange> exchanges) => exchanges.SelectMany(e => new[] { e.First, e.Second }).ToArray();
+        // One trade on a copy; null when it breaks a rule other than a teacher's overlap.
+        SwapProjection? Try(SwapProjection start, TimetableExchange[] exchanges)
         {
-            var lesson = projection.Lessons[position];
-            var teacher = Teacher(lesson);
-            var clock = Clock(position, projection.Grades);
-            var shared = projection.Bundles.FirstOrDefault(b => b.Kind == "simultaneous" && b.Slots.Contains(position));
-            var together = Group(projection, position);
-            var overlaps = projection.Lessons.Any(p => p.Key.Date == position.Date && p.Key != position &&
-                p.Value.Subject.Length > 0 && Teacher(p.Value) == teacher && shared?.Slots.Contains(p.Key) != true && !together.Contains(p.Key) &&
-                (Clock(p.Key, projection.Grades) is { } other && clock is { } time
-                    ? string.CompareOrdinal(time.Start, other.End) < 0 && string.CompareOrdinal(other.Start, time.End) < 0
-                    : p.Key.Period == position.Period));
-            if (overlaps) throw new FilePolicyException($"{lesson.TeacherName} 선생님의 수업 시간이 겹칩니다.", 409);
+            if (Ends(exchanges).Any(p => Past(p, start.Grades))) return null;
+            var next = start with { Lessons = new(start.Lessons), Bundles = [.. start.Bundles] }; var swap = Trial(start, exchanges);
+            try { ApplySwap(next, swap, teachers: false); } catch (FilePolicyException) { return null; }
+            return Blocked(next, swap.Changes, marks) is null ? next : null;
         }
+        IEnumerable<TimetablePosition> Partners(SwapProjection state, TimetablePosition at, HashSet<TimetablePosition> used) =>
+            state.Lessons.Where(l => l.Key.ClassId == at.ClassId && l.Key != at && dates.Contains(l.Key.Date) && l.Value.Subject.Length > 0 &&
+                    !used.Contains(l.Key) && !SameLesson(l.Value, state.Lessons[at])).Select(l => l.Key)
+                .OrderBy(l => l.Date == at.Date ? 0 : 1).ThenBy(l => Math.Abs(Day(l.Date) - Day(at.Date))).ThenBy(l => l.Period).ToArray();
+        int Cost(TimetableExchange[] made) => (made.All(e => e.First.Date == e.Second.Date) ? 0 : 1000) + made.Length * 10 + made.Sum(e => Math.Abs(Day(e.First.Date) - Day(e.Second.Date)));
+        var plans = new List<(TimetableExchange[] Made, SwapProjection State)> { ([], projection) };
+        foreach (var lesson in lessons)
+        {
+            var grown = new List<(TimetableExchange[] Made, SwapProjection State)>();
+            foreach (var (made, state) in plans)
+            {
+                // An earlier trade may already have emptied this period.
+                if (!MineAt(state, lesson.Date, lesson.Period)) { grown.Add((made, state)); continue; }
+                if (!Owns(state.Lessons[lesson], user, uniqueName)) continue;
+                var used = Ends(made.Concat(draft)).ToHashSet(); var found = 0;
+                foreach (var target in Partners(state, lesson, used))
+                {
+                    if (watch.ElapsedMilliseconds > 4000 || found >= 6) break;
+                    // My lesson must not land in another period that is to be emptied.
+                    if (vacate.Contains((target.Date, target.Period))) continue;
+                    var first = Closure(state, lesson, target);
+                    if (made.Length + draft.Length + first.Length > 12 || Ends(first).Any(used.Contains) || Try(state, first) is not { } after) continue;
+                    var changed = Ends(first);
+                    var clashes = changed.SelectMany(p => Clashes(after, p)).Distinct().Where(p => !changed.Contains(p)).ToArray();
+                    if (changed.All(p => Clashes(after, p).Length == 0)) { if (!MineAt(after, lesson.Date, lesson.Period)) { grown.Add(([.. made, .. first], after)); found++; } continue; }
+                    // The partner now has two lessons at once: move their other one within its own class.
+                    if (clashes.Length != 1) continue;
+                    var taken = used.Concat(changed).ToHashSet();
+                    foreach (var other in Partners(after, clashes[0], taken))
+                    {
+                        if (watch.ElapsedMilliseconds > 4000) break;
+                        if (vacate.Contains((other.Date, other.Period)) && Owns(after.Lessons[clashes[0]], user, uniqueName)) continue;
+                        var next = Closure(after, clashes[0], other);
+                        if (made.Length + draft.Length + first.Length + next.Length > 12 || Ends(next).Any(taken.Contains) || Try(after, next) is not { } done) continue;
+                        if (changed.Concat(Ends(next)).Any(p => Clashes(done, p).Length > 0) || MineAt(done, lesson.Date, lesson.Period)) continue;
+                        grown.Add(([.. made, .. first, .. next], done)); found++; break;
+                    }
+                }
+            }
+            plans = grown.OrderBy(p => Cost(p.Made)).Take(4).ToList();
+            if (plans.Count == 0) break;
+        }
+        return Results.Ok(plans.Where(p => p.Made.Length > 0 && !vacate.Any(v => MineAt(p.State, v.Date, v.Period)))
+            .OrderBy(p => Cost(p.Made)).Take(5).Select(p => new TimetableSuggestion(p.Made, p.Made.All(e => e.First.Date == e.Second.Date))).ToArray());
     }
 
     (TimetableSwap[] Approvals, TimetableBundle[] Bundles) VerifySwapPublication(

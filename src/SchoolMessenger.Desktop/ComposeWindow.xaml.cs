@@ -26,7 +26,8 @@ public partial class ComposeWindow : Window
         this.main = main; this.people = people;
         main.RegisterWorkWindow(this); Resources = main.Resources;
         InitializeComponent(); StatusTone.Watch(Feedback);
-        InitializeEditor(); InitializeAi();
+        InitializeEditor(); InitializeAi(); InitializeRecipientInput();
+        PreviewKeyDown += async (_, e) => { if (!ClipboardFiles.IsPaste(e) || pending is not null || sending) return; var paths = ClipboardFiles.Take(); if (paths.Length == 0) return; e.Handled = true; await AddPaths(paths); };
         SubmissionDate.SelectedDate = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(9)).Date.AddDays(7);
         // Collected files are handed in through the task list, so the option goes with that menu.
         if (!main.Feature("tasks") && CollectFiles.Parent is FrameworkElement collect) collect.Visibility = Visibility.Collapsed;

@@ -27,7 +27,7 @@ public sealed partial class TimetableWindow
     Dictionary<TimetablePosition, TimetableSwapOption> boardOptions = [];
     TimetablePlanSlot? boardPick;
     Task boardPicking = Task.CompletedTask;
-    bool boardAll, boardAssume;
+    bool boardAll, boardAssume, boardMarking;
     string[] boardDependencies = [];
     string? boardRequestId;
     string boardReason = "";
@@ -128,7 +128,10 @@ public sealed partial class TimetableWindow
             legend.Children.Add(chip); legend.Children.Add(text);
         }
         Key("내 수업", "Pale"); Key("바꿀 수 있는 수업", "SuccessTint"); Key("이번 신청으로 바뀐 칸", "ChangeTint");
+        // Shown only while the request has one, so the legend still fits a small window.
+        if (boardPlan.Overlaps is { Length: > 0 }) Key("겹친 수업", "WarningTint");
         var bundleKey = AdminUi.Label("◆ 묶음수업 · 같은 색은 같은 묶음", "Muted", 12); bundleKey.TextWrapping = TextWrapping.NoWrap; legend.Children.Add(bundleKey);
+        if (boardPlan.Unavailable is { Length: > 0 }) { var markKey = AdminUi.Label("   ⊘·불가 수업 불가 표시", "Muted", 12); markKey.TextWrapping = TextWrapping.NoWrap; legend.Children.Add(markKey); }
 
         var tools = new WrapPanel { VerticalAlignment = VerticalAlignment.Center };
         Button Step(string label, int days, string name)
@@ -152,6 +155,14 @@ public sealed partial class TimetableWindow
         if (mine.Length > 0) tools.Children.Add(Toggle("모든 선생님 보기", boardAll, value => boardAll = value));
         if (pending.Length > 0 && boardMoves.Count == 0)
             tools.Children.Add(Toggle($"대기 중인 신청 {pending.Length}건을 승인된 것으로 보기", boardAssume, value => boardAssume = value));
+        // A server older than these features sends no marks: the two tools then stay hidden.
+        if (boardPlan.Unavailable is not null && mine.Length > 0)
+        {
+            tools.Children.Add(Toggle("수업 불가 시간 고르기", boardMarking, value => { boardMarking = value; feedback.Text = value ? "내 줄에서 수업할 수 없는 칸을 누르세요. 다시 누르면 지워집니다. 다른 선생님이 교체할 때 이 시간에는 선생님 수업이 들어오지 않습니다." : ""; }));
+            var helper = new Button { Content = "교체 도우미", Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = "비울 시간을 알려 주면 규칙에 맞는 교체안을 찾아 줍니다." };
+            helper.SetResourceReference(StyleProperty, "PrimaryButton"); helper.Click += async (_, _) => await Run(SwapHelper);
+            tools.Children.Add(helper);
+        }
         head.Children.Add(tools);
         DockPanel.SetDock(head, Dock.Top); page.Children.Add(head);
 
@@ -178,6 +189,8 @@ public sealed partial class TimetableWindow
         var mine = plan.Slots.Where(s => s.Mine).ToArray();
         var myRooms = mine.Select(s => s.Position.ClassId).ToHashSet();
         var changed = (BoardExchanges ?? []).SelectMany(e => new[] { e.First, e.Second }).ToHashSet();
+        var overlaps = (plan.Overlaps ?? []).ToHashSet();
+        var marks = (plan.Unavailable ?? []).Select(u => (u.TeacherId, u.Date, u.Period)).ToHashSet();
         var waiting = pending.SelectMany(s => s.Changes.Select(c => c.Position)).ToHashSet();
         // A trade partner teaches one of my classes, so those teachers come first; the manager and "everyone" see the whole school.
         var rows = plan.Slots.Where(s => boardAll || mine.Length == 0 || s.Mine || myRooms.Contains(s.Position.ClassId))
@@ -230,12 +243,20 @@ public sealed partial class TimetableWindow
                 for (var p = 1; p <= periods; p++)
                 {
                     var lessons = byTeacher[(teacher.Key, dates[d], p)].ToArray();
+                    var day = dates[d]; var period = p;
+                    var marked = marks.Contains((teacher.Key, day, period));
                     var cell = new Border { Tag = "empty", AllowDrop = true, Background = System.Windows.Media.Brushes.Transparent };
+                    if (marked && lessons.Length == 0)
+                    {
+                        var no = AdminUi.Label("불가", "Faint", 10); no.HorizontalAlignment = HorizontalAlignment.Center; no.VerticalAlignment = VerticalAlignment.Center; no.TextWrapping = TextWrapping.NoWrap;
+                        cell.Child = no; cell.Tag = "blocked"; cell.ToolTip = $"{teacher.Name} 선생님이 수업할 수 없다고 표시한 시간";
+                        System.Windows.Automation.AutomationProperties.SetName(cell, $"{teacher.Name} {DayLabel(day)} {period}교시 수업 불가");
+                    }
                     if (lessons.Length > 0)
                     {
                         var first = lessons[0];
                         // Class over subject on tall rows; on short rows the same two pieces sit on one line.
-                        var room = new System.Windows.Documents.Run(ShortClass(first.Lesson.ClassName) + (lessons.Length > 1 ? "+" + (lessons.Length - 1) : "") + (first.BundleName is null ? "" : "◆")) { FontWeight = FontWeights.SemiBold };
+                        var room = new System.Windows.Documents.Run((marked ? "⊘" : "") + ShortClass(first.Lesson.ClassName) + (lessons.Length > 1 ? "+" + (lessons.Length - 1) : "") + (first.BundleName is null ? "" : "◆")) { FontWeight = FontWeights.SemiBold };
                         room.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, first.Mine ? "Blue" : "Ink");
                         var gap = new System.Windows.Documents.Run("\n");
                         var subject = new System.Windows.Documents.Run(first.Lesson.Subject);
@@ -243,9 +264,10 @@ public sealed partial class TimetableWindow
                         var text = new TextBlock { TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, Margin = new Thickness(1, 0, 1, 0), FontSize = 11 };
                         text.Inlines.Add(room); text.Inlines.Add(gap); text.Inlines.Add(subject); texts.Add((text, gap, subject, first.Lesson.Subject));
                         cell.Child = text;
-                        cell.Tag = lessons.Any(l => changed.Contains(l.Position)) ? "changed" : first.Mine ? "mine" : "lesson";
+                        cell.Tag = lessons.Any(l => overlaps.Contains(l.Position)) ? "overlap" : lessons.Any(l => changed.Contains(l.Position)) ? "changed" : first.Mine ? "mine" : "lesson";
                         cell.ToolTip = string.Join("\n", lessons.Select(l => $"{l.Lesson.ClassName} {l.Position.Period}교시 · {l.Lesson.Subject} ({l.Lesson.TeacherName})" +
-                            (l.BundleName is null ? "" : " · 묶음 " + l.BundleName) + (changed.Contains(l.Position) ? " · 이번 신청으로 바뀜" : "") + (waiting.Contains(l.Position) ? " · 대기 중인 신청 있음" : "")));
+                            (l.BundleName is null ? "" : " · 묶음 " + l.BundleName) + (changed.Contains(l.Position) ? " · 이번 신청으로 바뀜" : "") + (waiting.Contains(l.Position) ? " · 대기 중인 신청 있음" : "") + (overlaps.Contains(l.Position) ? " · 같은 시간에 수업이 겹침" : ""))) +
+                            (marked ? "\n이 시간은 수업할 수 없다고 표시함" : "");
                         cell.Cursor = Cursors.Hand;
                         if (string.CompareOrdinal(dates[d], today) < 0) cell.Opacity = 0.45;
                         foreach (var lesson in lessons) boardCells[lesson.Position] = cell;
@@ -253,7 +275,11 @@ public sealed partial class TimetableWindow
                         System.Windows.Automation.AutomationProperties.SetName(cell, $"{teacher.Name} {DayLabel(dates[d])} {p}교시 {first.Lesson.ClassName} {first.Lesson.Subject}");
                     }
                     BoardPaint(cell, p == 1);
-                    cell.MouseLeftButtonDown += (_, e) => { dragCell = cell; dragFrom = e.GetPosition(this); BoardPressed(lessons); };
+                    cell.MouseLeftButtonDown += (_, e) =>
+                    {
+                        if (boardMarking) { if (teacher.Mine) _ = Run(() => BoardMark(day, period)); return; }
+                        dragCell = cell; dragFrom = e.GetPosition(this); BoardPressed(lessons);
+                    };
                     cell.MouseMove += (_, e) =>
                     {
                         if (e.LeftButton != MouseButtonState.Pressed || dragCell != cell || lessons.Length == 0 || (e.GetPosition(this) - dragFrom).Length < 6) return;
@@ -312,9 +338,10 @@ public sealed partial class TimetableWindow
         if (kind == "empty") cell.Background = System.Windows.Media.Brushes.Transparent;
         // A lesson of a bundle wears its bundle's colour; picking, options and changes still show over it.
         else if (kind is "lesson" or "mine" && BundleTint.TryGetValue(cell, out var tint)) cell.Background = tint;
-        else cell.SetResourceReference(Border.BackgroundProperty, kind switch { "option" => "SuccessTint", "changed" => "ChangeTint", "mine" or "pick" => "Pale", _ => "Surface" });
-        cell.SetResourceReference(Border.BorderBrushProperty, kind switch { "option" => "Success", "pick" => "Blue", _ => dayStart ? "LineStrong" : "Line" });
-        cell.BorderThickness = kind is "option" or "pick" ? new Thickness(2) : new Thickness(dayStart ? 2 : 1, 0, 0, 1);
+        else cell.SetResourceReference(Border.BackgroundProperty, kind switch { "option" => "SuccessTint", "overlap" => "WarningTint", "blocked" => "Subtle", "changed" => "ChangeTint", "mine" or "pick" => "Pale", _ => "Surface" });
+        // An orange-edged cell can be taken too, but it leaves a teacher with two lessons until one more is moved.
+        cell.SetResourceReference(Border.BorderBrushProperty, kind switch { "option" => "Success", "overlapOption" or "overlap" => "Warning", "pick" => "Blue", _ => dayStart ? "LineStrong" : "Line" });
+        cell.BorderThickness = kind is "option" or "pick" or "overlapOption" ? new Thickness(2) : new Thickness(dayStart ? 2 : 1, 0, 0, 1);
     }
     bool IsDayStart(Border cell)
     {
@@ -351,10 +378,10 @@ public sealed partial class TimetableWindow
         try
         {
             var options = await api.Send<TimetableSwapOption[]>(HttpMethod.Post, "api/timetable/swap-options",
-                new TimetableSwapOptionsRequest(BoardDates, boardDependencies, BoardExchanges, slot.Position));
+                new TimetableSwapOptionsRequest(BoardDates, boardDependencies, BoardExchanges, slot.Position, true));
             boardPick = slot; boardOptions = options.ToDictionary(o => o.Target);
             if (boardCells.TryGetValue(slot.Position, out var picked)) BoardPaint(picked, IsDayStart(picked), "pick");
-            foreach (var option in options) if (boardCells.TryGetValue(option.Target, out var cell)) BoardPaint(cell, IsDayStart(cell), "option");
+            foreach (var option in options) if (boardCells.TryGetValue(option.Target, out var cell)) BoardPaint(cell, IsDayStart(cell), option.Overlap ? "overlapOption" : "option");
             // When the teachers scroll, an offered trade may sit below the fold: bring the nearest one into view.
             if (boardRows is { } list)
             {
@@ -363,10 +390,12 @@ public sealed partial class TimetableWindow
                 if (offered.Length > 0 && !offered.Any(Seen)) offered[0].BringIntoView();
             }
             var hidden = options.Count(o => !boardCells.ContainsKey(o.Target));
+            var clean = options.Count(o => !o.Overlap && boardCells.ContainsKey(o.Target)); var tangled = options.Length - hidden - clean;
             var what = $"{slot.Lesson.ClassName} {DayLabel(slot.Position.Date)} {slot.Position.Period}교시 {slot.Lesson.Subject}";
             feedback.Text = options.Length == 0
-                ? what + ": 이번 주에는 바꿀 수 있는 수업이 없습니다. 상대 선생님의 다른 수업과 겹치거나 지난 수업입니다. 다른 주를 확인해 보세요."
-                : what + $": 초록색 {options.Length - hidden}칸과 바꿀 수 있습니다." + (hidden > 0 ? $" ‘모든 선생님 보기’를 켜면 {hidden}칸이 더 보입니다." : "");
+                ? what + ": 이번 주에는 바꿀 수 있는 수업이 없습니다. 지난 수업이거나 수업 불가로 표시된 시간입니다. 다른 주를 확인하거나 ‘교체 도우미’를 써 보세요."
+                : what + (clean > 0 ? $": 초록색 {clean}칸과 바로 바꿀 수 있습니다." : ":") + (tangled > 0 ? $" 주황 테두리 {tangled}칸은 바꾸면 수업이 겹쳐 하나를 더 옮겨야 합니다." : "") +
+                  (hidden > 0 ? $" ‘모든 선생님 보기’를 켜면 {hidden}칸이 더 보입니다." : "");
         }
         catch (Exception error) when (error is InvalidOperationException or HttpRequestException or TaskCanceledException or JsonException)
         { feedback.Text = error.Message; }
@@ -383,7 +412,32 @@ public sealed partial class TimetableWindow
         boardMoves.Add(new(option, string.Join("\n", option.Exchanges.Select((e, i) => (i == 0 ? "" : "함께 이동(묶음) · ") + Line(e)))));
         boardRequestId = null;
         await Board();
-        feedback.Text = option.Exchanges.Length > 1 ? $"수업을 맞바꿨습니다. 묶음수업 {option.Exchanges.Length}개 학급이 함께 움직였습니다." : "수업을 맞바꿨습니다. 아래 ‘변경 기록’을 확인한 뒤 신청하세요.";
+        feedback.Text = BoardTangle() is { } tangle ? "수업을 맞바꿨습니다. " + tangle
+            : option.Exchanges.Length > 1 ? $"수업을 맞바꿨습니다. 묶음수업 {option.Exchanges.Length}개 학급이 함께 움직였습니다." : "수업을 맞바꿨습니다. 아래 ‘변경 기록’을 확인한 뒤 신청하세요.";
+    }
+
+    // Who is left with two lessons at once by the trades so far, or null when the request can be sent.
+    string? BoardTangle()
+    {
+        if (boardPlan?.Overlaps is not { Length: > 0 } overlaps) return null;
+        var lessons = boardPlan.Slots.ToDictionary(s => s.Position, s => s.Lesson);
+        var who = overlaps.Select(p => lessons.TryGetValue(p, out var l) ? $"{l.TeacherName} 선생님 {DayLabel(p.Date)} {p.Period}교시" : "").Where(t => t.Length > 0).Distinct().Take(3);
+        return string.Join(", ", who) + " 수업이 겹칩니다(주황 칸). 겹친 수업 하나를 더 옮기면 신청할 수 있습니다.";
+    }
+
+    // Marks or unmarks one period of the signed-in teacher as impossible to teach.
+    async Task BoardMark(string day, int period)
+    {
+        var today = DateTime.UtcNow.AddHours(9).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        if (string.CompareOrdinal(day, today) < 0) { feedback.Text = "지난 날짜는 바꿀 수 없습니다."; return; }
+        var me = api.Session!.User!.Id;
+        var open = BoardDates.Where(d => string.CompareOrdinal(d, today) >= 0).ToArray();
+        var times = (boardPlan!.Unavailable ?? []).Where(u => u.TeacherId == me && open.Contains(u.Date)).Select(u => new TimetableTime(u.Date, u.Period)).ToList();
+        var had = times.RemoveAll(t => t.Date == day && t.Period == period) > 0;
+        if (!had) times.Add(new(day, period));
+        await api.Send<TimetableUnavailable[]>(HttpMethod.Put, "api/timetable/unavailable", new TimetableUnavailableUpdate(open, times.ToArray()));
+        await Board();
+        feedback.Text = had ? $"{DayLabel(day)} {period}교시의 수업 불가 표시를 지웠습니다." : $"{DayLabel(day)} {period}교시를 수업 불가로 표시했습니다. 다른 선생님이 교체할 때 이 시간에는 선생님 수업이 들어오지 않습니다.";
     }
 
     // Sending the request sits right under the board; below it, everything this request changes in the order it was done.
@@ -391,7 +445,9 @@ public sealed partial class TimetableWindow
     {
         var panel = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
         var send = new DockPanel();
-        var submit = new Button { Content = "교체 신청 제출", Margin = new Thickness(8, 0, 0, 0), MinWidth = 128, IsEnabled = boardMoves.Count > 0, ToolTip = boardMoves.Count > 0 ? null : "표에서 수업을 맞바꾼 뒤 신청할 수 있습니다." };
+        var tangle = BoardTangle();
+        var submit = new Button { Content = "교체 신청 제출", Margin = new Thickness(8, 0, 0, 0), MinWidth = 128, IsEnabled = boardMoves.Count > 0 && tangle is null,
+            ToolTip = boardMoves.Count == 0 ? "표에서 수업을 맞바꾼 뒤 신청할 수 있습니다." : tangle };
         ToolTipService.SetShowOnDisabled(submit, true);
         submit.SetResourceReference(StyleProperty, "PrimaryButton");
         submit.Click += async (_, _) => await Run(async () =>
@@ -652,22 +708,34 @@ public sealed partial class TimetableWindow
     }
 
     // Walks the trade the way a teacher does: open the board, pick a lesson, take an offered trade, send the request.
-    internal async Task VerifyBoard(Action<string> capture)
+    internal async Task VerifyBoard(Action<string> capture, Action<Window, string> captureWindow)
     {
         await SwapEditor(); UpdateLayout();
         if (boardPlan is null || boardCells.Count == 0) throw new InvalidOperationException("수업 교체 표가 비어 있습니다.");
         var today = DateTime.UtcNow.AddHours(9).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        var pick = boardPlan.Slots.Where(s => s.Mine && string.CompareOrdinal(s.Position.Date, today) >= 0).OrderBy(s => s.Position.Date).ThenBy(s => s.Position.Period).FirstOrDefault();
+        // Today's lessons that have already begun offer nothing, so the first lesson with a clean trade is taken.
+        TimetablePlanSlot? pick = null;
+        foreach (var mine in boardPlan.Slots.Where(s => s.Mine && string.CompareOrdinal(s.Position.Date, today) >= 0).OrderBy(s => s.Position.Date).ThenBy(s => s.Position.Period).Take(12).ToArray())
+        { await BoardPickLesson(mine); if (boardOptions.Values.Any(o => !o.Overlap)) { pick = mine; break; } }
         if (pick is null) { capture("timetable-board"); await Load(); return; }
-        await BoardPickLesson(pick);
-        if (boardOptions.Count == 0) throw new InvalidOperationException("바꿀 수 있는 칸이 표시되지 않았습니다: " + feedback.Text);
         if (boardOptions.Keys.Any(p => string.CompareOrdinal(p.Date, today) < 0 || p.ClassId != pick.Position.ClassId)) throw new InvalidOperationException("지난 수업이나 다른 학급이 교체 대상으로 표시되었습니다.");
         UpdateLayout(); capture("timetable-board");
-        var option = boardOptions.Values.OrderBy(o => o.Target.Date).ThenBy(o => o.Target.Period).First();
+        var option = boardOptions.Values.Where(o => !o.Overlap).OrderBy(o => o.Target.Date).ThenBy(o => o.Target.Period).First();
         await BoardApply(option); UpdateLayout();
         var moved = boardPlan!.Slots.Single(s => s.Position == option.Target).Lesson;
         if (boardMoves.Count != 1 || moved.Subject != pick.Lesson.Subject || (string)boardCells[option.Target].Tag != "changed") throw new InvalidOperationException("맞바꾼 수업이 표와 변경 기록에 반영되지 않았습니다.");
         capture("timetable-board-changed");
+        // A period marked as impossible shows on the teacher's own row and goes away again.
+        if (boardPlan!.Unavailable is not null && BoardDates.Where(d => string.CompareOrdinal(d, today) > 0).FirstOrDefault() is { } later)
+        {
+            var me = api.Session!.User!.Id;
+            boardMarking = true; await Board(); await BoardMark(later, 7); UpdateLayout();
+            if (!(boardPlan.Unavailable ?? []).Any(u => u.TeacherId == me && u.Date == later && u.Period == 7)) throw new InvalidOperationException("수업 불가 표시가 저장되지 않았습니다.");
+            capture("timetable-board-marked");
+            await BoardMark(later, 7); boardMarking = false; await Board();
+            if ((boardPlan.Unavailable ?? []).Any(u => u.TeacherId == me && u.Date == later && u.Period == 7)) throw new InvalidOperationException("수업 불가 표시를 지우지 못했습니다.");
+            await VerifyHelper(pick, captureWindow);
+        }
         // Without scrolling: the days on top, every lesson column, and the request controls at the bottom.
         bool Inside(FrameworkElement? part)
         {

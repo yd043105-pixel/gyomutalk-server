@@ -257,6 +257,55 @@ try{
  assert.ok((await homeroom.request('timetable/notices')).some(n=>n.date===tuesday));
  await duty.request('timetable/bundle-rules/'+rule.id,'DELETE');assert.equal((await duty.request('timetable/bundle-rules')).length,0);
  check('class-and-subject bundles trade periods together, only rule-keeping trades are offered, and the manager approves a request without a file');
+
+ // A trade may leave a teacher in two classes for a moment; the next trade untangles it, and only an untangled request is sent.
+ const wed=(room,period)=>at(wednesday,room,period);
+ assert.deepEqual(await teacher.request('timetable/swap-options','POST',{dates:[wednesday],dependencies:[],exchanges:[],pick:wed(firstClass,1)}),[]);
+ const chained=await teacher.request('timetable/swap-options','POST',{dates:[wednesday],dependencies:[],exchanges:[],pick:wed(firstClass,1),allowOverlap:true});
+ assert.equal(chained.length,1);assert.equal(chained[0].overlap,true);
+ const step=chained[0].exchanges;
+ const tangled=await teacher.request('timetable/swap-plan','POST',{dates:[wednesday],dependencies:[],exchanges:step});
+ assert.deepEqual(tangled.overlaps.map(p=>p.classId+'/'+p.period).sort(),[firstClass+'/2',secondClass+'/2'].sort());
+ const sendSwap=(exchanges,status=200)=>teacher.request('timetable/swaps','POST',{id:uid(),revision:tangled.revision,exchanges,dependencies:[],reason:'연쇄 교체'},status);
+ assert.ok((await sendSwap(step,409)).error.includes('겹칩'));
+ const untangle=await teacher.request('timetable/swap-options','POST',{dates:[wednesday],dependencies:[],exchanges:step,pick:wed(secondClass,2),allowOverlap:true});
+ const fix=untangle.find(o=>o.target.period===1);assert.equal(fix.overlap,false);
+ const both=[...step,...fix.exchanges];
+ assert.deepEqual((await teacher.request('timetable/swap-plan','POST',{dates:[wednesday],dependencies:[],exchanges:both})).overlaps,[]);
+ const chain=await sendSwap(both);assert.equal(chain.changes.length,4);
+ await teacher.request('timetable/swaps/'+chain.id+'/decision','POST',{status:'cancelled'});
+ check('a trade may leave a teacher doubled while the board offers the trade that untangles it, and only an untangled request is sent');
+
+ // A period a teacher marks as impossible is never offered or accepted for their lessons, whoever asks.
+ const tue=(room,period)=>at(tuesday,room,period);
+ const homeOptions=()=>homeroom.request('timetable/swap-options','POST',{dates:[tuesday],dependencies:[],exchanges:[],pick:tue(firstClass,1)});
+ assert.deepEqual((await homeOptions()).map(o=>o.target),[tue(firstClass,2)]);
+ const marked=await homeroom.request('timetable/unavailable','PUT',{dates:[tuesday],times:[{date:tuesday,period:2}]});
+ assert.deepEqual(marked.map(m=>[m.date,m.period]),[[tuesday,2]]);
+ assert.deepEqual(await homeOptions(),[]);
+ const shown=await teacher.request('timetable/swap-plan','POST',{dates:[tuesday],dependencies:[]});
+ assert.ok(shown.unavailable.some(u=>u.teacherName==='가상담임'&&u.date===tuesday&&u.period===2));
+ const refused=await homeroom.request('timetable/swaps','POST',{id:uid(),revision:shown.revision,exchanges:[pair(tue(firstClass,1),tue(firstClass,2))],dependencies:[],reason:''},409);
+ assert.ok(refused.error.includes('수업할 수 없다고'));
+ await homeroom.request('timetable/unavailable','PUT',{dates:[tuesday],times:[{date:dayText(date(-7)),period:1}]},400);
+ check('a period a teacher marks as impossible is shown on the board and no request may move their lesson into it');
+
+ // Asked to empty a period, the server answers with whole requests that do it, same-day trades first.
+ const week5=[0,1,2,3,4].map(n=>dayText(date(n)));
+ const ideas=await teacher.request('timetable/swap-suggestions','POST',{dates:week5,dependencies:[],exchanges:[],vacate:[{date:wednesday,period:1}]});
+ assert.ok(ideas.length>0,'no way found to empty Wednesday 1');
+ for(const idea of ideas){
+  const result=await teacher.request('timetable/swap-plan','POST',{dates:week5,dependencies:[],exchanges:idea.exchanges});
+  assert.deepEqual(result.overlaps,[]);
+  assert.ok(!result.slots.some(s=>s.mine&&s.position.date===wednesday&&s.position.period===1),'the asked period is still taken');
+  assert.ok(!result.slots.some(s=>s.position.date===tuesday&&s.position.period===2&&s.lesson.teacherName==='가상담임'),'a marked period was used');
+ }
+ const firstOtherDay=ideas.findIndex(i=>!i.sameDay);
+ assert.ok(firstOtherDay<0||ideas.slice(firstOtherDay).every(i=>!i.sameDay),'same-day ways come first');
+ const suggested=await teacher.request('timetable/swaps','POST',{id:uid(),revision:shown.revision,exchanges:ideas[0].exchanges,dependencies:[],reason:'출장'});
+ await teacher.request('timetable/swaps/'+suggested.id+'/decision','POST',{status:'cancelled'});
+ await teacher.request('timetable/swap-suggestions','POST',{dates:week5,dependencies:[],exchanges:[],vacate:[{date:tuesday,period:1}]},400);
+ check('a period to empty gets whole requests that free it, keep every rule and marked period, and list same-day trades first');
  const setting='admin/timetable-feature', status='timetable/status';
  // Optional menus: every signed-in teacher reads them, only the administrator changes them.
  assert.deepEqual(await teacher.request('features'),{timetable:true,chat:true,tasks:true,survey:true,calendar:true,rooms:true,remote:true,courses:true,ai:true});

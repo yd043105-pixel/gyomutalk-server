@@ -74,6 +74,18 @@ Check(StyleCheck.Check("내일 오후 2시에 3층 회의실에서 학부모 상
     "ordinary writing, ‘상기시켜’ and ‘11월 20일’ are not flagged");
 Check(Ai.Rewrites.All(r => r.Instructions.Contains("줄표") && r.Instructions.Contains("2026. 11. 20.(금)")), "every AI rewrite carries the same advice, so the AI does not bring in what the check flags");
 
+// 교체 도우미: teachers go to the AI as stand-ins, and its order can only rearrange the checked candidates.
+var stand = new SwapAdvice.Names("가상교사");
+Check(stand.Of("가상교사") == "요청한 선생님" && stand.Of("가상담임") == "교사A" && stand.Of("둘째담임") == "교사B" && stand.Of("가상담임") == "교사A",
+    "the asking teacher and every other teacher get the same stand-in name each time");
+var swapPrompt = SwapAdvice.Prompt("오후 수업과는 바꾸지 말아 주세요", "수 1교시", [(true, [$"수 1-1 1교시 국어({stand.Of("가상교사")}) ↔ 2교시 수학({stand.Of("가상담임")})"]), (false, ["목 1-1 5교시 영어(교사B)"])]);
+Check(!swapPrompt.Contains("가상담임") && swapPrompt.Contains("1) [같은 날]") && swapPrompt.Contains("2) [다른 날 포함]") && swapPrompt.Contains("오후 수업과는"),
+    "the request sent to the AI carries the wish and numbered candidates, not teachers' names");
+var (swapOrder, swapReason) = SwapAdvice.Read("2, 1\n오후를 피하라는 요청에 맞춰 2번을 먼저 두었습니다.", 3);
+Check(swapOrder.SequenceEqual([1, 0, 2]) && swapReason.StartsWith("오후를"), "the AI's numbers set the order, a candidate it skips stays at the end, and its reason is kept");
+Check(SwapAdvice.Read("3,3,9,1", 3).Order.SequenceEqual([2, 0, 1]) && SwapAdvice.Read("잘 모르겠습니다.", 2) is { Order: [0, 1], Reason: "잘 모르겠습니다." },
+    "repeated or unknown numbers are ignored, and an answer without numbers keeps the program's order");
+
 var folder = Path.Combine(Path.GetTempPath(), "ai-checks-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(folder);
 try
 {

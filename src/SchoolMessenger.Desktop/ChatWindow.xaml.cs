@@ -27,6 +27,10 @@ public partial class ChatWindow : Window
         Closed += (_, _) => { main.ChatChanged -= Changed; DiscardFiles(); };
         // Someone reading another window has not read the new message yet; coming back here does.
         Loaded += async (_, _) => { await Run(async () => { if (selected is { Length: > 0 }) await CreateRoom(selected, ""); else await ReloadRooms(room); }); Activated += async (_, _) => await Run(Refresh); };
+        PreviewKeyDown += async (_, e) => { if (!ClipboardFiles.IsPaste(e)) return; var paths = ClipboardFiles.Take(); if (paths.Length == 0) return; e.Handled = true; await Run(() => AddPaths(paths)); };
+        AllowDrop = true;
+        PreviewDragOver += (_, e) => { if (e.Data.GetDataPresent(DataFormats.FileDrop)) { e.Effects = RoomId is not null && !busy && pending is null ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; } };
+        PreviewDrop += async (_, e) => { if (e.Data.GetData(DataFormats.FileDrop) is string[] paths) { e.Handled = true; await Run(() => AddPaths(paths)); } };
     }
     async Task Run(Func<Task> action) { try { await action(); } catch (Exception error) { Feedback.Text = error.Message; } }
     async void Changed(string _) => await Run(Refresh);
@@ -130,16 +134,20 @@ public partial class ChatWindow : Window
     {
         var dialog = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Filter = "업무 자료|*.hwp;*.hwpx;*.pdf;*.doc;*.docx;*.xls;*.xlsx;*.ppt;*.pptx;*.txt;*.csv;*.png;*.jpg;*.jpeg;*.zip" };
         if (dialog.ShowDialog(this) != true) return;
+        await Run(() => AddPaths(dialog.FileNames));
+    }
+    // Chosen, dropped or pasted (Ctrl+V of a capture or copied files) files wait under the box until sent.
+    async Task AddPaths(string[] paths)
+    {
         var room=RoomId;var api=main.Api;
-        if(api is null)return;
-        await Run(async()=>
+        if(api is null||room is null)return;
         {
             await api.RefreshAttachmentLimit();if(busy||pending is not null||api!=main.Api||room!=RoomId)return;
-            var added=dialog.FileNames.Where(p=>files.All(f=>f.Path!=p)).Select(p=>new SourceFile(p)).ToArray();
+            var added=paths.Where(File.Exists).Where(p=>files.All(f=>f.Path!=p)).Select(p=>new SourceFile(p)).ToArray();
             var sizes=files.Concat(added).Select(f=>f.Uploaded?.Size??f.KnownSize).ToArray();
             if(sizes.Length>10||sizes.Any(n=>n<=0)||sizes.Sum()>api.AttachmentLimit)throw new IOException($"첨부 합계는 {AttachmentLimits.Label(api.AttachmentLimit)}, 최대 10개입니다.");
             foreach(var file in added)files.Add(file);
-        });
+        }
     }
     async void RemoveFile(object sender, RoutedEventArgs e)
     {
@@ -149,6 +157,14 @@ public partial class ChatWindow : Window
     async Task TakeBack(SourceFile file)
     {
         files.Remove(file); if (file.Uploaded is { } sent) await main.Api!.Send<JsonElement>(HttpMethod.Delete, $"api/attachments/{sent.Id}");
+    }
+    // A pasted capture waits under the box like a chosen file; the check takes it back off again.
+    internal async Task<bool> VerifyPaste(IDataObject data)
+    {
+        var paths = ClipboardFiles.From(data); if (paths.Length != 1) return false;
+        await AddPaths(paths); var added = files.Where(f => f.Path == paths[0]).ToArray();
+        foreach (var file in added) files.Remove(file);
+        return added.Length == 1 && Path.GetFileName(paths[0]).StartsWith("붙여넣은 사진", StringComparison.Ordinal) && new FileInfo(paths[0]).Length > 0;
     }
     internal async Task<string> VerifyTakeBack(string path)
     {
@@ -161,7 +177,9 @@ public partial class ChatWindow : Window
         foreach (var sent in files.Select(f => f.Uploaded).OfType<Attachment>().ToArray()) _ = Run(() => main.Api!.Send<JsonElement>(HttpMethod.Delete, $"api/attachments/{sent.Id}"));
         files.Clear();
     }
-    void Freeze(bool frozen) { BodyBox.IsEnabled = AttachButton.IsEnabled = FilesList.IsEnabled = Rooms.IsEnabled = !frozen; }
+    // The box only turns read-only while a message goes out: a disabled box loses the keyboard, so the next line could not
+    // be typed after Enter until the box was clicked again.
+    void Freeze(bool frozen) { BodyBox.IsReadOnly = frozen; AttachButton.IsEnabled = FilesList.IsEnabled = Rooms.IsEnabled = !frozen; }
     async void SendClick(object sender, RoutedEventArgs e) => await Run(SendMessage);
     public async Task SendMessage()
     {
@@ -186,7 +204,7 @@ public partial class ChatWindow : Window
         }
         catch(ApiRequestException e)when((int)e.StatusCode is 400 or 401 or 403 or 404 or 413 or 415 or 422){pending=null;File.Delete(DraftPath(room));throw;}
         catch { Feedback.Text = pending is null ? "첨부 업로드 실패. 다시 시도하세요." : "전송 결과 미확인. 보내기를 눌러 재시도하세요."; throw; }
-        finally { busy = false; Freeze(pending is not null); SendButton.IsEnabled = true; }
+        finally { busy = false; Freeze(pending is not null); SendButton.IsEnabled = true; if (IsActive) BodyBox.Focus(); }
     }
     async void MessageKey(object sender, KeyEventArgs e) { if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Shift) == 0) { e.Handled = true; await Run(SendMessage); } }
     async void Download(object sender, RoutedEventArgs e)

@@ -18,9 +18,19 @@ public record TimetableDelivery(TimetableBatch Batch,TimetableHomeroom[] Homeroo
 public sealed record TimetablePosition(string Date, string ClassId, int Period);
 public sealed record TimetableExchange(TimetablePosition First, TimetablePosition Second);
 public sealed record TimetableSwapPlanRequest(string[] Dates, string[]? Dependencies, TimetableExchange[]? Exchanges = null);
-public sealed record TimetableSwapOptionsRequest(string[] Dates, string[]? Dependencies, TimetableExchange[]? Exchanges, TimetablePosition Pick);
+// AllowOverlap: also offer trades that leave a teacher in two classes at once for now, to be untangled by the next trade.
+public sealed record TimetableSwapOptionsRequest(string[] Dates, string[]? Dependencies, TimetableExchange[]? Exchanges, TimetablePosition Pick, bool AllowOverlap = false);
 // One lesson the picked lesson can trade places with, and every exchange that trade needs (bundled classes move along).
-public sealed record TimetableSwapOption(TimetablePosition Target, TimetableExchange[] Exchanges);
+// Overlap: after this trade a teacher still has two lessons at one time, so another trade is needed before sending.
+public sealed record TimetableSwapOption(TimetablePosition Target, TimetableExchange[] Exchanges, bool Overlap = false);
+// A period a teacher has said they cannot teach: nobody's request may move a lesson of theirs into it.
+public sealed record TimetableUnavailable(string TeacherId, string TeacherName, string Date, int Period);
+public sealed record TimetableTime(string Date, int Period);
+// Replaces the signed-in teacher's marks on these dates.
+public sealed record TimetableUnavailableUpdate(string[] Dates, TimetableTime[] Times);
+// The periods the signed-in teacher needs free; the server answers with whole requests that empty them.
+public sealed record TimetableSuggestionRequest(string[] Dates, string[]? Dependencies, TimetableExchange[]? Exchanges, TimetableTime[] Vacate);
+public sealed record TimetableSuggestion(TimetableExchange[] Exchanges, bool SameDay);
 // Lessons that run at the same time for several classes: wherever these (class, subject) lessons share a period, they move together.
 public sealed record TimetableBundleMember(string ClassId, string Subject);
 public sealed record TimetableBundleRule(string Id, string Name, TimetableBundleMember[] Members);
@@ -28,7 +38,8 @@ public sealed record TimetableBaseLesson(string ClassId, string ClassName, int G
 public sealed record TimetableSwapCreate(string Id, long Revision, TimetableExchange[] Exchanges, string[]? Dependencies, string? Reason);
 public sealed record TimetableSwapDecision(string Status);
 public sealed record TimetablePlanSlot(TimetablePosition Position, TimetableSlot Lesson, bool Mine, string? BundleName = null);
-public sealed record TimetableSwapPlan(long Revision, TimetablePlanSlot[] Slots);
+// Overlaps: lessons the request being drafted leaves at the same time as another lesson of their teacher.
+public sealed record TimetableSwapPlan(long Revision, TimetablePlanSlot[] Slots, TimetablePosition[]? Overlaps = null, TimetableUnavailable[]? Unavailable = null);
 public sealed record TimetableSwapChange(TimetablePosition Position, TimetableSlot Before, TimetableSlot After);
 public sealed record TimetableSwap(
     string Id, string Owner, string OwnerName, string Status, string Reason, long CreatedAt,

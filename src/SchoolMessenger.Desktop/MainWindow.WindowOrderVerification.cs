@@ -89,7 +89,7 @@ public partial class MainWindow
         bool TextOnSchedule(string text)=>Controls(timetable).OfType<TextBlock>().Any(label=>label.Text==text&&label.IsVisible);
         await WaitUntil(()=>TextOnSchedule("7교시"));
         SavePreview(timetable,Path.Combine(preview,"timetable.png"));
-        await timetable.VerifyBoard(name=>SavePreview(timetable,Path.Combine(preview,name+".png")));
+        await timetable.VerifyBoard(name=>SavePreview(timetable,Path.Combine(preview,name+".png")),(window,name)=>SavePreview(window,Path.Combine(preview,name+".png")));
         Check(File.Exists(Path.Combine(preview,"timetable-board-changed.png"))&&File.Exists(Path.Combine(preview,"timetable-base.png")),
             "the swap board offers trades for a picked lesson, records the trade and sends the request; the base timetable page lists bundle choices");
         await WaitUntil(()=>TextOnSchedule("7교시"));
