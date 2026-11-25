@@ -4,7 +4,8 @@ public sealed record SchoolClass(string Id,string Name,int Grade);
 
 public record TimetableRawCell(string ClassKey,int Grade,int ClassNumber,int Day,int Period,string Subject,string Teacher,string Address,string? Date=null);
 public record TimetableWorkbookData(string Kind,int Year,int Semester,string? Date,TimetableRawCell[] Cells);
-public record TimetableLink(string Source,string Id);
+// Subject: the account is for this name only where it teaches this subject (same-named teachers); without it, for the name everywhere.
+public record TimetableLink(string Source,string Id,string? Subject=null);
 public record TimetablePreviewRequest(string DraftId,string Start,string End,TimetableLink[] Classes,TimetableLink[] Teachers,string[]? DraftIds=null);
 public record TimetableCommit(string CandidateId,string ClientId,string[]? SwapIds=null);
 public record TimetableCell(string ClassId,string ClassName,int Day,int Period,string Subject,string TeacherId,string TeacherName);

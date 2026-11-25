@@ -26,7 +26,8 @@ public sealed partial class TimetableWindow:Window
     readonly Border scheduleFooter = new() { Visibility = Visibility.Collapsed, Padding = new Thickness(16,6,16,6), BorderThickness = new Thickness(0,1,0,0) };
     JsonElement setup;
     string? candidate,requestId;
-    readonly Dictionary<string,ComboBox> classLinks=[],teacherLinks=[];
+    readonly Dictionary<string,ComboBox> classLinks=[];
+    readonly Dictionary<(string Name,string? Subject),ComboBox> teacherLinks=[];
     DatePicker? start,end;
     public TimetableWindow(MainWindow main,string? selectedDate=null,bool swapQueue=false)
     { StatusTone.Watch(feedback);
@@ -245,6 +246,11 @@ public sealed partial class TimetableWindow:Window
         {
             foreach (var (_, stream) in selectedFiles) stream.Dispose();
         }
+        ShowImports();
+    }
+    // The uploaded files, the dates a base timetable applies to and the accounts to choose for same-named teachers.
+    void ShowImports()
+    {
         feedback.Text="";candidate=null;requestId=null;teacherLinks.Clear();pageScroll.ScrollToTop();
         ResetBody();body.Children.Add(AdminUi.Heading("시간표 올리기",22));var intro=AdminUi.Label("올린 파일을 확인하세요. 기초시간표에서 달라지는 수업은 노란색으로 표시됩니다.");intro.Margin=new Thickness(0,8,0,16);body.Children.Add(intro);body.Children.Add(feedback);
         var files=new StackPanel();var hasBase=false;
@@ -265,12 +271,30 @@ public sealed partial class TimetableWindow:Window
             var dates=new StackPanel{Orientation=Orientation.Horizontal,Margin=new Thickness(0,16,0,0)};var a=new StackPanel{Width=180,Margin=new Thickness(0,0,12,0)};a.Children.Add(AdminUi.Label("기초시간표 적용 시작일","Muted",12));a.Children.Add(start);var b=new StackPanel{Width=180};b.Children.Add(AdminUi.Label("적용 종료일","Muted",12));b.Children.Add(end);dates.Children.Add(a);dates.Children.Add(b);body.Children.Add(dates);
         }
         var choices=setup.GetProperty("teachers").EnumerateArray().Select(r=>new Choice(r.GetProperty("id").GetString()!,TeacherLabel(r))).ToArray();
-        var people=imports.SelectMany(i=>i.Value.GetProperty("teachers").EnumerateArray()).DistinctBy(t=>t.GetProperty("source").GetString()).ToArray();
+        var listed=imports.SelectMany(i=>i.Value.GetProperty("teachers").EnumerateArray()).ToArray();
+        var people=listed.DistinctBy(t=>t.GetProperty("source").GetString()).ToArray();
         var alike=people.Where(t=>t.GetProperty("candidates").GetArrayLength()>1).ToArray();
         if(alike.Length>0)
         {
-            var pick=AdminUi.Group("이름이 같은 계정이 있어 직접 골라 주세요");pick.Margin=new Thickness(0,16,0,8);body.Children.Add(pick);
-            foreach(var t in alike){var label=t.GetProperty("source").GetString()!;var ids=t.GetProperty("candidates").EnumerateArray().Select(x=>x.GetString()).ToArray();var box=new ComboBox{ItemsSource=choices.Where(c=>ids.Contains(c.Id)).ToArray(),Margin=new Thickness(0,4,0,8),Width=320,HorizontalAlignment=HorizontalAlignment.Left};teacherLinks.Add(label,box);body.Children.Add(AdminUi.Label(label,"Ink",13));body.Children.Add(box);}
+            // Names match accounts by themselves; only a name several accounts share is chosen here, once per subject it teaches,
+            // pre-filled with the choice from the last upload.
+            var pick=AdminUi.Group("이름이 같은 선생님이 있어 과목마다 계정을 골라 주세요");pick.Margin=new Thickness(0,16,0,4);body.Children.Add(pick);
+            var remember=AdminUi.Label("고른 내용은 기억해 두었다가 다음에 시간표를 올릴 때 미리 채웁니다.","Muted",12);remember.Margin=new Thickness(0,0,0,8);body.Children.Add(remember);
+            foreach(var t in alike)
+            {
+                var name=t.GetProperty("source").GetString()!;var ids=t.GetProperty("candidates").EnumerateArray().Select(x=>x.GetString()).ToArray();
+                // An older server lists no subjects: one choice then covers the name.
+                var subjects=listed.Where(x=>x.GetProperty("source").GetString()==name&&x.TryGetProperty("subjects",out _)).SelectMany(x=>x.GetProperty("subjects").EnumerateArray())
+                    .Select(s=>(Subject:(string?)s.GetProperty("subject").GetString()!,Linked:s.GetProperty("linked").ValueKind==JsonValueKind.String?s.GetProperty("linked").GetString():null)).DistinctBy(s=>s.Subject).ToList();
+                if(subjects.Count==0)subjects.Add((null,null));
+                foreach(var (subject,linked) in subjects)
+                {
+                    var items=choices.Where(c=>ids.Contains(c.Id)).ToArray();
+                    var box=new ComboBox{ItemsSource=items,SelectedItem=items.FirstOrDefault(c=>c.Id==linked),Margin=new Thickness(0,4,0,8),Width=320,HorizontalAlignment=HorizontalAlignment.Left};
+                    System.Windows.Automation.AutomationProperties.SetName(box,subject is null?name:$"{name} {subject}");
+                    teacherLinks.Add((name,subject),box);body.Children.Add(AdminUi.Label(subject is null?name:$"{name} · {subject}","Ink",13));body.Children.Add(box);
+                }
+            }
         }
         var none=people.Where(t=>t.GetProperty("candidates").GetArrayLength()==0).Select(t=>t.GetProperty("source").GetString()).ToArray();
         if(none.Length>0){var note=AdminUi.Label($"아직 계정이 없는 선생님 {none.Length}명은 이름만 표시되고, 계정이 만들어지면 이름으로 연결됩니다: "+string.Join(", ",none),"Muted",12);note.Margin=new Thickness(0,16,0,0);body.Children.Add(note);}
@@ -289,10 +313,23 @@ public sealed partial class TimetableWindow:Window
             throw new InvalidOperationException($"{Path.GetFileName(path)} 파일을 읽을 수 없습니다. 엑셀이나 파일을 사용 중인 프로그램에서 닫은 뒤 다시 올려주세요.", e);
         }
     }
+    // Two accounts sharing one made-up name: the upload page asks for one per subject, with last time's choice already filled in.
+    internal async Task VerifySameNames(Action<string> capture)
+    {
+        var accounts=setup.GetProperty("teachers").EnumerateArray().Select(t=>t.GetProperty("id").GetString()!).Take(2).ToArray();
+        if(accounts.Length<2)return;
+        var file=JsonSerializer.SerializeToElement(new{draftId="verify",workbook=new{kind="changes",year=2030,semester=1,cells=new[]{new{grade=1,date="2030-03-04"}}},
+            teachers=new[]{new{source="가상동명",candidates=accounts,subjects=new object[]{new{subject="수학",linked=accounts[0]},new{subject="영어",linked=(string?)null}}}}});
+        imports.Clear();imports.Add(("1학년 변경 수업 조회(주간).xlsx",file));ShowImports();UpdateLayout();
+        var math=teacherLinks.GetValueOrDefault(("가상동명","수학"));var english=teacherLinks.GetValueOrDefault(("가상동명","영어"));
+        if(teacherLinks.Count!=2||(math?.SelectedItem as Choice)?.Id!=accounts[0]||english?.SelectedItem is not null)throw new InvalidOperationException("이름이 같은 선생님을 과목마다 고르는 칸이 맞지 않습니다.");
+        capture("timetable-upload-same-name");
+        imports.Clear();await Load();
+    }
     async Task Preview()
     {
         var ids=imports.Select(i=>i.Value.GetProperty("draftId").GetString()!).ToArray();
-        var links=teacherLinks.Where(c=>c.Value.SelectedItem is Choice).Select(c=>new TimetableLink(c.Key,((Choice)c.Value.SelectedItem).Id)).ToArray();
+        var links=teacherLinks.Where(c=>c.Value.SelectedItem is Choice).Select(c=>new TimetableLink(c.Key.Name,((Choice)c.Value.SelectedItem).Id,c.Key.Subject)).ToArray();
         var value=await api.Send<JsonElement>(HttpMethod.Post,"api/timetable/preview",new TimetablePreviewRequest(ids[0],start?.SelectedDate?.ToString("yyyy-MM-dd")??"",end?.SelectedDate?.ToString("yyyy-MM-dd")??"",[],links,ids));
         candidate=value.GetProperty("candidateId").GetString();requestId=Guid.NewGuid().ToString("N");pageScroll.ScrollToTop();
         ResetBody();body.Children.Add(AdminUi.Heading(publishingSwaps.Length == 0 ? "게시 전 확인" : $"교체 신청 {publishingSwaps.Length}건 승인·게시",22));var count=value.GetProperty("changedCount").GetInt32();

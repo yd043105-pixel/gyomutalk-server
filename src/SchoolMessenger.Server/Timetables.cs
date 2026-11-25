@@ -39,6 +39,7 @@ public sealed partial class Timetables
             CREATE TABLE IF NOT EXISTS TimetableCandidates(Id TEXT PRIMARY KEY,Owner TEXT NOT NULL,Payload TEXT NOT NULL,ExpiresAt INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS TimetableClasses(Id TEXT PRIMARY KEY,Name TEXT NOT NULL,Grade INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS TimetableFeature(Id INTEGER PRIMARY KEY CHECK(Id=1),Enabled INTEGER NOT NULL CHECK(Enabled IN (0,1)));
+            CREATE TABLE IF NOT EXISTS TimetableTeacherLinks(Name TEXT NOT NULL,Subject TEXT NOT NULL,UserId TEXT NOT NULL,PRIMARY KEY(Name,Subject));
             """);
         enabled = Data.Query("SELECT Enabled FROM TimetableFeature WHERE Id=1", r=>r.GetInt32(0)!=0).SingleOrDefault(true);
     }
@@ -147,30 +148,38 @@ public sealed partial class Timetables
                 var id=Guid.NewGuid().ToString("N");Data.Execute("DELETE FROM TimetableDrafts WHERE ExpiresAt<=$now",("$now",Now));Data.Execute("DELETE FROM TimetableCandidates WHERE ExpiresAt<=$now",("$now",Now));
                 if(Data.Query("SELECT COUNT(*) FROM TimetableDrafts WHERE Owner=$owner",r=>r.GetInt32(0),("$owner",owner))[0]>=20)throw new FilePolicyException("미게시 시간표가 많습니다. 기존 미리보기를 게시하거나 만료 후 다시 시도하세요.",429);
                 Data.Execute("INSERT INTO TimetableDrafts VALUES($id,$owner,$payload,$expires)",("$id",id),("$owner",owner),("$payload",JsonSerializer.Serialize(new Draft(owner,name,parsed),TimetableData.Json)),("$expires",Now+86_400_000));
-                var rooms=Directory().Classes;var teachers=school.Users().Where(u=>u.Active).ToArray();
-                return Results.Ok(new{draftId=id,workbook=parsed,classes=parsed.Cells.Select(s=>s.ClassKey).Distinct().Select(s=>new{source=s,candidates=rooms.Where(c=>Canonical(c.Name)==Canonical(s)).Select(c=>c.Id)}),teachers=parsed.Cells.Where(s=>s.Teacher.Length>0).Select(s=>s.Teacher).Distinct().Select(s=>new{source=s,candidates=teachers.Where(t=>t.Name==s).Select(t=>t.Id)})});
+                var rooms=Directory().Classes;var teachers=school.Users().Where(u=>u.Active).ToArray();var saved=TeacherLinks();
+                // Each name lists the subjects it teaches, with the account chosen last time for that name and subject: same-named teachers are told apart by subject.
+                return Results.Ok(new{draftId=id,workbook=parsed,classes=parsed.Cells.Select(s=>s.ClassKey).Distinct().Select(s=>new{source=s,candidates=rooms.Where(c=>Canonical(c.Name)==Canonical(s)).Select(c=>c.Id)}),teachers=parsed.Cells.Where(s=>s.Teacher.Length>0).Select(s=>s.Teacher).Distinct().Select(s=>new{source=s,candidates=teachers.Where(t=>t.Name==s).Select(t=>t.Id),
+                    subjects=parsed.Cells.Where(c=>c.Teacher==s).Select(c=>c.Subject).Distinct().Select(subject=>new{subject,linked=saved.TryGetValue((s,subject),out var user)&&teachers.Any(t=>t.Id==user)?user:null})})});
             });
         }
         finally{File.Delete(path);}
     }
     static string Canonical(string text)=>string.Concat(text.Where(c=>!char.IsWhiteSpace(c)));
+    Dictionary<(string Name,string Subject),string> TeacherLinks()=>Data.Query("SELECT Name,Subject,UserId FROM TimetableTeacherLinks",r=>(r.GetString(0),r.GetString(1),r.GetString(2))).ToDictionary(l=>(l.Item1,l.Item2),l=>l.Item3);
     T Load<T>(string table,string id,string user) where T:class=>Data.Query("SELECT Payload FROM "+table+" WHERE Id=$id AND Owner=$owner AND ExpiresAt>$now",r=>JsonSerializer.Deserialize<T>(r.GetString(0),TimetableData.Json)!, ("$id",id),("$owner",user),("$now",Now)).FirstOrDefault()??throw new FilePolicyException("미리보기가 만료되었습니다. 파일을 다시 선택하세요.",409);
     IResult Preview(TimetablePreviewRequest request,string owner)
     {
-        RequireManager(owner);if(request.Classes is null||request.Teachers is null||request.Classes.Length>100||request.Teachers.Length>500||request.Classes.Any(c=>c is null||string.IsNullOrEmpty(c.Source))||request.Teachers.Any(c=>c is null||string.IsNullOrEmpty(c.Source))||request.Classes.GroupBy(c=>c.Source).Any(g=>g.Count()>1)||request.Teachers.GroupBy(t=>t.Source).Any(g=>g.Count()>1))throw new FilePolicyException("학급·교사 연결을 확인하세요.");
+        RequireManager(owner);if(request.Classes is null||request.Teachers is null||request.Classes.Length>100||request.Teachers.Length>500||request.Classes.Any(c=>c is null||string.IsNullOrEmpty(c.Source))||request.Teachers.Any(c=>c is null||string.IsNullOrEmpty(c.Source))||request.Classes.GroupBy(c=>c.Source).Any(g=>g.Count()>1)||request.Teachers.GroupBy(t=>(t.Source,t.Subject??"")).Any(g=>g.Count()>1))throw new FilePolicyException("학급·교사 연결을 확인하세요.");
         var ids=(request.DraftIds is{Length:>0} many?many:[request.DraftId]).Distinct().ToArray();if(ids.Length>30)throw new FilePolicyException("한 번에 30개 파일까지 올릴 수 있습니다.");
         var drafts=ids.Select(id=>Load<Draft>("TimetableDrafts",id,owner)).ToArray();var directory=Directory();var users=school.Users().Where(u=>u.Active).ToArray();
-        var classMap=request.Classes.ToDictionary(c=>c.Source,c=>c.Id);var teacherMap=request.Teachers.ToDictionary(t=>t.Source,t=>t.Id);
+        var classMap=request.Classes.ToDictionary(c=>c.Source,c=>c.Id);var teacherMap=request.Teachers.ToDictionary(t=>(t.Source,t.Subject??""),t=>t.Id);
+        // A name and subject chosen here is kept for the next upload; a choice for a name alone (an older program) is not.
+        foreach(var link in request.Teachers.Where(t=>t.Subject is{Length:>0}&&users.Any(u=>u.Id==t.Id)))Data.Execute("INSERT OR REPLACE INTO TimetableTeacherLinks VALUES($name,$subject,$user)",("$name",link.Source),("$subject",link.Subject!),("$user",link.Id));
+        var saved=TeacherLinks();
         SchoolClass Room(TimetableRawCell c)
         {
             var room=classMap.TryGetValue(c.ClassKey,out var linked)?directory.Classes.FirstOrDefault(r=>r.Id==linked):directory.Classes.Where(r=>Canonical(r.Name)==Canonical(c.ClassKey)).Take(2).ToArray() is{Length:1} found?found[0]:null;
             return room is not null&&room.Grade==c.Grade?room:throw new FilePolicyException("학급 연결을 확인하세요: "+c.ClassKey);
         }
         // A teacher without an account still shows by name; an account made later is matched by that name.
+        // Same-named teachers are told apart by the account chosen for their name and subject, now or at an earlier upload.
         TimetableCell Cell(TimetableRawCell c)
         {
             var room=Room(c);if(c.Teacher.Length==0)return new(room.Id,room.Name,c.Day,c.Period,c.Subject,"","");
-            var teacher=teacherMap.TryGetValue(c.Teacher,out var linked)?users.FirstOrDefault(u=>u.Id==linked):users.Where(u=>u.Name==c.Teacher).Take(2).ToArray() is{Length:1} found?found[0]:null;
+            var teacher=(teacherMap.TryGetValue((c.Teacher,c.Subject),out var linked)||teacherMap.TryGetValue((c.Teacher,""),out linked)||saved.TryGetValue((c.Teacher,c.Subject),out linked))&&users.FirstOrDefault(u=>u.Id==linked) is{} chosen?chosen
+                :users.Where(u=>u.Name==c.Teacher).Take(2).ToArray() is{Length:1} found?found[0]:null;
             return new(room.Id,room.Name,c.Day,c.Period,c.Subject,teacher?.Id??"",teacher?.Name??c.Teacher);
         }
         var seen=Data.Batches().ToList();var planned=new List<TimetableBatch>();var changes=new List<Change>();

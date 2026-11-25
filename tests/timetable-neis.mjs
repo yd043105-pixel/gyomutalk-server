@@ -312,6 +312,20 @@ try{
  await teacher.request('timetable/swaps/'+suggested.id+'/decision','POST',{status:'cancelled'});
  await teacher.request('timetable/swap-suggestions','POST',{dates:week5,dependencies:[],exchanges:[],vacate:[{date:tuesday,period:1}]},400);
  check('a period to empty gets whole requests that free it, keep every rule and marked period, and list same-day trades first');
+ // Two accounts share one name: the name alone cannot tell them apart, so the manager picks an account for each subject it teaches, once.
+ const twinA=await person('same-a','가상동명'),twinB=await person('same-b','가상동명');
+ const twins=book([{},{},{},{1:'전체시간표 (강의실)'},{1:`${year} 학년도 ${semester} 학기 1 학년`},{1:'일자',2:'교시',3:'1학년'},{3:'1(1학년 1반)',4:'2(1학년 2반)'},{1:caption(4),2:'1.0',3:'수학(가상동명)',4:'영어(가상동명)'},{2:'2.0',3:lesson(1,4,1),4:lesson(2,4,1)}],['B8:B9']);
+ const twinDraft=await duty.upload(twins,'동명이인.xlsx');const listed=twinDraft.teachers.find(t=>t.source==='가상동명');
+ assert.deepEqual([...listed.candidates].sort(),[twinA.user.id,twinB.user.id].sort());assert.deepEqual(listed.subjects.map(s=>[s.subject,s.linked]).sort(),[['수학',null],['영어',null]]);
+ const teacherOf=(result,classId)=>result.batch.cells.find(c=>c.classId===classId&&c.period===1).teacherId;
+ const linked=await duty.request('timetable/preview','POST',{draftId:twinDraft.draftId,draftIds:[twinDraft.draftId],start:'',end:'',classes:[],teachers:[{source:'가상동명',subject:'수학',id:twinA.user.id},{source:'가상동명',subject:'영어',id:twinB.user.id}]});
+ assert.equal(teacherOf(linked,firstClass),twinA.user.id);assert.equal(teacherOf(linked,secondClass),twinB.user.id);
+ const again2=await duty.upload(twins,'동명이인.xlsx');
+ assert.deepEqual(again2.teachers.find(t=>t.source==='가상동명').subjects.map(s=>[s.subject,s.linked]).sort(),[['수학',twinA.user.id],['영어',twinB.user.id]]);
+ const remembered=await duty.request('timetable/preview','POST',{draftId:again2.draftId,draftIds:[again2.draftId],start:'',end:'',classes:[],teachers:[]});
+ assert.equal(teacherOf(remembered,firstClass),twinA.user.id);assert.equal(teacherOf(remembered,secondClass),twinB.user.id);
+ await duty.request('timetable/preview','POST',{draftId:again2.draftId,draftIds:[again2.draftId],start:'',end:'',classes:[],teachers:[{source:'가상동명',subject:'수학',id:twinA.user.id},{source:'가상동명',subject:'수학',id:twinB.user.id}]},400);
+ check('same-named teachers are told apart by subject: the manager picks an account per subject once and later uploads reuse it');
  const setting='admin/timetable-feature', status='timetable/status';
  // Optional menus: every signed-in teacher reads them, only the administrator changes them.
  assert.deepEqual(await teacher.request('features'),{timetable:true,chat:true,tasks:true,survey:true,calendar:true,rooms:true,remote:true,courses:true,ai:true});

@@ -159,7 +159,7 @@ public sealed partial class TimetableWindow
         if (boardPlan.Unavailable is not null && (mine.Length > 0 || CanManageSchedule))
         {
             // The timetable manager marks for every teacher; anyone else marks their own row.
-            var whose = CanManageSchedule ? "선생님 줄에서(시간표 담당자는 모든 선생님 줄)" : "내 줄에서";
+            var whose = CanManageSchedule ? "선생님 줄에서(시간표 담당자는 모든 선생님 줄)" : "내 줄에서(다른 선생님 줄은 흐려지고 눌리지 않습니다)";
             tools.Children.Add(Toggle("수업 불가 시간 고르기", boardMarking, value => { boardMarking = value; feedback.Text = value ? whose + " 수업할 수 없는 칸을 누르세요. 다시 누르면 지워집니다. 다른 선생님이 교체할 때 이 시간에는 그 선생님 수업이 들어오지 않습니다." : ""; }));
         }
         if (boardPlan.Unavailable is not null && mine.Length > 0)
@@ -238,11 +238,14 @@ public sealed partial class TimetableWindow
         for (var r = 0; r < rows.Length; r++)
         {
             var teacher = rows[r];
+            // While marking, a teacher who is not the timetable manager can touch only their own row: the others fade and do not respond.
+            var locked = boardMarking && !teacher.Mine && !CanManageSchedule;
             var name = AdminUi.Label(teacher.Name, teacher.Mine ? "Blue" : "Ink", 12, teacher.Mine);
             name.VerticalAlignment = VerticalAlignment.Center; name.Margin = new Thickness(8, 0, 4, 0); name.TextTrimming = TextTrimming.CharacterEllipsis; name.TextWrapping = TextWrapping.NoWrap;
             names.Add(name);
             var side = new Border { Child = name, BorderThickness = new Thickness(0, 0, 0, 1), ToolTip = teacher.Name };
             side.SetResourceReference(Border.BackgroundProperty, teacher.Mine ? "Pale" : "Subtle"); side.SetResourceReference(Border.BorderBrushProperty, "Line");
+            if (locked) side.Opacity = 0.4;
             Place(grid, side, r, 0);
             for (var d = 0; d < dates.Length; d++)
                 for (var p = 1; p <= periods; p++)
@@ -280,9 +283,11 @@ public sealed partial class TimetableWindow
                         System.Windows.Automation.AutomationProperties.SetName(cell, $"{teacher.Name} {DayLabel(dates[d])} {p}교시 {first.Lesson.ClassName} {first.Lesson.Subject}");
                     }
                     BoardPaint(cell, p == 1);
+                    if (locked) { cell.Opacity = 0.4; cell.Cursor = Cursors.No; cell.ToolTip = "다른 선생님의 수업 불가 시간은 시간표 담당자만 표시할 수 있습니다."; }
+                    else if (boardMarking) cell.Cursor = Cursors.Hand;
                     cell.MouseLeftButtonDown += (_, e) =>
                     {
-                        if (boardMarking) { if (teacher.Mine || CanManageSchedule) _ = Run(() => BoardMark(day, period, teacher.Key, teacher.Name, teacher.Mine)); return; }
+                        if (boardMarking) { if (!locked) _ = Run(() => BoardMark(day, period, teacher.Key, teacher.Name, teacher.Mine)); return; }
                         dragCell = cell; dragFrom = e.GetPosition(this); BoardPressed(lessons);
                     };
                     cell.MouseMove += (_, e) =>
@@ -738,6 +743,9 @@ public sealed partial class TimetableWindow
             var me = api.Session!.User!.Id;
             boardMarking = true; await Board(); await BoardMark(later, 7, me, "", true); UpdateLayout();
             if (!(boardPlan.Unavailable ?? []).Any(u => u.TeacherId == me && u.Date == later && u.Period == 7)) throw new InvalidOperationException("수업 불가 표시가 저장되지 않았습니다.");
+            // Anyone else sees the other teachers' rows faded and closed while marking.
+            if (!CanManageSchedule && boardPlan.Slots.Where(s => !s.Mine && boardCells.ContainsKey(s.Position)).Any(s => boardCells[s.Position].Cursor != Cursors.No || boardCells[s.Position].Opacity > 0.5))
+                throw new InvalidOperationException("수업 불가 시간을 고를 때 다른 선생님 줄이 잠기지 않았습니다.");
             // The timetable manager marks another teacher's period the same way.
             var other = CanManageSchedule ? boardPlan.Slots.Select(s => s.Lesson).FirstOrDefault(l => !l.TeacherId.Equals(me) && l.TeacherId.Length > 0) : null;
             if (other is not null)
