@@ -283,6 +283,12 @@ try{
  const marked=await homeroom.request('timetable/unavailable','PUT',{dates:[tuesday],times:[{date:tuesday,period:2}]});
  assert.deepEqual(marked.map(m=>[m.date,m.period]),[[tuesday,2]]);
  assert.deepEqual(await homeOptions(),[]);
+ // The timetable manager marks for any teacher with an account; another teacher cannot.
+ await teacher.request('timetable/unavailable','PUT',{dates:[tuesday],times:[{date:tuesday,period:1}],teacherId:homeroom.user.id},403);
+ const byDuty=await duty.request('timetable/unavailable','PUT',{dates:[tuesday],times:[{date:tuesday,period:1},{date:tuesday,period:2}],teacherId:homeroom.user.id});
+ assert.deepEqual(byDuty.map(m=>m.period).sort(),[1,2]);assert.ok(byDuty.every(m=>m.teacherName==='가상담임'));
+ await duty.request('timetable/unavailable','PUT',{dates:[tuesday],times:[{date:tuesday,period:2}],teacherId:homeroom.user.id});
+ await duty.request('timetable/unavailable','PUT',{dates:[tuesday],times:[],teacherId:'0'.repeat(32)},404);
  const shown=await teacher.request('timetable/swap-plan','POST',{dates:[tuesday],dependencies:[]});
  assert.ok(shown.unavailable.some(u=>u.teacherName==='가상담임'&&u.date===tuesday&&u.period===2));
  const refused=await homeroom.request('timetable/swaps','POST',{id:uid(),revision:shown.revision,exchanges:[pair(tue(firstClass,1),tue(firstClass,2))],dependencies:[],reason:''},409);

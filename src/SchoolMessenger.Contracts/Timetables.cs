@@ -26,8 +26,8 @@ public sealed record TimetableSwapOption(TimetablePosition Target, TimetableExch
 // A period a teacher has said they cannot teach: nobody's request may move a lesson of theirs into it.
 public sealed record TimetableUnavailable(string TeacherId, string TeacherName, string Date, int Period);
 public sealed record TimetableTime(string Date, int Period);
-// Replaces the signed-in teacher's marks on these dates.
-public sealed record TimetableUnavailableUpdate(string[] Dates, TimetableTime[] Times);
+// Replaces one teacher's marks on these dates: the signed-in teacher's own, or (TeacherId) any teacher's for the timetable manager.
+public sealed record TimetableUnavailableUpdate(string[] Dates, TimetableTime[] Times, string? TeacherId = null);
 // The periods the signed-in teacher needs free; the server answers with whole requests that empty them.
 public sealed record TimetableSuggestionRequest(string[] Dates, string[]? Dependencies, TimetableExchange[]? Exchanges, TimetableTime[] Vacate);
 public sealed record TimetableSuggestion(TimetableExchange[] Exchanges, bool SameDay);

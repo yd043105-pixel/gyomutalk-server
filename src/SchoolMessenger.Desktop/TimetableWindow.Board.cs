@@ -156,9 +156,14 @@ public sealed partial class TimetableWindow
         if (pending.Length > 0 && boardMoves.Count == 0)
             tools.Children.Add(Toggle($"대기 중인 신청 {pending.Length}건을 승인된 것으로 보기", boardAssume, value => boardAssume = value));
         // A server older than these features sends no marks: the two tools then stay hidden.
+        if (boardPlan.Unavailable is not null && (mine.Length > 0 || CanManageSchedule))
+        {
+            // The timetable manager marks for every teacher; anyone else marks their own row.
+            var whose = CanManageSchedule ? "선생님 줄에서(시간표 담당자는 모든 선생님 줄)" : "내 줄에서";
+            tools.Children.Add(Toggle("수업 불가 시간 고르기", boardMarking, value => { boardMarking = value; feedback.Text = value ? whose + " 수업할 수 없는 칸을 누르세요. 다시 누르면 지워집니다. 다른 선생님이 교체할 때 이 시간에는 그 선생님 수업이 들어오지 않습니다." : ""; }));
+        }
         if (boardPlan.Unavailable is not null && mine.Length > 0)
         {
-            tools.Children.Add(Toggle("수업 불가 시간 고르기", boardMarking, value => { boardMarking = value; feedback.Text = value ? "내 줄에서 수업할 수 없는 칸을 누르세요. 다시 누르면 지워집니다. 다른 선생님이 교체할 때 이 시간에는 선생님 수업이 들어오지 않습니다." : ""; }));
             var helper = new Button { Content = "교체 도우미", Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = "비울 시간을 알려 주면 규칙에 맞는 교체안을 찾아 줍니다." };
             helper.SetResourceReference(StyleProperty, "PrimaryButton"); helper.Click += async (_, _) => await Run(SwapHelper);
             tools.Children.Add(helper);
@@ -277,7 +282,7 @@ public sealed partial class TimetableWindow
                     BoardPaint(cell, p == 1);
                     cell.MouseLeftButtonDown += (_, e) =>
                     {
-                        if (boardMarking) { if (teacher.Mine) _ = Run(() => BoardMark(day, period)); return; }
+                        if (boardMarking) { if (teacher.Mine || CanManageSchedule) _ = Run(() => BoardMark(day, period, teacher.Key, teacher.Name, teacher.Mine)); return; }
                         dragCell = cell; dragFrom = e.GetPosition(this); BoardPressed(lessons);
                     };
                     cell.MouseMove += (_, e) =>
@@ -425,19 +430,21 @@ public sealed partial class TimetableWindow
         return string.Join(", ", who) + " 수업이 겹칩니다(주황 칸). 겹친 수업 하나를 더 옮기면 신청할 수 있습니다.";
     }
 
-    // Marks or unmarks one period of the signed-in teacher as impossible to teach.
-    async Task BoardMark(string day, int period)
+    // Marks or unmarks one period as impossible to teach: the signed-in teacher's own, or any teacher's for the timetable manager.
+    async Task BoardMark(string day, int period, string teacherKey, string teacherName, bool own)
     {
         var today = DateTime.UtcNow.AddHours(9).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         if (string.CompareOrdinal(day, today) < 0) { feedback.Text = "지난 날짜는 바꿀 수 없습니다."; return; }
-        var me = api.Session!.User!.Id;
+        // Teachers known only by the name in the NEIS file have no account to keep the marks with.
+        if (teacherKey.StartsWith("name:", StringComparison.Ordinal)) { feedback.Text = $"{teacherName} 선생님은 교무톡 계정과 연결되지 않아 수업 불가 시간을 표시할 수 없습니다."; return; }
         var open = BoardDates.Where(d => string.CompareOrdinal(d, today) >= 0).ToArray();
-        var times = (boardPlan!.Unavailable ?? []).Where(u => u.TeacherId == me && open.Contains(u.Date)).Select(u => new TimetableTime(u.Date, u.Period)).ToList();
+        var times = (boardPlan!.Unavailable ?? []).Where(u => u.TeacherId == teacherKey && open.Contains(u.Date)).Select(u => new TimetableTime(u.Date, u.Period)).ToList();
         var had = times.RemoveAll(t => t.Date == day && t.Period == period) > 0;
         if (!had) times.Add(new(day, period));
-        await api.Send<TimetableUnavailable[]>(HttpMethod.Put, "api/timetable/unavailable", new TimetableUnavailableUpdate(open, times.ToArray()));
+        await api.Send<TimetableUnavailable[]>(HttpMethod.Put, "api/timetable/unavailable", new TimetableUnavailableUpdate(open, times.ToArray(), own ? null : teacherKey));
         await Board();
-        feedback.Text = had ? $"{DayLabel(day)} {period}교시의 수업 불가 표시를 지웠습니다." : $"{DayLabel(day)} {period}교시를 수업 불가로 표시했습니다. 다른 선생님이 교체할 때 이 시간에는 선생님 수업이 들어오지 않습니다.";
+        var who = own ? "" : teacherName + " 선생님의 ";
+        feedback.Text = had ? $"{who}{DayLabel(day)} {period}교시 수업 불가 표시를 지웠습니다." : $"{who}{DayLabel(day)} {period}교시를 수업 불가로 표시했습니다. 다른 선생님이 교체할 때 이 시간에는 {(own ? "선생님" : "그 선생님")} 수업이 들어오지 않습니다.";
     }
 
     // Sending the request sits right under the board; below it, everything this request changes in the order it was done.
@@ -729,11 +736,19 @@ public sealed partial class TimetableWindow
         if (boardPlan!.Unavailable is not null && BoardDates.Where(d => string.CompareOrdinal(d, today) > 0).FirstOrDefault() is { } later)
         {
             var me = api.Session!.User!.Id;
-            boardMarking = true; await Board(); await BoardMark(later, 7); UpdateLayout();
+            boardMarking = true; await Board(); await BoardMark(later, 7, me, "", true); UpdateLayout();
             if (!(boardPlan.Unavailable ?? []).Any(u => u.TeacherId == me && u.Date == later && u.Period == 7)) throw new InvalidOperationException("수업 불가 표시가 저장되지 않았습니다.");
+            // The timetable manager marks another teacher's period the same way.
+            var other = CanManageSchedule ? boardPlan.Slots.Select(s => s.Lesson).FirstOrDefault(l => !l.TeacherId.Equals(me) && l.TeacherId.Length > 0) : null;
+            if (other is not null)
+            {
+                await BoardMark(later, 6, other.TeacherId, other.TeacherName, false); UpdateLayout();
+                if (!(boardPlan.Unavailable ?? []).Any(u => u.TeacherId == other.TeacherId && u.Date == later && u.Period == 6)) throw new InvalidOperationException("시간표 담당자가 다른 선생님의 수업 불가 시간을 표시하지 못했습니다.");
+            }
             capture("timetable-board-marked");
-            await BoardMark(later, 7); boardMarking = false; await Board();
-            if ((boardPlan.Unavailable ?? []).Any(u => u.TeacherId == me && u.Date == later && u.Period == 7)) throw new InvalidOperationException("수업 불가 표시를 지우지 못했습니다.");
+            if (other is not null) await BoardMark(later, 6, other.TeacherId, other.TeacherName, false);
+            await BoardMark(later, 7, me, "", true); boardMarking = false; await Board();
+            if ((boardPlan.Unavailable ?? []).Any(u => u.Date == later && (u.TeacherId == me && u.Period == 7 || u.TeacherId == other?.TeacherId && u.Period == 6))) throw new InvalidOperationException("수업 불가 표시를 지우지 못했습니다.");
             await VerifyHelper(pick, captureWindow);
         }
         // Without scrolling: the days on top, every lesson column, and the request controls at the bottom.

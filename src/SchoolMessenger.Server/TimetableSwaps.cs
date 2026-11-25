@@ -544,10 +544,17 @@ public sealed partial class Timetables
         var times = (request.Times ?? []).Distinct().ToArray();
         if (times.Length > 100 || times.Any(t => t is null || !open.Contains(t.Date) || t.Period is < 1 or > 12))
             throw new FilePolicyException("수업할 수 없는 시간을 확인하세요. 지난 날짜는 바꿀 수 없습니다.");
-        foreach (var date in open) Data.Execute("DELETE FROM TimetableUnavailable WHERE UserId=$user AND Date=$date", ("$user", user), ("$date", date));
+        // A teacher marks their own periods; the timetable manager may mark any teacher who has an account.
+        var teacher = string.IsNullOrEmpty(request.TeacherId) ? user : request.TeacherId;
+        if (teacher != user)
+        {
+            if (!Manager(user)) throw new FilePolicyException("다른 선생님의 수업 불가 시간은 시간표 담당자만 바꿀 수 있습니다.", 403);
+            if (school.GetUser(teacher) is not { Active: true }) throw new FilePolicyException("계정이 있는 선생님만 수업 불가 시간을 표시할 수 있습니다.", 404);
+        }
+        foreach (var date in open) Data.Execute("DELETE FROM TimetableUnavailable WHERE UserId=$user AND Date=$date", ("$user", teacher), ("$date", date));
         foreach (var time in times)
-            Data.Execute("INSERT OR IGNORE INTO TimetableUnavailable VALUES($user,$date,$period)", ("$user", user), ("$date", time.Date), ("$period", time.Period));
-        return Results.Ok(UnavailableOn(request.Dates).Where(u => u.TeacherId == user).ToArray());
+            Data.Execute("INSERT OR IGNORE INTO TimetableUnavailable VALUES($user,$date,$period)", ("$user", teacher), ("$date", time.Date), ("$period", time.Period));
+        return Results.Ok(UnavailableOn(request.Dates).Where(u => u.TeacherId == teacher).ToArray());
     }
 
     // ── Ways to empty periods ──
