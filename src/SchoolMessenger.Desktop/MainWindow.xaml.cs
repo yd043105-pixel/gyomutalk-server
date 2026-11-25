@@ -55,7 +55,7 @@ public partial class MainWindow : Window
         {
             var file = Path.Combine(LocalDirectory, "preferences.json");
             if (File.Exists(file) && JsonSerializer.Deserialize<Preferences>(File.ReadAllText(file)) is { } preferences)
-            { MutedRooms.UnionWith(preferences.MutedRooms ?? []); schoolPick.Set(preferences.SchoolName, preferences.SchoolAddress); ServerAddress.Text = connectedAddress = preferences.ServerAddress; UsernameBox.Text = preferences.Username; Quiet.IsChecked = preferences.Quiet; DoNotDisturb.IsChecked = preferences.DoNotDisturb; RememberLogin.IsChecked = preferences.AutoLogin; Favorites = preferences.Favorites.ToHashSet(); Appearance.Apply(preferences.ThemeId, preferences.Glass); SetAutomaticAway(preferences.IdleMinutes); }
+            { MutedRooms.UnionWith(preferences.MutedRooms ?? []); schoolPick.Set(preferences.SchoolName, preferences.SchoolAddress); ServerAddress.Text = connectedAddress = preferences.ServerAddress; UsernameBox.Text = preferences.Username; Quiet.IsChecked = preferences.Quiet; DoNotDisturb.IsChecked = preferences.DoNotDisturb; RememberLogin.IsChecked = preferences.AutoLogin; Favorites = preferences.Favorites.ToHashSet(); Appearance.Apply(preferences.ThemeId, preferences.Glass); SetAutomaticAway(preferences.IdleMinutes); CompactRoster = preferences.CompactRoster; }
         }
         catch (Exception error) when (error is IOException or JsonException) { LoginMessage("설정을 읽지 못했습니다. 서버 주소를 확인하세요."); }
         loginOptionsReady = true;
@@ -83,7 +83,10 @@ public partial class MainWindow : Window
             if (RememberLogin.IsChecked == true) { await TryAutomaticLogin(); if (savedLogin.Exists) timer.Start(); }
         };
     }
-    public void SavePreferences() => File.WriteAllText(Path.Combine(LocalDirectory, "preferences.json"), JsonSerializer.Serialize(new Preferences(ServerAddress.Text, UsernameBox.Text, Quiet.IsChecked, Favorites.ToArray(), DoNotDisturb.IsChecked, RememberLogin.IsChecked == true, Appearance.Selected, Appearance.Glass,AutomaticAwayMinutes,schoolPick.Selected?.Name ?? SchoolSearch.Text.Trim(),schoolPick.Selected?.Address ?? "",MutedRooms.ToArray())));
+    public void SavePreferences() => File.WriteAllText(Path.Combine(LocalDirectory, "preferences.json"), JsonSerializer.Serialize(new Preferences(ServerAddress.Text, UsernameBox.Text, Quiet.IsChecked, Favorites.ToArray(), DoNotDisturb.IsChecked, RememberLogin.IsChecked == true, Appearance.Selected, Appearance.Glass,AutomaticAwayMinutes,schoolPick.Selected?.Name ?? SchoolSearch.Text.Trim(),schoolPick.Selected?.Address ?? "",MutedRooms.ToArray(),CompactRoster)));
+    // 작게 보기: one short line per person, so a long staff list fits on the screen and folders are found with little scrolling.
+    public bool CompactRoster { get; private set; }
+    public void SetCompactRoster(bool compact) { CompactRoster = compact; RenderTree(); }
     void OpenAppearance(object sender, RoutedEventArgs e) => new AppearanceWindow(this).ShowDialog();
     void OpenAi(object sender, RoutedEventArgs e) => new AiWindow(this).ShowDialog();
     public void RefreshAppearance()
@@ -335,19 +338,31 @@ public partial class MainWindow : Window
                 }
                 check.Checked += ChangePerson; check.Unchecked += ChangePerson;
                 personChecks.Add((check, person.Id));
-                var panel = new Grid { MinHeight = 40 };
+                var panel = new Grid { MinHeight = CompactRoster ? 18 : 40, Margin = CompactRoster ? new Thickness(0, -3, 0, -3) : new Thickness() };
                 panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto }); panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 panel.ColumnDefinitions.Add(new ColumnDefinition()); panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 panel.Children.Add(check);
+                var role = string.Join(" · ", new[] { person.Position, person.Department }.Where(t => t.Length > 0).Distinct());
+                if (CompactRoster)
+                {
+                    var dot = Avatar.Dot(person.Online, person.Away, person.Mobile); dot.VerticalAlignment = VerticalAlignment.Center; dot.Margin = new Thickness(4, 0, 8, 0); dot.ToolTip = person.Presence;
+                    Grid.SetColumn(dot, 1); panel.Children.Add(dot);
+                    var line = new TextBlock { FontSize = 12.5, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = role.Length > 0 ? person.Name + " · " + role : person.Name };
+                    var nameRun = new System.Windows.Documents.Run(person.Name + (Favorites.Contains(person.Id) ? " ★" : "")) { FontWeight = FontWeights.SemiBold }; nameRun.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "Ink"); line.Inlines.Add(nameRun);
+                    if (role.Length > 0) { var roleRun = new System.Windows.Documents.Run("  " + role) { FontSize = 11 }; roleRun.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "Faint"); line.Inlines.Add(roleRun); }
+                    Grid.SetColumn(line, 2); panel.Children.Add(line);
+                }
+                else
+                {
                 var status = Avatar.WithPresence(person.Name, 32, null, person.Online, person.Away, person.Mobile, person.Presence); status.Margin = new Thickness(6, 0, 10, 0);
                 Grid.SetColumn(status,1);panel.Children.Add(status);
                 var names = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
                 var name = new TextBlock { Text = person.Name + (Favorites.Contains(person.Id) ? " ★" : ""), FontSize = 13, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
                 name.SetResourceReference(TextBlock.ForegroundProperty, "Ink"); names.Children.Add(name);
-                var role = string.Join(" · ", new[] { person.Position, person.Department }.Where(t => t.Length > 0).Distinct());
                 var position = new TextBlock { Text = role, FontSize = 11, Margin = new Thickness(0, 1, 0, 0), TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = role, Visibility = role.Length > 0 ? Visibility.Visible : Visibility.Collapsed };
                 position.SetResourceReference(TextBlock.ForegroundProperty, "Faint"); names.Children.Add(position);
                 Grid.SetColumn(names, 2); panel.Children.Add(names);
+                }
                 if (person.Online && person.Away || !person.Online && person.Mobile)
                 {
                     var state = new TextBlock { Text = person.Presence, FontSize = 11, FontWeight = FontWeights.SemiBold, Margin = new Thickness(8, 0, 2, 0), VerticalAlignment = VerticalAlignment.Center };
@@ -613,6 +628,13 @@ public partial class MainWindow : Window
             var choices = appearancePanel.Children.OfType<ComboBox>().Single(c=>System.Windows.Automation.AutomationProperties.GetName(c)=="메신저 색상 테마");
             var awayChoice=appearancePanel.Children.OfType<ComboBox>().Single(c=>System.Windows.Automation.AutomationProperties.GetName(c)=="자동 자리비움 시간");awayChoice.SelectedIndex=2;
             if(JsonSerializer.Deserialize<Preferences>(File.ReadAllText(Path.Combine(LocalDirectory,"preferences.json")))!.IdleMinutes!=10)throw new InvalidOperationException("자리비움 시간 저장 실패");awayChoice.SelectedIndex=1;
+            var rosterSize=appearancePanel.Children.OfType<ComboBox>().Single(c=>System.Windows.Automation.AutomationProperties.GetName(c)=="조직도 보기");
+            double PersonRowHeight(){OrganizationTree.UpdateLayout();var heights=new List<double>();void Visit(ItemsControl parent){foreach(var row in parent.Items.OfType<TreeViewItem>()){if(row.Tag is Person&&row.Header is FrameworkElement header&&header.ActualHeight>0)heights.Add(header.ActualHeight+8);Visit(row);}}Visit(OrganizationTree);return heights.Count==0?0:heights.Average();}
+            var largeRow=PersonRowHeight();rosterSize.SelectedIndex=1;await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.Render);var smallRow=PersonRowHeight();
+            if(!CompactRoster||!JsonSerializer.Deserialize<Preferences>(File.ReadAllText(Path.Combine(LocalDirectory,"preferences.json")))!.CompactRoster)throw new InvalidOperationException("조직도 작게 보기 저장 실패");
+            if(largeRow==0||smallRow>largeRow*0.6)throw new InvalidOperationException($"조직도 작게 보기가 충분히 작지 않습니다: {largeRow:0}→{smallRow:0}");
+            SavePreview(this,Path.Combine(directory,"organization-compact-preview.png"));
+            rosterSize.SelectedIndex=0;await Dispatcher.InvokeAsync(()=>{},DispatcherPriority.Render);
             var glass = appearancePanel.Children.OfType<System.Windows.Controls.CheckBox>().Single();
             foreach (var palette in Appearance.Palettes)
             {
@@ -679,4 +701,4 @@ public partial class MainWindow : Window
         catch (Exception error) { Directory.CreateDirectory("artifacts"); File.WriteAllText("artifacts/ui-error.txt", error.ToString()); exiting = true; System.Windows.Application.Current.Shutdown(1); }
     }
 }
-record Preferences(string ServerAddress, string Username, bool Quiet, string[] Favorites, bool DoNotDisturb = false, bool AutoLogin = false, string ThemeId = "blue", bool Glass = true,int IdleMinutes=5,string SchoolName="",string SchoolAddress="",string[]? MutedRooms=null);
+record Preferences(string ServerAddress, string Username, bool Quiet, string[] Favorites, bool DoNotDisturb = false, bool AutoLogin = false, string ThemeId = "blue", bool Glass = true,int IdleMinutes=5,string SchoolName="",string SchoolAddress="",string[]? MutedRooms=null,bool CompactRoster=false);

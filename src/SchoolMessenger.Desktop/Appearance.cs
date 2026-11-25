@@ -49,7 +49,7 @@ public sealed class AppearanceWindow : Window
 {
     public AppearanceWindow(MainWindow main)
     {
-        Owner = main; Title = "화면 · 자리비움 설정"; Width = 390; Height = Math.Min(590,SystemParameters.WorkArea.Height-24);
+        Owner = main; Title = "화면 · 조직도 · 자리비움 설정"; Width = 390; Height = Math.Min(680,SystemParameters.WorkArea.Height-24);
         ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterOwner;
         Style = (Style)FindResource("SchoolWindow");
         var stack = new StackPanel { Margin = new Thickness(24) }; Content = new ScrollViewer{Content=stack};
@@ -72,6 +72,11 @@ public sealed class AppearanceWindow : Window
         AutomationProperties.SetName(away,"자동 자리비움 시간");stack.Children.Add(away);
         stack.Children.Add(new TextBlock{Text="키보드·마우스 입력 기준입니다. 입력하면 온라인으로 복귀하며 Windows를 잠그면 즉시 자리비움으로 표시합니다.",FontSize=11,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,8,0,16)});
         away.SelectionChanged+=(_,_)=>{if(away.SelectedIndex<0)return;main.SetAutomaticAway(minutes[away.SelectedIndex]);Change();};
+        stack.Children.Add(new TextBlock{Text="조직도 보기",FontWeight=FontWeights.SemiBold,Margin=new Thickness(0,8,0,8)});
+        var roster=new ComboBox{ItemsSource=new[]{"크게 · 사진과 직책을 두 줄로","작게 · 한 줄에 이름과 부서"},SelectedIndex=main.CompactRoster?1:0};
+        AutomationProperties.SetName(roster,"조직도 보기");stack.Children.Add(roster);
+        stack.Children.Add(new TextBlock{Text="작게 보면 한 화면에 두 배 가까이 보여 원하는 부서를 덜 내려서 찾습니다.",FontSize=11,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,8,0,16)});
+        roster.SelectionChanged+=(_,_)=>{if(roster.SelectedIndex<0)return;main.SetCompactRoster(roster.SelectedIndex==1);Change();};
         void Change() { Appearance.Apply(Appearance.Palettes[choices.SelectedIndex].Id, glass.IsChecked == true); main.RefreshAppearance(); try { main.SavePreferences(); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Notice.Show(this, "화면은 변경했지만 설정을 저장하지 못했습니다. 저장 공간과 폴더 권한을 확인하세요.", "화면 설정"); } }
         choices.SelectionChanged += (_, _) => Change(); glass.Checked += (_, _) => Change(); glass.Unchecked += (_, _) => Change();
         var done = new Button { Content = "완료", Style = (Style)FindResource("PrimaryButton") }; done.Click += (_, _) => Close(); stack.Children.Add(done);
