@@ -296,6 +296,26 @@ try{
  await homeroom.request('timetable/unavailable','PUT',{dates:[tuesday],times:[{date:dayText(date(-7)),period:1}]},400);
  check('a period a teacher marks as impossible is shown on the board and no request may move their lesson into it');
 
+ // A lesson may trade with one in another week, as far apart as the school allows: next week unless the manager says otherwise.
+ const nextTue=dayText(date(8)),farTue=dayText(date(15));
+ const acrossOptions=dates=>homeroom.request('timetable/swap-options','POST',{dates,dependencies:[],exchanges:[],pick:tue(firstClass,1)});
+ const across=await acrossOptions([nextTue]);
+ assert.ok(across.length>0&&across.every(o=>o.target.date===nextTue),JSON.stringify(across));
+ assert.deepEqual(await acrossOptions([farTue]),[]);
+ assert.equal((await homeroom.request('timetable/swap-plan','POST',{dates:[nextTue],dependencies:[]})).swapWeeks,1);
+ assert.equal((await homeroom.request('timetable/setup')).swapWeeks,1);
+ await teacher.request('timetable/swap-range','PUT',{weeks:0},403);await duty.request('timetable/swap-range','PUT',{weeks:9},400);
+ assert.equal((await duty.request('timetable/swap-range','PUT',{weeks:0})).weeks,0);
+ assert.deepEqual(await acrossOptions([nextTue]),[]);
+ const acrossPlan=await homeroom.request('timetable/swap-plan','POST',{dates:[tuesday,nextTue],dependencies:[]});
+ const sendAcross=status=>homeroom.request('timetable/swaps','POST',{id:uid(),revision:acrossPlan.revision,exchanges:across[0].exchanges,dependencies:[],reason:'다음 주와 교체'},status);
+ assert.ok((await sendAcross(409)).error.includes('같은 주'));
+ await duty.request('timetable/swap-range','PUT',{weeks:1});
+ const sentAcross=await sendAcross();assert.equal(sentAcross.changes.length,across[0].exchanges.length*2);
+ assert.ok(sentAcross.changes.some(c=>c.position.date===tuesday)&&sentAcross.changes.some(c=>c.position.date===nextTue));
+ await homeroom.request('timetable/swaps/'+sentAcross.id+'/decision','POST',{status:'cancelled'});
+ check('a lesson trades with one in the next week as far as the school allows, and the timetable manager sets how far');
+
  // Asked to empty a period, the server answers with whole requests that do it, same-day trades first.
  const week5=[0,1,2,3,4].map(n=>dayText(date(n)));
  const ideas=await teacher.request('timetable/swap-suggestions','POST',{dates:week5,dependencies:[],exchanges:[],vacate:[{date:wednesday,period:1}]});

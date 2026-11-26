@@ -42,6 +42,9 @@ def create_feed(config,version,tag,asset,seed,architecture=None,notes=None):
     # Old WinSparkle/Sparkle clients render the HTML; the app's own dialog reads the JSON.
     ET.SubElement(item,'description').text=describe(version,notes['releasedOn'],sections) if sections else '새 버전의 변경 내용은 GitHub 릴리즈 페이지에서 확인하세요.'
     ET.SubElement(item,'{'+NOTES+'}notes').text=json.dumps(dict(sections),ensure_ascii=False)
+    # Up to three very short lines shown just before installing; the full notes stay one click away.
+    brief=[line for audience in AUDIENCES[product] for line in (notes or {}).get('brief',{}).get(audience,[])][:3]
+    if brief: ET.SubElement(item,'{'+NOTES+'}brief').text=json.dumps(brief,ensure_ascii=False)
     # The Windows installer enforces the minimum OS. Older builds lack a
     # compatibility manifest, so WinSparkle's Windows version check rejects them.
     if product=='mac':

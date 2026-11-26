@@ -21,7 +21,10 @@ public partial class App : System.Windows.Application
                     var candidate=e.Args.ElementAtOrDefault(index+1)??"";const string test="YyMessengerInstallerTest-";
                     if(candidate!=entry&&(!candidate.StartsWith(test,StringComparison.Ordinal)||!Guid.TryParse(candidate[test.Length..],out _)))throw new InvalidOperationException("자동 실행 항목 이름을 확인하세요.");entry=candidate;
                 }
-                new WindowsStartup(entryName:entry,command:manager?LocalServerWindow.StartupCommand:WindowsStartup.Command).SetEnabled(e.Args.Contains("enable"));Shutdown();
+                new WindowsStartup(entryName:entry,command:manager?LocalServerWindow.StartupCommand:WindowsStartup.Command).SetEnabled(e.Args.Contains("enable"));
+                // The teacher program's first start keeps what was chosen in the installer instead of its own default.
+                if(!manager)try{var folder=Environment.GetEnvironmentVariable("SCHOOL_UI_LOCALDIR")??Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"SchoolMessenger");Directory.CreateDirectory(folder);File.WriteAllText(Path.Combine(folder,"startup-chosen.txt"),e.Args.Contains("enable")?"on":"off");}catch(IOException){}catch(UnauthorizedAccessException){}
+                Shutdown();
             }
             catch(Exception error){Notice.Show(error.Message,"자동 실행 설정 실패");Shutdown(1);}
             return;

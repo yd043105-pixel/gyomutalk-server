@@ -13,6 +13,7 @@ public sealed partial class Timetables
         CREATE TABLE IF NOT EXISTS TimetableBundles(Id TEXT PRIMARY KEY, Payload TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS TimetableBundleRules(Id TEXT PRIMARY KEY, Payload TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS TimetableUnavailable(UserId TEXT NOT NULL, Date TEXT NOT NULL, Period INTEGER NOT NULL, PRIMARY KEY(UserId, Date, Period));
+        CREATE TABLE IF NOT EXISTS TimetableSwapRange(Id INTEGER PRIMARY KEY CHECK(Id=1), Weeks INTEGER NOT NULL CHECK(Weeks BETWEEN 0 AND 8));
         """);
 
     void MapSwaps(RouteGroupBuilder api)
@@ -26,6 +27,8 @@ public sealed partial class Timetables
             WithSchedule(c, () => DecideSwap(id, request, User(c))));
         api.MapPost("/swap-options", (TimetableSwapOptionsRequest request, HttpContext c) =>
             WithSchedule(c, () => SwapOptions(request, User(c))));
+        api.MapPut("/swap-range", (TimetableSwapRange request, HttpContext c) =>
+            WithSchedule(c, () => SetSwapRange(request, User(c))));
         api.MapPut("/unavailable", (TimetableUnavailableUpdate request, HttpContext c) =>
             WithSchedule(c, () => SaveUnavailable(request, User(c))));
         api.MapPost("/swap-suggestions", (TimetableSuggestionRequest request, HttpContext c) =>
@@ -169,7 +172,22 @@ public sealed partial class Timetables
             .OrderBy(p => p.Key.Date).ThenBy(p => p.Value.ClassName).ThenBy(p => p.Key.Period)
             .Select(p => new TimetablePlanSlot(p.Key, p.Value, Owns(p.Value, user, uniqueName),
                 bundles.GetValueOrDefault(p.Key) ?? RuleOf(projection, p.Key.ClassId, p.Value)?.Name));
-        return Results.Ok(new TimetableSwapPlan(Data.Revision, slots.ToArray(), overlaps, UnavailableOn(request.Dates)));
+        return Results.Ok(new TimetableSwapPlan(Data.Revision, slots.ToArray(), overlaps, UnavailableOn(request.Dates), SwapWeeks));
+    }
+
+    // ── How far apart traded lessons may be ──
+    // A school may let a lesson trade with one in the next weeks; this many weeks apart at most (1 unless the manager chose otherwise).
+    internal int SwapWeeks => Data.Query("SELECT Weeks FROM TimetableSwapRange WHERE Id=1", r => r.GetInt32(0)).DefaultIfEmpty(1).First();
+    // Weeks run Monday to Sunday; 0001-01-01 was a Monday, so the day number divided by seven names the week.
+    static int? WeekOf(string? date) => DateOnly.TryParseExact(date, "yyyy-MM-dd", out var day) ? day.DayNumber / 7 : null;
+    static bool Within(TimetablePosition first, TimetablePosition second, int weeks) =>
+        WeekOf(first.Date) is { } a && WeekOf(second.Date) is { } b && Math.Abs(a - b) <= weeks;
+    IResult SetSwapRange(TimetableSwapRange request, string user)
+    {
+        RequireManager(user);
+        if (request?.Weeks is not (>= 0 and <= 8)) throw new FilePolicyException("교체할 수 있는 범위는 0~8주에서 고르세요.");
+        Data.Execute("INSERT INTO TimetableSwapRange VALUES(1,$weeks) ON CONFLICT(Id) DO UPDATE SET Weeks=excluded.Weeks", ("$weeks", request.Weeks));
+        return Results.Ok(new TimetableSwapRange(SwapWeeks));
     }
 
     static IEnumerable<string> DatesOf(TimetableExchange[]? exchanges) =>
@@ -234,7 +252,9 @@ public sealed partial class Timetables
         if (draft.Length > 0) ApplySwap(projection, Trial(projection, draft), teachers: false);
         if (!projection.Lessons.TryGetValue(pick, out var lesson) || lesson.Subject.Length == 0)
             throw new FilePolicyException("옮길 수업을 선택하세요.");
-        var marks = Marks(request.Dates);
+        // The picked lesson may be carried over from another week than the one shown; marks on its day count as well.
+        var marks = Marks(request.Dates.Append(pick.Date).Concat(DatesOf(request.Exchanges)));
+        var weeks = SwapWeeks;
         var uniqueName = UniqueName(user);
         if (!Manager(user) && !Group(projection, pick).Any(p => Owns(projection.Lessons[p], user, uniqueName)))
             throw new FilePolicyException("내 수업 또는 내 수업과 함께 움직이는 묶음만 옮길 수 있습니다.", 403);
@@ -243,7 +263,7 @@ public sealed partial class Timetables
         var options = new List<TimetableSwapOption>();
         if (Past(pick, projection.Grades)) return Results.Ok(options);
         foreach (var target in projection.Lessons.Where(p => p.Key.ClassId == pick.ClassId && p.Key != pick && dates.Contains(p.Key.Date) &&
-            p.Value.Subject.Length > 0 && !Past(p.Key, projection.Grades) && !SameLesson(p.Value, lesson))
+            p.Value.Subject.Length > 0 && !Past(p.Key, projection.Grades) && !SameLesson(p.Value, lesson) && Within(pick, p.Key, weeks))
             .Select(p => p.Key).OrderBy(p => p.Date).ThenBy(p => p.Period).ToArray())
         {
             var exchanges = Closure(projection, pick, target);
@@ -344,6 +364,9 @@ public sealed partial class Timetables
             throw new FilePolicyException("내 수업 또는 내 수업과 함께 움직이는 묶음을 신청하세요.", 403);
 
         if (positions.Any(p => Past(p, projection.Grades))) throw new FilePolicyException("이미 시작했거나 지난 수업은 바꿀 수 없습니다.", 409);
+        var weeks = SwapWeeks;
+        if (request.Exchanges.Any(e => !Within(e.First, e.Second, weeks)))
+            throw new FilePolicyException(weeks == 0 ? "이 학교는 같은 주의 수업끼리만 바꿀 수 있습니다." : $"이 학교는 {weeks}주 안의 수업끼리만 바꿀 수 있습니다.", 409);
         var changes = ChangesOf(projection, request.Exchanges);
         if (changes.All(c => SameLesson(c.Before, c.After))) throw new FilePolicyException("교체하면 달라지는 수업이 있어야 합니다.");
         if (Blocked(projection, changes, Marks(positions.Select(p => p.Date))) is { } marked)

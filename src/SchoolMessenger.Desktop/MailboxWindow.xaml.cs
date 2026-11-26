@@ -207,9 +207,13 @@ public partial class MailboxWindow : Window
     void OpenSubmission(object sender, RoutedEventArgs e) { if (detail is not null) new WorkWindow(main, detail.SubmissionRequestId ?? detail.Message.Id).Show(); }
     async void Download(object sender, RoutedEventArgs e)
     {
-        if (Api is null || ((System.Windows.Controls.Button)sender).Tag is not Attachment file) return;
-        var dialog = new Microsoft.Win32.SaveFileDialog { FileName = file.Name };
-        if (dialog.ShowDialog(this) == true) await Run(async () => { if(await AttachmentTransferWindow.Save(this,Api,file.Id,dialog.FileName))Notify("파일을 저장했습니다."); });
+        var button = (System.Windows.Controls.Button)sender;
+        await Downloads.Receive(this, Api, () => button.Tag as Attachment, Run, Notify);
+    }
+    void DownloadLoaded(object sender, RoutedEventArgs e)
+    {
+        var button = (System.Windows.Controls.Button)sender;
+        Downloads.Wire(button, this, () => Api, () => button.Tag as Attachment, Run, Notify);
     }
 
 }

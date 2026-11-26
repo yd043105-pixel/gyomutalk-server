@@ -26,6 +26,9 @@ public sealed partial class TimetableWindow
     readonly Dictionary<TimetablePosition, Border> boardCells = [];
     Dictionary<TimetablePosition, TimetableSwapOption> boardOptions = [];
     TimetablePlanSlot? boardPick;
+    // A lesson picked in one week and carried to another with ‹ ›, to trade with a lesson there.
+    TimetablePlanSlot? boardCarry;
+    Button? boardCarryChip;
     Task boardPicking = Task.CompletedTask;
     bool boardAll, boardAssume, boardMarking;
     string[] boardDependencies = [];
@@ -139,7 +142,7 @@ public sealed partial class TimetableWindow
             var button = new Button { Content = label, Width = 30, FontSize = 18, Padding = new Thickness(0), ToolTip = name };
             button.SetResourceReference(StyleProperty, "SubtleButton");
             System.Windows.Automation.AutomationProperties.SetName(button, name);
-            button.Click += async (_, _) => await Run(async () => { boardWeek = boardWeek.AddDays(days); await Board(); });
+            button.Click += async (_, _) => await Run(async () => { boardCarry = boardPick ?? boardCarry; boardWeek = boardWeek.AddDays(days); await Board(); });
             return button;
         }
         var week = AdminUi.Label(boardWeek.ToString("M.d") + " ~ " + boardWeek.AddDays(4).ToString("M.d"), "Ink", 13, true);
@@ -168,12 +171,23 @@ public sealed partial class TimetableWindow
             helper.SetResourceReference(StyleProperty, "PrimaryButton"); helper.Click += async (_, _) => await Run(SwapHelper);
             tools.Children.Add(helper);
         }
+        boardCarryChip = null;
+        if (boardCarry is { } carried && !BoardDates.Contains(carried.Position.Date))
+        {
+            var chip = new Button { Content = $"옮길 수업 · {DayLabel(carried.Position.Date)} {ShortClass(carried.Lesson.ClassName)} {carried.Position.Period}교시 {carried.Lesson.Subject}   ✕",
+                Margin = new Thickness(14, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, ToolTip = "다른 주에서 고른 수업입니다. 누르면 고른 수업을 놓습니다." };
+            chip.SetResourceReference(StyleProperty, "SubtleButton");
+            chip.Click += (_, _) => { boardCarry = null; BoardClearPick(); chip.Visibility = Visibility.Collapsed; feedback.Text = ""; };
+            tools.Children.Add(chip); boardCarryChip = chip;
+        }
         head.Children.Add(tools);
         DockPanel.SetDock(head, Dock.Top); page.Children.Add(head);
 
         // One line under the title: how to use the board, or what just happened.
         var status = new Grid { MinHeight = 18 };
-        boardHint = AdminUi.Label("옮길 수업을 누르면 바꿀 수 있는 수업이 초록색으로 표시됩니다. 초록 칸을 누르거나 그 칸으로 끌어다 놓으면 두 수업이 맞바뀝니다.", "Muted", 12);
+        boardHint = AdminUi.Label(boardPlan.SwapWeeks is > 0
+            ? "옮길 수업을 누르면 바꿀 수 있는 수업이 초록색으로 표시됩니다. 초록 칸을 누르면 맞바뀝니다. 다른 주 수업과 바꾸려면 수업을 고른 채 ‹ ›로 주를 넘기세요."
+            : "옮길 수업을 누르면 바꿀 수 있는 수업이 초록색으로 표시됩니다. 초록 칸을 누르거나 그 칸으로 끌어다 놓으면 두 수업이 맞바뀝니다.", "Muted", 12);
         boardHint.TextTrimming = TextTrimming.CharacterEllipsis; boardHint.TextWrapping = TextWrapping.NoWrap;
         feedback.Margin = new Thickness(0); status.Children.Add(boardHint); status.Children.Add(feedback);
         boardHint.Visibility = feedback.Text.Length > 0 ? Visibility.Collapsed : Visibility.Visible;
@@ -184,6 +198,16 @@ public sealed partial class TimetableWindow
         var record = BoardRecord(); DockPanel.SetDock(record, Dock.Bottom); page.Children.Add(record);
         page.Children.Add(BoardGrid(pending));
         fixedPage.Child = page; fixedPage.Visibility = Visibility.Visible; pageScroll.Visibility = Visibility.Collapsed;
+        // Coming back to the week of the carried lesson picks it there as usual; in another week it offers that week's lessons.
+        if (boardCarry is { } carry)
+        {
+            if (!BoardDates.Contains(carry.Position.Date)) await BoardPickLesson(carry);
+            else
+            {
+                boardCarry = null;
+                if (boardPlan.Slots.FirstOrDefault(s => s.Position == carry.Position) is { } here) await BoardPickLesson(here);
+            }
+        }
     }
 
     FrameworkElement BoardGrid(TimetableSwap[] pending)
@@ -368,6 +392,8 @@ public sealed partial class TimetableWindow
             _ = Run(() => BoardApply(option));
             return;
         }
+        // Picking anything on this week's board lets go of a lesson carried from another week.
+        if (boardCarry is not null) { boardCarry = null; if (boardCarryChip is { } chip) chip.Visibility = Visibility.Collapsed; }
         if (lessons.Length == 0) { BoardClearPick(); feedback.Text = ""; return; }
         var slot = lessons.FirstOrDefault(l => l.Mine) ?? lessons[0];
         if (boardPick?.Position == slot.Position) return;
@@ -385,6 +411,14 @@ public sealed partial class TimetableWindow
         BoardClearPick();
         if (!slot.Mine && !CanManageSchedule && slot.BundleName is null)
         { feedback.Text = "내 수업만 옮길 수 있습니다. 내 수업은 파란색으로 표시됩니다."; return; }
+        var what = $"{slot.Lesson.ClassName} {DayLabel(slot.Position.Date)} {slot.Position.Period}교시 {slot.Lesson.Subject}";
+        var away = !BoardDates.Contains(slot.Position.Date);
+        var monday = TimetableDate(slot.Position.Date); monday = monday.AddDays(-((int)monday.DayOfWeek + 6) % 7);
+        if (away && boardPlan?.SwapWeeks is { } allowed && Math.Abs((monday - boardWeek).Days) / 7 > allowed)
+        {
+            feedback.Text = what + (allowed == 0 ? ": 이 학교는 같은 주의 수업끼리만 바꿀 수 있습니다." : $": 이 학교는 {allowed}주 안의 수업끼리만 바꿀 수 있습니다. ‹ ›로 가까운 주로 돌아가세요.");
+            return;
+        }
         try
         {
             var options = await api.Send<TimetableSwapOption[]>(HttpMethod.Post, "api/timetable/swap-options",
@@ -401,11 +435,12 @@ public sealed partial class TimetableWindow
             }
             var hidden = options.Count(o => !boardCells.ContainsKey(o.Target));
             var clean = options.Count(o => !o.Overlap && boardCells.ContainsKey(o.Target)); var tangled = options.Length - hidden - clean;
-            var what = $"{slot.Lesson.ClassName} {DayLabel(slot.Position.Date)} {slot.Position.Period}교시 {slot.Lesson.Subject}";
+            var further = !away && boardPlan?.SwapWeeks is > 0 ? " 다음 주 수업과 바꾸려면 이 수업을 고른 채 ‘›’를 누르세요." : "";
             feedback.Text = options.Length == 0
-                ? what + ": 이번 주에는 바꿀 수 있는 수업이 없습니다. 지난 수업이거나 수업 불가로 표시된 시간입니다. 다른 주를 확인하거나 ‘교체 도우미’를 써 보세요."
+                ? what + (away ? ": 이 주에는 바꿀 수 있는 수업이 없습니다. 지난 수업이거나 수업 불가로 표시된 시간입니다. 다른 주로 넘기거나 ✕로 고른 수업을 놓으세요."
+                    : ": 이번 주에는 바꿀 수 있는 수업이 없습니다. 지난 수업이거나 수업 불가로 표시된 시간입니다." + (further.Length > 0 ? further : " 다른 주를 확인하거나 ‘교체 도우미’를 써 보세요."))
                 : what + (clean > 0 ? $": 초록색 {clean}칸과 바로 바꿀 수 있습니다." : ":") + (tangled > 0 ? $" 주황 테두리 {tangled}칸은 바꾸면 수업이 겹쳐 하나를 더 옮겨야 합니다." : "") +
-                  (hidden > 0 ? $" ‘모든 선생님 보기’를 켜면 {hidden}칸이 더 보입니다." : "");
+                  (hidden > 0 ? $" ‘모든 선생님 보기’를 켜면 {hidden}칸이 더 보입니다." : "") + further;
         }
         catch (Exception error) when (error is InvalidOperationException or HttpRequestException or TaskCanceledException or JsonException)
         { feedback.Text = error.Message; }
@@ -416,11 +451,13 @@ public sealed partial class TimetableWindow
         if ((BoardExchanges?.Length ?? 0) + option.Exchanges.Length > 12)
             throw new InvalidOperationException("한 번에 신청할 수 있는 교체는 12쌍까지입니다. 지금까지 바꾼 내용을 먼저 신청하세요.");
         var slots = boardPlan!.Slots.ToDictionary(s => s.Position, s => s.Lesson);
+        // A lesson carried from another week is not on this board but names the trade all the same.
+        if (boardPick is { } picked) slots.TryAdd(picked.Position, picked.Lesson);
         string Lesson(TimetablePosition p) => slots.TryGetValue(p, out var l) ? $"{p.Period}교시 {l.Subject}({l.TeacherName})" : p.Period + "교시";
         string Line(TimetableExchange e) => $"{DayLabel(e.First.Date)} {(slots.TryGetValue(e.First, out var l) ? l.ClassName : "")} {Lesson(e.First)}  ↔  " +
             (e.Second.Date == e.First.Date ? "" : DayLabel(e.Second.Date) + " ") + Lesson(e.Second);
         boardMoves.Add(new(option, string.Join("\n", option.Exchanges.Select((e, i) => (i == 0 ? "" : "함께 이동(묶음) · ") + Line(e)))));
-        boardRequestId = null;
+        boardRequestId = null; boardCarry = null;
         await Board();
         feedback.Text = BoardTangle() is { } tangle ? "수업을 맞바꿨습니다. " + tangle
             : option.Exchanges.Length > 1 ? $"수업을 맞바꿨습니다. 묶음수업 {option.Exchanges.Length}개 학급이 함께 움직였습니다." : "수업을 맞바꿨습니다. 아래 ‘변경 기록’을 확인한 뒤 신청하세요.";
@@ -737,6 +774,25 @@ public sealed partial class TimetableWindow
         var moved = boardPlan!.Slots.Single(s => s.Position == option.Target).Lesson;
         if (boardMoves.Count != 1 || moved.Subject != pick.Lesson.Subject || (string)boardCells[option.Target].Tag != "changed") throw new InvalidOperationException("맞바꾼 수업이 표와 변경 기록에 반영되지 않았습니다.");
         capture("timetable-board-changed");
+        // A lesson picked in one week and carried to the next with › offers that week's lessons; ✕ lets it go.
+        if (boardPlan!.SwapWeeks is > 0)
+        {
+            var traded = boardMoves.SelectMany(m => m.Option.Exchanges).SelectMany(e => new[] { e.First, e.Second }).ToHashSet();
+            var carried = boardPlan.Slots.Where(s => s.Mine && string.CompareOrdinal(s.Position.Date, today) >= 0 && !traded.Contains(s.Position))
+                .OrderBy(s => s.Position.Date).ThenBy(s => s.Position.Period).FirstOrDefault();
+            if (carried is not null)
+            {
+                await BoardPickLesson(carried);
+                boardCarry = boardPick ?? boardCarry; boardWeek = boardWeek.AddDays(7); await Board(); UpdateLayout();
+                if (boardCarryChip is not { IsVisible: true } || boardPick?.Position != carried.Position) throw new InvalidOperationException("다음 주로 넘기면 고른 수업이 따라오지 않습니다.");
+                if (boardOptions.Count == 0 || boardOptions.Keys.Any(p => !BoardDates.Contains(p.Date) || p.ClassId != carried.Position.ClassId))
+                    throw new InvalidOperationException("다음 주 수업이 교체 후보로 나오지 않거나 다른 학급·다른 주가 섞였습니다: " + feedback.Text);
+                capture("timetable-board-next-week");
+                boardCarryChip.RaiseEvent(new RoutedEventArgs(System.Windows.Controls.Primitives.ButtonBase.ClickEvent));
+                if (boardCarry is not null || boardPick is not null || boardOptions.Count != 0) throw new InvalidOperationException("✕를 눌러도 고른 수업이 놓이지 않습니다.");
+                boardWeek = boardWeek.AddDays(-7); await Board(); UpdateLayout();
+            }
+        }
         // A period marked as impossible shows on the teacher's own row and goes away again.
         if (boardPlan!.Unavailable is not null && BoardDates.Where(d => string.CompareOrdinal(d, today) > 0).FirstOrDefault() is { } later)
         {

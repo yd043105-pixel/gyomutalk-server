@@ -129,10 +129,15 @@ internal static class DesktopUpdater
                 // Installed right away when the program has just opened, otherwise in the evening, at night or at the weekend.
                 pending=offer;if(startup||Quiet())await AutoInstall();return;
             }
+            // The teacher program, just opened: a few lines about the new version, then it installs by itself unless 나중에 is chosen.
+            // Each version is tried this way once; after that it is offered like any other.
+            var automatic=startup&&product=="windows"&&!TriedAutomatically(offer);
             var skipped=Path.Combine(Folder,"skipped.txt");
-            if(!manual&&File.Exists(skipped)&&File.ReadAllText(skipped)==offer.Version.ToString())return;
+            if(!manual&&!automatic&&File.Exists(skipped)&&File.ReadAllText(skipped)==offer.Version.ToString())return;
             shown=offer;
-            switch(ShowOffer(from,offer,current,product=="server"?"교무톡 관리자":"교무톡"))
+            var choice=ShowOffer(from,offer,current,product=="server"?"교무톡 관리자":"교무톡",countdown:automatic?10:0);
+            if(automatic&&choice=="install")try{File.WriteAllText(Path.Combine(Folder,"automatic-attempt.txt"),offer.Version.ToString());}catch(IOException){}
+            switch(choice)
             {
                 // WinSparkle fetches the same feed again, verifies the signature and shows download progress.
                 case "install":Native.win_sparkle_check_update_with_ui_and_install();break;
@@ -143,8 +148,10 @@ internal static class DesktopUpdater
         {before?.Invoke();if(manual)Notice.Show(from is {IsVisible:true}?from:owner,"새 버전을 확인하지 못했습니다. 학교 네트워크에서 GitHub 연결을 허용했는지 확인하세요.","프로그램 업데이트");}
         finally{checking=false;}
     }
-    internal sealed record UpdateOffer(Version Version,IReadOnlyList<(string Name,string[] Items)> Sections,string Url="",string Signature="",long Length=0)
+    internal sealed record UpdateOffer(Version Version,IReadOnlyList<(string Name,string[] Items)> Sections,string Url="",string Signature="",long Length=0,string[]? BriefLines=null)
     {
+        // What the window shows before installing: the release's few short lines, or else just the names of what changed.
+        internal string[] Brief=>BriefLines is {Length:>0} lines?lines.Take(3).ToArray():Sections.Select(s=>s.Name).Take(4).ToArray() is {Length:>0} names?[string.Join(" · ",names)]:[];
         const string Sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle",Notes="https://gyomutalk-downloads.vercel.app/ns/update";
         internal static UpdateOffer? Parse(string feed)
         {
@@ -157,12 +164,14 @@ internal static class DesktopUpdater
                 var notes=item.Element(XName.Get("notes",Notes))?.Value;
                 var sections=new List<(string,string[])>();
                 if(!string.IsNullOrWhiteSpace(notes)){using var json=System.Text.Json.JsonDocument.Parse(notes);foreach(var section in json.RootElement.EnumerateObject())sections.Add((section.Name,section.Value.EnumerateArray().Select(n=>n.GetString()!).ToArray()));}
-                return new UpdateOffer(Version.Parse(version),sections,enclosure!.Attribute("url")?.Value??"",enclosure.Attribute(XName.Get("edSignature",Sparkle))?.Value??"",long.TryParse(enclosure.Attribute("length")?.Value,out var length)?length:0);
+                string[]? brief=null;var lines=item.Element(XName.Get("brief",Notes))?.Value;
+                if(!string.IsNullOrWhiteSpace(lines)){using var json=System.Text.Json.JsonDocument.Parse(lines);brief=json.RootElement.EnumerateArray().Select(n=>n.GetString()??"").Where(n=>n.Length>0).ToArray();}
+                return new UpdateOffer(Version.Parse(version),sections,enclosure!.Attribute("url")?.Value??"",enclosure.Attribute(XName.Get("edSignature",Sparkle))?.Value??"",long.TryParse(enclosure.Attribute("length")?.Value,out var length)?length:0,brief);
             }).Where(o=>o is not null).MaxBy(o=>o!.Version);
         }
     }
     // Returns "install", "skip" or "later".
-    internal static string ShowOffer(Window? from,UpdateOffer offer,string current,string app,Action<Window>? shown=null)
+    internal static string ShowOffer(Window? from,UpdateOffer offer,string current,string app,Action<Window>? shown=null,int countdown=0)
     {
         var choice="later";
         var dialog=new Window{Title="프로그램 업데이트",Width=460,SizeToContent=SizeToContent.Height,ResizeMode=ResizeMode.NoResize,ShowInTaskbar=from is null,
@@ -181,20 +190,29 @@ internal static class DesktopUpdater
         var actions=new DockPanel{Margin=new Thickness(0,18,0,0),LastChildFill=false};footer.Children.Add(actions);
         Button Action(string label,string value,string? style,Dock dock)
         {var button=new Button{Content=label,MinWidth=76,Margin=new Thickness(dock==Dock.Right?8:0,0,0,0)};if(style is not null)button.SetResourceReference(FrameworkElement.StyleProperty,style);button.Click+=(_,_)=>{choice=value;dialog.Close();};DockPanel.SetDock(button,dock);actions.Children.Add(button);return button;}
-        Action("이 버전 건너뛰기","skip","SubtleButton",Dock.Left);
-        Action("업데이트 설치","install","PrimaryButton",Dock.Right).IsDefault=true;
-        Action("나중에","later",null,Dock.Right).IsCancel=true;
-        var notes=new StackPanel();
-        foreach(var (name,items) in offer.Sections)
+        if(countdown==0)Action("이 버전 건너뛰기","skip","SubtleButton",Dock.Left);
+        var install=Action("업데이트 설치","install","PrimaryButton",Dock.Right);install.IsDefault=true;
+        if(countdown>0)
         {
-            var heading=Text(name,13,"Blue",FontWeights.SemiBold);heading.Margin=new Thickness(0,notes.Children.Count==0?0:12,0,4);notes.Children.Add(heading);
-            foreach(var item in items)
-            {
-                var row=new DockPanel{Margin=new Thickness(0,2,0,2)};var dot=Text("•",13,"Muted",FontWeights.Normal);dot.Width=14;DockPanel.SetDock(dot,Dock.Left);row.Children.Add(dot);
-                var line=Text(item,13,"Ink",FontWeights.Normal);line.LineHeight=20;row.Children.Add(line);notes.Children.Add(row);
-            }
+            // Counting down on the button itself, so it is plain that the update goes ahead without a click.
+            var left=countdown;install.Content=$"업데이트 설치 ({left})";
+            var clock=new DispatcherTimer{Interval=TimeSpan.FromSeconds(1)};
+            clock.Tick+=(_,_)=>{left--;if(left>0){install.Content=$"업데이트 설치 ({left})";return;}clock.Stop();choice="install";dialog.Close();};
+            dialog.ContentRendered+=(_,_)=>clock.Start();dialog.Closed+=(_,_)=>clock.Stop();
+        }
+        Action("나중에","later",null,Dock.Right).IsCancel=true;
+        // Only a few short lines: what is new at a glance. The whole list is on the release page.
+        var notes=new StackPanel();
+        foreach(var item in offer.Brief)
+        {
+            var row=new DockPanel{Margin=new Thickness(0,2,0,2)};var dot=Text("•",13,"Muted",FontWeights.Normal);dot.Width=14;DockPanel.SetDock(dot,Dock.Left);row.Children.Add(dot);
+            var line=Text(item,13,"Ink",FontWeights.Normal);line.LineHeight=20;row.Children.Add(line);notes.Children.Add(row);
         }
         if(notes.Children.Count==0)notes.Children.Add(Text("변경 내용은 GitHub 릴리즈 페이지에서 확인할 수 있습니다.",13,"Muted",FontWeights.Normal));
+        var more=new TextBlock{Margin=new Thickness(0,8,0,0),FontSize=12};
+        var link=new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run("자세히 보기")){NavigateUri=new Uri($"https://github.com/yd043105-pixel/gyomutalk-{(product=="server"?"server":"windows")}/releases/tag/v{offer.Version.ToString(3)}")};
+        link.RequestNavigate+=(_,e)=>{try{Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri){UseShellExecute=true})?.Dispose();}catch(System.ComponentModel.Win32Exception){}};
+        more.Inlines.Add(link);notes.Children.Add(more);
         var card=new Border{CornerRadius=new CornerRadius(12),BorderThickness=new Thickness(1),Padding=new Thickness(16,14,16,14),
             Child=new ScrollViewer{MaxHeight=Math.Min(320,SystemParameters.WorkArea.Height-320),VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Content=notes}};
         card.SetResourceReference(Border.BackgroundProperty,"Canvas");card.SetResourceReference(Border.BorderBrushProperty,"Line");

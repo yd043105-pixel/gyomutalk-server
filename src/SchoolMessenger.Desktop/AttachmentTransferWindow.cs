@@ -21,7 +21,7 @@ static class AttachmentTransferWindow
         var pause=new Button{Content="일시 중지",HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,12,0,0)};panel.Children.Add(pause);
         window.Content=panel;
         var finished=false;var saved=false;ExceptionDispatchInfo? error=null;
-        pause.Click+=(_,_)=>{pause.IsEnabled=false;status.Text="중지 중… 같은 이름과 위치를 선택하면 이어받을 수 있습니다.";cancellation.Cancel();};
+        pause.Click+=(_,_)=>{pause.IsEnabled=false;status.Text="중지 중… 같은 파일을 다시 받으면 이어서 받습니다(다른 이름으로 저장했다면 같은 이름과 위치를 고르세요).";cancellation.Cancel();};
         window.Closing+=(_,args)=>{if(!finished){args.Cancel=true;cancellation.Cancel();}};
         window.Loaded+=async(_,_)=>
         {

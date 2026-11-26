@@ -30,7 +30,9 @@ try {
     if($result -ne 'installed'){
         # Nobody is at the PC for an unattended update, so the administrator prompt would only wait; try again later instead.
         if($Unattended){throw 'Automatic installation is not available. Install the update from the 관리자 프로그램.'}
-        $setup=Start-Process -FilePath $Installer -ArgumentList @('/SILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-') -Wait -PassThru
+        # The teacher program's installer then leaves 자동 실행 as the teacher set it in the program.
+        $arguments=@('/SILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-');if($Product -eq 'windows'){$arguments+='/AUTOUPDATE=1'}
+        $setup=Start-Process -FilePath $Installer -ArgumentList $arguments -Wait -PassThru
         if($setup.ExitCode -notin @(0,3010)){throw "Installer returned $($setup.ExitCode). Existing application will be reopened."}
         $result='installed'
     }

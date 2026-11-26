@@ -80,6 +80,23 @@ public sealed partial class TimetableWindow
         body.Children.Add(tools);
         Button Tool(string label, Func<Task> action) { var b = AdminUi.Tone(new Button { Content = label, Margin = new Thickness(0, 0, 8, 8) }, label); if (label.Contains("승인")) b.SetResourceReference(StyleProperty, "PrimaryButton"); b.Click += async (_, _) => await Run(action); tools.Children.Add(b); return b; }
         Tool("새로고침", SwapQueue);
+        // How far apart traded lessons may be, for the whole school. A server without the setting shows no choice.
+        if (CanManageSchedule && setup.TryGetProperty("swapWeeks", out var range) && range.ValueKind == JsonValueKind.Number)
+        {
+            (int Weeks, string Label)[] choices = [(0, "같은 주만"), (1, "다음 주까지"), (2, "2주 뒤까지"), (3, "3주 뒤까지"), (4, "4주 뒤까지")];
+            var label = AdminUi.Label("교체할 수 있는 범위", "Muted", 12); label.VerticalAlignment = VerticalAlignment.Center; label.Margin = new Thickness(8, 0, 6, 8);
+            var weeks = new ComboBox { ItemsSource = choices.Select(c => c.Label).ToArray(), Width = 130, Margin = new Thickness(0, 0, 8, 8), VerticalAlignment = VerticalAlignment.Center,
+                SelectedIndex = Array.FindIndex(choices, c => c.Weeks == range.GetInt32()), ToolTip = "선생님들이 수업 교체에서 몇 주 떨어진 수업끼리 바꿀 수 있는지 정합니다." };
+            System.Windows.Automation.AutomationProperties.SetName(weeks, "교체할 수 있는 범위");
+            weeks.SelectionChanged += async (_, _) => await Run(async () =>
+            {
+                if (weeks.SelectedIndex < 0) return;
+                await api.Send<TimetableSwapRange>(HttpMethod.Put, "api/timetable/swap-range", new TimetableSwapRange(choices[weeks.SelectedIndex].Weeks));
+                setup = await api.Get<JsonElement>("api/timetable/setup");
+                feedback.Text = $"이제 선생님들이 {choices[weeks.SelectedIndex].Label} 수업을 바꿀 수 있습니다.";
+            });
+            tools.Children.Add(label); tools.Children.Add(weeks);
+        }
         var selectedRequests = new Dictionary<string, CheckBox>();
         if (CanManageSchedule && rows.Any(s => s.Status == "pending"))
         {
@@ -108,6 +125,9 @@ public sealed partial class TimetableWindow
             else head.Children.Add(AdminUi.Label(swap.OwnerName, "Ink", 14, true));
             var badge = AdminUi.Badge(StatusLabel(swap.Status), swap.Status switch { "approved" => "Success", "rejected" => "Danger", "cancelled" => "", _ => "Warning" });
             badge.Margin = new Thickness(10, 0, 0, 0); head.Children.Add(badge);
+            // A trade between weeks moves a lesson of one week into another: worth a look before approving.
+            if (swap.Changes.Select(c => TimetableDate(c.Position.Date)).Select(d => d.AddDays(-((int)d.DayOfWeek + 6) % 7)).Distinct().Count() > 1)
+            { var across = AdminUi.Badge("다른 주와 교체", ""); across.Margin = new Thickness(6, 0, 0, 0); head.Children.Add(across); }
             panel.Children.Add(head);
             var decisions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 8, 0, 0) };
             foreach (var change in swap.Changes) panel.Children.Add(Text(SwapLine(change), 12));

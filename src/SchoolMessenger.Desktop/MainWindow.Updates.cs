@@ -104,6 +104,10 @@ public partial class MainWindow
         if (offer.Version != new Version(0, 0, 10) || offer.Sections.Count == 0 || offer.Sections[0].Items.Length == 0) throw new InvalidOperationException("업데이트 피드의 변경 내용 오류");
         // The automatic server update downloads this file itself and hands this signature to the SYSTEM task.
         if (offer.Url != "https://example.invalid/x.exe" || offer.Signature != "c2lnbmF0dXJl" || offer.Length != 1234) throw new InvalidOperationException("업데이트 피드의 설치파일 정보 오류");
+        // Before installing only a few short lines show: the release's own, or else the names of what changed.
+        if (offer.Brief.Length != 1 || !offer.Brief[0].Contains(offer.Sections[0].Name)) throw new InvalidOperationException("요약 없는 피드의 짧은 안내 오류");
+        var brief = DesktopUpdater.UpdateOffer.Parse(Feed("0.0.10", "<gyomutalk:brief>[\"첫째 줄\",\"둘째 줄\",\"셋째 줄\",\"넷째 줄\"]</gyomutalk:brief>")) ?? throw new InvalidOperationException("요약 피드를 읽지 못했습니다.");
+        if (!brief.Brief.SequenceEqual(["첫째 줄", "둘째 줄", "셋째 줄"])) throw new InvalidOperationException("업데이트 짧은 안내는 세 줄까지여야 합니다.");
         if (DesktopUpdater.UpdateOffer.Parse(Feed("0.0.9", "")) is not { Sections.Count: 0 }) throw new InvalidOperationException("변경 내용 없는 피드 처리 오류");
         if (DesktopUpdater.UpdateOffer.Parse("<rss><channel/></rss>") is not null) throw new InvalidOperationException("빈 피드에서 새 버전을 찾았습니다.");
         var choice = DesktopUpdater.ShowOffer(this, offer, "0.0.9", "교무톡", dialog => Dispatcher.BeginInvoke(new Action(() =>
@@ -112,5 +116,9 @@ public partial class MainWindow
             ((DockPanel)((StackPanel)((DockPanel)dialog.Content).Children[1]).Children[1]).Children.OfType<Button>().Single(b => b.IsCancel).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         }), System.Windows.Threading.DispatcherPriority.ApplicationIdle));
         if (choice != "later") throw new InvalidOperationException("업데이트 안내 '나중에' 처리 오류");
+        // At the start of the program the window counts down and installs without a click.
+        var started = DateTime.UtcNow;
+        var automatic = DesktopUpdater.ShowOffer(this, brief, "0.0.9", "교무톡", dialog => Dispatcher.BeginInvoke(new Action(() => SavePreview(dialog, "artifacts/update-offer-automatic-preview.png")), System.Windows.Threading.DispatcherPriority.ApplicationIdle), countdown: 2);
+        if (automatic != "install" || DateTime.UtcNow - started < TimeSpan.FromSeconds(1.5)) throw new InvalidOperationException("시작할 때 업데이트 자동 설치(카운트다운) 오류");
     }
 }

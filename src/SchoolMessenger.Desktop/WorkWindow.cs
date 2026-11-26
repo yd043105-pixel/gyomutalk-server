@@ -196,7 +196,13 @@ public sealed class WorkWindow : Window
         if(mine){var required=targets.Where(t=>!t.GetProperty("exempt").GetBoolean()).ToArray();var submitted=required.Count(t=>t.GetProperty("submittedAt").ValueKind!=JsonValueKind.Null);var summary=Text($"제출 {submitted}/{required.Length}명 · 미제출 {required.Length-submitted}명 · 면제 {targets.Length-required.Length}명",13);summary.Margin=new Thickness(0);detail.Children.Add(Card(summary,"Pale"));}
         if (mine)
         {
-            var actions=new WrapPanel();actions.Children.Add(Action("파일 일괄 다운로드 (ZIP)", async () => { var dialog = new Microsoft.Win32.SaveFileDialog { FileName = "제출파일.zip", Filter = "ZIP 파일|*.zip" }; if (dialog.ShowDialog(this) == true) await api.DownloadPath($"api/submission-requests/{id}/zip", dialog.FileName); },true));
+            // The ZIP goes to the same folder as other received files; right-click chooses another place.
+            async Task Zip(string? path) { if (path is null) return; await api.DownloadPath($"api/submission-requests/{id}/zip", path); feedback.Text = Downloads.Saved(path); }
+            string? ZipAs() { var dialog = new Microsoft.Win32.SaveFileDialog { FileName = "제출파일.zip", Filter = "ZIP 파일|*.zip", InitialDirectory = Downloads.Folder }; return dialog.ShowDialog(this) == true ? dialog.FileName : null; }
+            var zip = Action("파일 일괄 다운로드 (ZIP)", () => Zip(Downloads.FreePath("제출파일.zip")), true);
+            zip.ContextMenu = Downloads.Menu(() => Run(() => Zip(Downloads.FreePath("제출파일.zip"))), () => Run(() => Zip(ZipAs())));
+            zip.ToolTip = "누르면 GyomutalkFiles 폴더에 받습니다 · 오른쪽 클릭: 다른 이름으로 저장";
+            var actions=new WrapPanel();actions.Children.Add(zip);
             var waiting=targets.Where(t=>!t.GetProperty("exempt").GetBoolean()&&t.GetProperty("submittedAt").ValueKind==JsonValueKind.Null).Select(t=>String(t,"id")).ToArray();
             if (!closed && waiting.Length>0) actions.Children.Add(Action($"미제출자 {waiting.Length}명에게 알림", async () => { var title=String(request,"title");var due=DateTimeOffset.FromUnixTimeMilliseconds(request.GetProperty("deadline").GetInt64()).ToOffset(TimeSpan.FromHours(9)).ToString("M월 d일 HH:mm"); await main.WriteMessage(title: "제출 안내: "+title, recipients: waiting, body: $"‘{title}’ 제출 마감은 {due}입니다. 아직 제출하지 않으셨다면 교무톡의 ‘할 일과 파일 제출’에서 제출해 주세요."); }));
             if (!closed) actions.Children.Add(Action("요청 종료", async () => { if (Notice.Show(this, "새 제출과 자동 알림을 종료할까요?", "제출 요청 종료", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return; await api.Send<JsonElement>(HttpMethod.Post, $"api/submission-requests/{id}/close"); await Submission(id); }));detail.Children.Add(actions);
@@ -224,7 +230,8 @@ public sealed class WorkWindow : Window
                 if (attachment.Expired){filename.Margin=new Thickness(0,6,0,0);targetDetails.Children.Add(filename);}
                 else
                 {
-                    var download=Action(attachment.Name, async () => { var dialog = new Microsoft.Win32.SaveFileDialog { FileName = attachment.Name }; if (dialog.ShowDialog(this) == true) await AttachmentTransferWindow.Save(this,api,attachment.Id,dialog.FileName); });
+                    var download=Action(attachment.Name, () => Downloads.Receive(this, api, () => attachment, action => action(), text => feedback.Text = text));
+                    Downloads.Wire(download, this, () => api, () => attachment, Run, text => feedback.Text = text);
                     download.Content=filename;download.HorizontalContentAlignment=HorizontalAlignment.Stretch;download.MinWidth=0;download.Padding=new Thickness(4,3,4,3);download.Margin=new Thickness(0,6,0,0);download.ToolTip=attachment.Description;download.Tag="submission-file";
                     System.Windows.Automation.AutomationProperties.SetName(download,attachment.Description);targetDetails.Children.Add(download);
                 }

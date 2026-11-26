@@ -209,8 +209,12 @@ public partial class ChatWindow : Window
     async void MessageKey(object sender, KeyEventArgs e) { if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Shift) == 0) { e.Handled = true; await Run(SendMessage); } }
     async void Download(object sender, RoutedEventArgs e)
     {
-        if (((Button)sender).Tag is not Attachment file) return;
-        var dialog = new Microsoft.Win32.SaveFileDialog { FileName = file.Name };
-        if (dialog.ShowDialog(this) == true) await Run(async () => { await AttachmentTransferWindow.Save(this,main.Api!,file.Id,dialog.FileName); });
+        var button = (Button)sender;
+        await Downloads.Receive(this, main.Api, () => button.Tag as Attachment, Run, text => Feedback.Text = text);
+    }
+    void DownloadLoaded(object sender, RoutedEventArgs e)
+    {
+        var button = (Button)sender;
+        Downloads.Wire(button, this, () => main.Api, () => button.Tag as Attachment, Run, text => Feedback.Text = text);
     }
 }

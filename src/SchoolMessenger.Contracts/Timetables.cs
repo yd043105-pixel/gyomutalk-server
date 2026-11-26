@@ -40,7 +40,9 @@ public sealed record TimetableSwapCreate(string Id, long Revision, TimetableExch
 public sealed record TimetableSwapDecision(string Status);
 public sealed record TimetablePlanSlot(TimetablePosition Position, TimetableSlot Lesson, bool Mine, string? BundleName = null);
 // Overlaps: lessons the request being drafted leaves at the same time as another lesson of their teacher.
-public sealed record TimetableSwapPlan(long Revision, TimetablePlanSlot[] Slots, TimetablePosition[]? Overlaps = null, TimetableUnavailable[]? Unavailable = null);
+public sealed record TimetableSwapPlan(long Revision, TimetablePlanSlot[] Slots, TimetablePosition[]? Overlaps = null, TimetableUnavailable[]? Unavailable = null, int? SwapWeeks = null);
+// How many school weeks apart two traded lessons may be (0: the same week only). The timetable manager sets it for the school.
+public sealed record TimetableSwapRange(int Weeks);
 public sealed record TimetableSwapChange(TimetablePosition Position, TimetableSlot Before, TimetableSlot After);
 public sealed record TimetableSwap(
     string Id, string Owner, string OwnerName, string Status, string Reason, long CreatedAt,

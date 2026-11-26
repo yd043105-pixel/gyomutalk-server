@@ -51,6 +51,7 @@ public partial class MainWindow : Window
         AutoStartCheck.IsChecked = AutoStartMenu.IsChecked = startup.Enabled;
         startupReady = true;
         schoolPick = new SchoolPicker(SchoolSearch); SchoolField.Children.Add(schoolPick.Choice); schoolPick.Changed += SchoolPicked;
+        var firstRun = !File.Exists(Path.Combine(LocalDirectory, "preferences.json"));
         try
         {
             var file = Path.Combine(LocalDirectory, "preferences.json");
@@ -59,6 +60,9 @@ public partial class MainWindow : Window
         }
         catch (Exception error) when (error is IOException or JsonException) { LoginMessage("설정을 읽지 못했습니다. 서버 주소를 확인하세요."); }
         loginOptionsReady = true;
+        // The first start of the teacher program: it starts with Windows and keeps the sign-in on this Windows account,
+        // as most teachers want. Both stay one untick away on the sign-in screen.
+        if (firstRun && !Environment.GetCommandLineArgs().Any(x => x.StartsWith("--", StringComparison.Ordinal))) ApplyFirstRunDefaults();
         // First run: look for the school server on the LAN so the teacher only picks it and confirms the code.
         if (string.IsNullOrWhiteSpace(ServerAddress.Text) && !Environment.GetCommandLineArgs().Any(x => x.StartsWith("--", StringComparison.Ordinal))) Loaded += async (_, _) => await FindSchoolServer();
         tray = new System.Windows.Forms.NotifyIcon { Icon = Branding.TrayIcon, Text = "교무톡", Visible = true }; Branding.TrayFor(tray);
@@ -82,6 +86,17 @@ public partial class MainWindow : Window
             if (startup.Enabled) { try { startup.SetEnabled(true); } catch (Exception error) { LoginMessage("자동 실행 설정을 갱신하지 못했습니다: " + error.Message); } }
             if (RememberLogin.IsChecked == true) { await TryAutomaticLogin(); if (savedLogin.Exists) timer.Start(); }
         };
+    }
+    internal void ApplyFirstRunDefaults()
+    {
+        // A choice made in the installer (자동 실행 unticked there) is kept.
+        if (!File.Exists(Path.Combine(LocalDirectory, "startup-chosen.txt")))
+        {
+            try { startup.SetEnabled(true); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Security.SecurityException or InvalidOperationException) { LoginMessage("자동 실행 설정 실패: " + error.Message); }
+            startupReady = false; AutoStartCheck.IsChecked = AutoStartMenu.IsChecked = startup.Enabled; startupReady = true;
+        }
+        RememberLogin.IsChecked = true; SavePreferences();
     }
     public void SavePreferences() => File.WriteAllText(Path.Combine(LocalDirectory, "preferences.json"), JsonSerializer.Serialize(new Preferences(ServerAddress.Text, UsernameBox.Text, Quiet.IsChecked, Favorites.ToArray(), DoNotDisturb.IsChecked, RememberLogin.IsChecked == true, Appearance.Selected, Appearance.Glass,AutomaticAwayMinutes,schoolPick.Selected?.Name ?? SchoolSearch.Text.Trim(),schoolPick.Selected?.Address ?? "",MutedRooms.ToArray(),CompactRoster)));
     // 작게 보기: one short line per person, so a long staff list fits on the screen and folders are found with little scrolling.
@@ -527,6 +542,15 @@ public partial class MainWindow : Window
         {
             VerifyUpdateNotice();
             VerifyUpdateOffer();
+            // Received files get a plain, free name in the files folder, whatever name the sender gave.
+            if (Downloads.CleanName(@"..\..\다른 폴더\CON.txt") != "_CON.txt" || Downloads.CleanName("a<b>.pdf") != "a_b_.pdf" || Downloads.CleanName("  ") != "받은 파일")
+                throw new InvalidOperationException("받은 파일 이름 정리 오류");
+            var received = Downloads.FreePath("가상 보고서.pdf"); File.WriteAllText(received, "synthetic");
+            if (Path.GetDirectoryName(received) != Downloads.Folder || Path.GetFileName(Downloads.FreePath("가상 보고서.pdf")) != "가상 보고서 (2).pdf") throw new InvalidOperationException("받은 파일 폴더·같은 이름 처리 오류");
+            File.Delete(received);
+            // A first start comes with 자동 실행 and 자동 로그인 ticked.
+            ApplyFirstRunDefaults();
+            if (!startup.Enabled || AutoStartCheck.IsChecked != true || RememberLogin.IsChecked != true) throw new InvalidOperationException("첫 실행 기본값(자동 실행·자동 로그인) 설정 실패");
             var loginPreview=Path.Combine(Path.GetDirectoryName(Path.GetFullPath(Environment.GetEnvironmentVariable("SCHOOL_UI_OUTPUT")??"artifacts/client-preview.png"))!,"school-login.png");
             Directory.CreateDirectory(Path.GetDirectoryName(loginPreview)!);SavePreview(this,loginPreview);
             try { startup.SetEnabled(true); if (!startup.Enabled || !WindowsStartup.Command.EndsWith(" --startup", StringComparison.Ordinal)) throw new InvalidOperationException("자동 실행 등록 실패"); }

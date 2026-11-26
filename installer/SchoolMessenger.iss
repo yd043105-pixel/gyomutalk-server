@@ -53,7 +53,7 @@ Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "바탕화면 바로가기 만들기"; GroupDescription: "바로가기:"; Flags: unchecked
-Name: "autostart"; Description: "Windows 로그인 시 메신저 자동 실행"; GroupDescription: "자동 실행:"; Flags: unchecked
+Name: "autostart"; Description: "Windows 로그인 시 메신저 자동 실행"; GroupDescription: "자동 실행:"
 
 [Files]
 Source: "{#ClientDirectory}\*"; DestDir: "{app}"; Excludes: "*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -64,14 +64,20 @@ Name: "{group}\교무톡 제거"; Filename: "{uninstallexe}"
 Name: "{userdesktop}\{#DesktopLinkName}"; Filename: "{app}\SchoolMessenger.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\SchoolMessenger.exe"; Parameters: "--configure-startup enable --startup-entry-name {#StartupEntryName}"; Tasks: autostart; Flags: runhidden
-Filename: "{app}\SchoolMessenger.exe"; Parameters: "--configure-startup disable --startup-entry-name {#StartupEntryName}"; Tasks: not autostart; Flags: runhidden
+; The program updating itself (/AUTOUPDATE=1) leaves 자동 실행 as the teacher set it in the program.
+Filename: "{app}\SchoolMessenger.exe"; Parameters: "--configure-startup enable --startup-entry-name {#StartupEntryName}"; Tasks: autostart; Flags: runhidden; Check: not AutomaticUpdate
+Filename: "{app}\SchoolMessenger.exe"; Parameters: "--configure-startup disable --startup-entry-name {#StartupEntryName}"; Tasks: not autostart; Flags: runhidden; Check: not AutomaticUpdate
 Filename: "{app}\SchoolMessenger.exe"; Description: "교무톡 실행"; Flags: nowait postinstall skipifsilent
 
 [Messages]
 SetupAppRunningError=교무톡가 실행 중입니다.%n%n작업 표시줄 알림 영역의 메신저 아이콘을 우클릭하여 '종료'한 뒤 다시 시도하세요.
 
 [Code]
+function AutomaticUpdate(): Boolean;
+begin
+  Result := ExpandConstant('{param:AUTOUPDATE|0}') = '1';
+end;
+
 function InitializeSetup(): Boolean;
 var Installed: String; OldVersion, NewVersion: Int64; Suffix: Integer;
 begin

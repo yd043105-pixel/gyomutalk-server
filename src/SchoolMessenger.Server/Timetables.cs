@@ -60,7 +60,7 @@ public sealed partial class Timetables
         service.MapSwaps(api);
         api.MapGet("/setup",(HttpContext c)=>Safe(()=>Results.Ok(new{canManage=service.Manager(User(c)),isAdmin=service.school.GetUser(User(c))!.IsAdmin,
             classes=service.Directory().Classes,teachers=service.school.Users().Where(u=>u.Active).Select(u=>new{u.Id,u.Name,u.Department,u.Username}),homerooms=service.Homerooms(),myClasses=service.Homerooms().Where(h=>h.TeacherId==User(c)).Select(h=>h.ClassId),
-            revision=service.Data.Revision,pending=0,error=(string?)null})));
+            revision=service.Data.Revision,swapWeeks=service.SwapWeeks,pending=0,error=(string?)null})));
         api.MapGet("/day",(string? date,string? classId,bool? mine,HttpContext c)=>Safe(()=>
         {
             var rooms=service.Directory().Classes;if(classId is not null&&!rooms.Any(r=>r.Id==classId))return Results.NotFound();
