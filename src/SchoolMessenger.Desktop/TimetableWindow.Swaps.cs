@@ -97,6 +97,9 @@ public sealed partial class TimetableWindow
             });
             tools.Children.Add(label); tools.Children.Add(weeks);
         }
+        // Weekly times (creative activities) that only the timetable manager trades. A server without them shows no button.
+        if (CanManageSchedule && setup.TryGetProperty("fixedTimes", out var fixedTimes) && fixedTimes.ValueKind == JsonValueKind.Array)
+            Tool(fixedTimes.GetArrayLength() == 0 ? "교체하지 않는 시간 정하기" : $"교체하지 않는 시간 {fixedTimes.GetArrayLength()}개", FixedTimesEditor);
         var selectedRequests = new Dictionary<string, CheckBox>();
         if (CanManageSchedule && rows.Any(s => s.Status == "pending"))
         {

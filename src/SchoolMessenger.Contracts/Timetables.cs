@@ -38,11 +38,14 @@ public sealed record TimetableBundleRule(string Id, string Name, TimetableBundle
 public sealed record TimetableBaseLesson(string ClassId, string ClassName, int Grade, string Subject, string Teachers, int Hours);
 public sealed record TimetableSwapCreate(string Id, long Revision, TimetableExchange[] Exchanges, string[]? Dependencies, string? Reason);
 public sealed record TimetableSwapDecision(string Status);
-public sealed record TimetablePlanSlot(TimetablePosition Position, TimetableSlot Lesson, bool Mine, string? BundleName = null);
+// Fixed: the lesson sits in a time the timetable manager keeps out of trades (for example creative activities); only they move it.
+public sealed record TimetablePlanSlot(TimetablePosition Position, TimetableSlot Lesson, bool Mine, string? BundleName = null, bool Fixed = false);
 // Overlaps: lessons the request being drafted leaves at the same time as another lesson of their teacher.
 public sealed record TimetableSwapPlan(long Revision, TimetablePlanSlot[] Slots, TimetablePosition[]? Overlaps = null, TimetableUnavailable[]? Unavailable = null, int? SwapWeeks = null);
 // How many school weeks apart two traded lessons may be (0: the same week only). The timetable manager sets it for the school.
 public sealed record TimetableSwapRange(int Weeks);
+// A weekly time kept out of trades: weekday 1 (Monday) to 5, a period, and a grade (0: every grade). Only the timetable manager trades lessons in it.
+public sealed record TimetableFixedTime(int Weekday, int Period, int Grade = 0);
 public sealed record TimetableSwapChange(TimetablePosition Position, TimetableSlot Before, TimetableSlot After);
 public sealed record TimetableSwap(
     string Id, string Owner, string OwnerName, string Status, string Reason, long CreatedAt,

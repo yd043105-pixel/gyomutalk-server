@@ -315,6 +315,25 @@ try{
  assert.ok(sentAcross.changes.some(c=>c.position.date===tuesday)&&sentAcross.changes.some(c=>c.position.date===nextTue));
  await homeroom.request('timetable/swaps/'+sentAcross.id+'/decision','POST',{status:'cancelled'});
  check('a lesson trades with one in the next week as far as the school allows, and the timetable manager sets how far');
+ // Times kept out of trades (creative activities): the same weekday and period every week, set by the timetable manager.
+ const fixTimes=(times,status)=>duty.request('timetable/fixed-times','PUT',times,status);
+ await teacher.request('timetable/fixed-times','PUT',[{weekday:2,period:1,grade:0}],403);
+ await fixTimes([{weekday:6,period:1,grade:0}],400);
+ assert.deepEqual(await fixTimes([{weekday:2,period:1,grade:0}]),[{weekday:2,period:1,grade:0}]);
+ assert.equal((await homeroom.request('timetable/setup')).fixedTimes.length,1);
+ const fixedPlan=await homeroom.request('timetable/swap-plan','POST',{dates:[tuesday,nextTue],dependencies:[]});
+ assert.ok(fixedPlan.slots.filter(s=>s.position.period===1).every(s=>s.fixed)&&fixedPlan.slots.filter(s=>s.position.period!==1).every(s=>!s.fixed));
+ assert.deepEqual(await acrossOptions([nextTue]),[]);
+ assert.ok((await sendAcross(403)).error.includes('교체하지 않는 시간'));
+ const byManager=await duty.request('timetable/swap-options','POST',{dates:[nextTue],dependencies:[],exchanges:[],pick:tue(firstClass,1)});
+ assert.deepEqual(byManager.map(o=>o.target),across.map(o=>o.target),'the timetable manager still trades a fixed lesson');
+ // Another grade's fixed time leaves this class alone; a fixed target is never offered.
+ await fixTimes([{weekday:2,period:1,grade:2}]);
+ assert.ok((await acrossOptions([nextTue])).length>0);
+ await fixTimes([{weekday:2,period:2,grade:0}]);
+ assert.ok((await acrossOptions([nextTue])).every(o=>o.target.period!==2));
+ assert.deepEqual(await fixTimes([]),[]);
+ check('the timetable manager keeps weekly times out of trades, and only they trade lessons in them');
 
  // Asked to empty a period, the server answers with whole requests that do it, same-day trades first.
  const week5=[0,1,2,3,4].map(n=>dayText(date(n)));
@@ -328,10 +347,23 @@ try{
  }
  const firstOtherDay=ideas.findIndex(i=>!i.sameDay);
  assert.ok(firstOtherDay<0||ideas.slice(firstOtherDay).every(i=>!i.sameDay),'same-day ways come first');
+ const tier=i=>i.sameDay?0:i.exchanges.every(e=>week5.includes(e.first.date)&&week5.includes(e.second.date))?1:2;
+ assert.deepEqual(ideas.map(tier),ideas.map(tier).sort(),'same day, then the rest of the week, then the next week');
  const suggested=await teacher.request('timetable/swaps','POST',{id:uid(),revision:shown.revision,exchanges:ideas[0].exchanges,dependencies:[],reason:'출장'});
  await teacher.request('timetable/swaps/'+suggested.id+'/decision','POST',{status:'cancelled'});
  await teacher.request('timetable/swap-suggestions','POST',{dates:week5,dependencies:[],exchanges:[],vacate:[{date:tuesday,period:1}]},400);
  check('a period to empty gets whole requests that free it, keep every rule and marked period, and list same-day trades first');
+ // When nothing in its own week will do, the helper looks in the weeks lessons may trade across, and no further.
+ const allWeek=week5.flatMap(d=>[1,2].map(period=>({date:d,period})));
+ await teacher.request('timetable/unavailable','PUT',{dates:week5,times:allWeek});
+ const later=await teacher.request('timetable/swap-suggestions','POST',{dates:week5,dependencies:[],exchanges:[],vacate:[{date:wednesday,period:1}]});
+ assert.ok(later.length>0&&later.every(i=>i.exchanges.some(e=>!week5.includes(e.second.date)||!week5.includes(e.first.date))),JSON.stringify(later));
+ assert.ok(later.every(i=>i.exchanges.flatMap(e=>[e.first.date,e.second.date]).every(d=>d<dayText(date(14)))),'searched past the allowed range');
+ await duty.request('timetable/swap-range','PUT',{weeks:0});
+ assert.deepEqual(await teacher.request('timetable/swap-suggestions','POST',{dates:week5,dependencies:[],exchanges:[],vacate:[{date:wednesday,period:1}]}),[]);
+ await duty.request('timetable/swap-range','PUT',{weeks:1});
+ await teacher.request('timetable/unavailable','PUT',{dates:week5,times:[]});
+ check('the swap helper finds trades in the next week when its own week has none, within the range the school allows');
  // Two accounts share one name: the name alone cannot tell them apart, so the manager picks an account for each subject it teaches, once.
  const twinA=await person('same-a','가상동명'),twinB=await person('same-b','가상동명');
  const twins=book([{},{},{},{1:'전체시간표 (강의실)'},{1:`${year} 학년도 ${semester} 학기 1 학년`},{1:'일자',2:'교시',3:'1학년'},{3:'1(1학년 1반)',4:'2(1학년 2반)'},{1:caption(4),2:'1.0',3:'수학(가상동명)',4:'영어(가상동명)'},{2:'2.0',3:lesson(1,4,1),4:lesson(2,4,1)}],['B8:B9']);

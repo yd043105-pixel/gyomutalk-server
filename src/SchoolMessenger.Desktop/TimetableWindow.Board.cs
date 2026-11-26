@@ -133,6 +133,7 @@ public sealed partial class TimetableWindow
         Key("내 수업", "Pale"); Key("바꿀 수 있는 수업", "SuccessTint"); Key("이번 신청으로 바뀐 칸", "ChangeTint");
         // Shown only while the request has one, so the legend still fits a small window.
         if (boardPlan.Overlaps is { Length: > 0 }) Key("겹친 수업", "WarningTint");
+        if (boardPlan.Slots.Any(s => s.Fixed)) Key("교체하지 않는 시간", "Line");
         var bundleKey = AdminUi.Label("◆ 묶음수업 · 같은 색은 같은 묶음", "Muted", 12); bundleKey.TextWrapping = TextWrapping.NoWrap; legend.Children.Add(bundleKey);
         if (boardPlan.Unavailable is { Length: > 0 }) { var markKey = AdminUi.Label("   ⊘·불가 수업 불가 표시", "Muted", 12); markKey.TextWrapping = TextWrapping.NoWrap; legend.Children.Add(markKey); }
 
@@ -296,10 +297,10 @@ public sealed partial class TimetableWindow
                         var text = new TextBlock { TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, TextWrapping = TextWrapping.NoWrap, Margin = new Thickness(1, 0, 1, 0), FontSize = 11 };
                         text.Inlines.Add(room); text.Inlines.Add(gap); text.Inlines.Add(subject); texts.Add((text, gap, subject, first.Lesson.Subject));
                         cell.Child = text;
-                        cell.Tag = lessons.Any(l => overlaps.Contains(l.Position)) ? "overlap" : lessons.Any(l => changed.Contains(l.Position)) ? "changed" : first.Mine ? "mine" : "lesson";
+                        cell.Tag = lessons.Any(l => overlaps.Contains(l.Position)) ? "overlap" : lessons.Any(l => changed.Contains(l.Position)) ? "changed" : first.Fixed ? "fixed" : first.Mine ? "mine" : "lesson";
                         cell.ToolTip = string.Join("\n", lessons.Select(l => $"{l.Lesson.ClassName} {l.Position.Period}교시 · {l.Lesson.Subject} ({l.Lesson.TeacherName})" +
                             (l.BundleName is null ? "" : " · 묶음 " + l.BundleName) + (changed.Contains(l.Position) ? " · 이번 신청으로 바뀜" : "") + (waiting.Contains(l.Position) ? " · 대기 중인 신청 있음" : "") + (overlaps.Contains(l.Position) ? " · 같은 시간에 수업이 겹침" : ""))) +
-                            (marked ? "\n이 시간은 수업할 수 없다고 표시함" : "");
+                            (marked ? "\n이 시간은 수업할 수 없다고 표시함" : "") + (first.Fixed ? "\n교체하지 않는 시간 · 시간표 담당자만 바꿀 수 있습니다" : "");
                         cell.Cursor = Cursors.Hand;
                         if (string.CompareOrdinal(dates[d], today) < 0) cell.Opacity = 0.45;
                         foreach (var lesson in lessons) boardCells[lesson.Position] = cell;
@@ -372,7 +373,7 @@ public sealed partial class TimetableWindow
         if (kind == "empty") cell.Background = System.Windows.Media.Brushes.Transparent;
         // A lesson of a bundle wears its bundle's colour; picking, options and changes still show over it.
         else if (kind is "lesson" or "mine" && BundleTint.TryGetValue(cell, out var tint)) cell.Background = tint;
-        else cell.SetResourceReference(Border.BackgroundProperty, kind switch { "option" => "SuccessTint", "overlap" => "WarningTint", "blocked" => "Subtle", "changed" => "ChangeTint", "mine" or "pick" => "Pale", _ => "Surface" });
+        else cell.SetResourceReference(Border.BackgroundProperty, kind switch { "option" => "SuccessTint", "overlap" => "WarningTint", "blocked" => "Subtle", "fixed" => "Line", "changed" => "ChangeTint", "mine" or "pick" => "Pale", _ => "Surface" });
         // An orange-edged cell can be taken too, but it leaves a teacher with two lessons until one more is moved.
         cell.SetResourceReference(Border.BorderBrushProperty, kind switch { "option" => "Success", "overlapOption" or "overlap" => "Warning", "pick" => "Blue", _ => dayStart ? "LineStrong" : "Line" });
         cell.BorderThickness = kind is "option" or "pick" or "overlapOption" ? new Thickness(2) : new Thickness(dayStart ? 2 : 1, 0, 0, 1);
@@ -412,6 +413,8 @@ public sealed partial class TimetableWindow
         if (!slot.Mine && !CanManageSchedule && slot.BundleName is null)
         { feedback.Text = "내 수업만 옮길 수 있습니다. 내 수업은 파란색으로 표시됩니다."; return; }
         var what = $"{slot.Lesson.ClassName} {DayLabel(slot.Position.Date)} {slot.Position.Period}교시 {slot.Lesson.Subject}";
+        if (slot.Fixed && !CanManageSchedule)
+        { feedback.Text = what + ": 시간표 담당자가 정한 ‘교체하지 않는 시간’(창의적 체험활동 등)이라 바꿀 수 없습니다. 꼭 바꿔야 하면 시간표 담당자에게 요청하세요."; return; }
         var away = !BoardDates.Contains(slot.Position.Date);
         var monday = TimetableDate(slot.Position.Date); monday = monday.AddDays(-((int)monday.DayOfWeek + 6) % 7);
         if (away && boardPlan?.SwapWeeks is { } allowed && Math.Abs((monday - boardWeek).Days) / 7 > allowed)
@@ -850,6 +853,7 @@ public sealed partial class TimetableWindow
         await api.Send<TimetableSwap>(HttpMethod.Post, "api/timetable/swaps", new TimetableSwapCreate(boardRequestId, boardPlan.Revision, BoardExchanges!, boardDependencies, boardReason));
         boardMoves.Clear();
         await SwapQueue(); UpdateLayout(); capture("timetable-swap-queue");
+        if (CanManageSchedule && setup.TryGetProperty("fixedTimes", out _)) await VerifyFixedTimes(pick, capture, captureWindow);
         await BaseEditor(); UpdateLayout();
         // Grade, then subject, then the classes that run it: two ticks make a bundle that can be saved.
         static IEnumerable<T> Under<T>(DependencyObject parent) where T : DependencyObject
