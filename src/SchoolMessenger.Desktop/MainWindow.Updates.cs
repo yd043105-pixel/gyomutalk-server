@@ -120,5 +120,15 @@ public partial class MainWindow
         var started = DateTime.UtcNow;
         var automatic = DesktopUpdater.ShowOffer(this, brief, "0.0.9", "교무톡", dialog => Dispatcher.BeginInvoke(new Action(() => SavePreview(dialog, "artifacts/update-offer-automatic-preview.png")), System.Windows.Threading.DispatcherPriority.ApplicationIdle), countdown: 2);
         if (automatic != "install" || DateTime.UtcNow - started < TimeSpan.FromSeconds(1.5)) throw new InvalidOperationException("시작할 때 업데이트 자동 설치(카운트다운) 오류");
+        // A server PC installs by itself with nobody watching, so the note afterwards carries the few lines instead.
+        var done = DesktopUpdater.Completed(true, brief.Brief);
+        if (!done.Contains("• 첫째 줄") || done.Contains("넷째 줄") || DesktopUpdater.Completed(true, []).Contains("바뀐 내용") || DesktopUpdater.Completed(false, brief.Brief).Contains("첫째 줄"))
+            throw new InvalidOperationException("업데이트 완료 안내의 바뀐 내용 오류");
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            var note = Application.Current.Windows.OfType<Window>().First(w => w.IsVisible && w.Title == "프로그램 업데이트");
+            SavePreview(note, "artifacts/update-completed-preview.png"); note.Close();
+        }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        Notice.Show(this, DesktopUpdater.Completed(true, ["교체 판에서 다음 주 수업과 바꿀 수 있습니다", "받은 파일이 문서\\GyomutalkFiles에 바로 저장됩니다", "교무톡을 켜면 바로 새 버전을 확인합니다"]), "프로그램 업데이트");
     }
 }

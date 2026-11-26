@@ -77,7 +77,8 @@ internal static class DesktopUpdater
                     using var outcome=JsonDocument.Parse(File.ReadAllText(result));var success=outcome.RootElement.GetProperty("success").GetBoolean();File.Delete(result);
                     // A version installed automatically once is tried automatically only once; after a failure it is offered instead.
                     if(success)File.Delete(Path.Combine(Folder,"automatic-attempt.txt"));
-                    Application.Current.Dispatcher.BeginInvoke(new Action(()=>Notice.Show(window,success?"프로그램 업데이트 설치를 완료했습니다. 서버관리자는 두 서버의 가동 상태를 확인하세요.":"업데이트 설치가 완료되지 않았습니다. 기존 프로그램으로 돌아왔습니다. 공식 릴리즈 설치파일과 Windows 권한을 확인하세요.","프로그램 업데이트")));
+                    var brief=InstalledBrief();
+                    Application.Current.Dispatcher.BeginInvoke(new Action(()=>Notice.Show(window,Completed(success,brief),"프로그램 업데이트")));
                 }
                 catch(Exception e)when(e is IOException or JsonException or InvalidOperationException or KeyNotFoundException) { }
             }
@@ -258,6 +259,19 @@ internal static class DesktopUpdater
             Application.Current.Dispatcher.BeginInvoke(new Action(async()=>{if(owner is LocalServerWindow manager)await manager.CancelUpdate();preparation=null;prepared=false;Notice.Show(owner,e.Message,"업데이트 시작 실패");}));return -1;
         }
     }
+    // The note after an update; an automatic one also lists what changed, since nobody saw it beforehand.
+    internal static string Completed(bool success,string[] brief)
+    {
+        if(!success)return "업데이트 설치가 완료되지 않았습니다. 기존 프로그램으로 돌아왔습니다. 공식 릴리즈 설치파일과 Windows 권한을 확인하세요.";
+        var text="프로그램 업데이트 설치를 완료했습니다(지금 버전 "+typeof(App).Assembly.GetName().Version!.ToString(3)+"). 서버관리자는 두 서버의 가동 상태를 확인하세요.";
+        return brief.Length==0?text:text+"\n\n이번에 바뀐 내용\n"+string.Join("\n",brief.Take(3).Select(line=>"• "+line));
+    }
+    static string[] InstalledBrief()
+    {
+        var path=Path.Combine(Folder,"installed-brief.json");
+        try{var lines=JsonSerializer.Deserialize<string[]>(File.ReadAllText(path))??[];File.Delete(path);return lines;}
+        catch(Exception e)when(e is IOException or UnauthorizedAccessException or JsonException){return [];}
+    }
     static bool Quiet(){var now=DateTime.Now;return now.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday||now.Hour>=18||now.Hour<7;}
     static bool TriedAutomatically(UpdateOffer offer){try{return File.ReadAllText(Path.Combine(Folder,"automatic-attempt.txt"))==offer.Version.ToString();}catch(Exception e)when(e is IOException or UnauthorizedAccessException){return false;}}
     static bool TaskRegistered()
@@ -287,7 +301,9 @@ internal static class DesktopUpdater
             pending=null;
             if(!(prepared=await manager.PrepareForUpdate(true)))return;
             File.WriteAllText(Path.Combine(Folder,"automatic-attempt.txt"),offer.Version.ToString());
-            if(Stage(file,offer.Signature,true)==1)Quit();
+            // Nobody saw the offer window, so its few lines are shown once the new version is running.
+            File.WriteAllText(Path.Combine(Folder,"installed-brief.json"),JsonSerializer.Serialize(offer.Brief));
+            if(Stage(file,offer.Signature,true)==1)Quit();else File.Delete(Path.Combine(Folder,"installed-brief.json"));
         }
         catch(Exception e)when(e is HttpRequestException or TaskCanceledException or IOException or UnauthorizedAccessException){}
         finally{installing=false;if(cache is not null)try{Directory.Delete(cache,true);}catch(Exception e)when(e is IOException or UnauthorizedAccessException){}}
