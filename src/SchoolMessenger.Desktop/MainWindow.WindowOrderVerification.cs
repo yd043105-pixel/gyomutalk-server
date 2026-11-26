@@ -101,8 +101,8 @@ public partial class MainWindow
             swapButton.TranslatePoint(new Point(),timetable).Y+swapButton.ActualHeight<=timetable.ActualHeight,
             "compact timetable keeps the schedule actions in the viewport");
         var next=Controls(timetable).OfType<Button>().Single(button=>System.Windows.Automation.AutomationProperties.GetName(button)=="다음");
-        // The made-up timetable covers two weeks (so a weekend run still has lessons ahead); the week after is empty.
-        for(var week=0;week<3&&!TextOnSchedule("아직 올라온 시간표가 없습니다");week++){next.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));await WaitUntil(()=>TextOnSchedule("아직 올라온 시간표가 없습니다"));}
+        // The made-up timetable covers four weeks (so a weekend run can still carry a lesson to the week after); the week after is empty.
+        for(var week=0;week<5&&!TextOnSchedule("아직 올라온 시간표가 없습니다");week++){next.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));await WaitUntil(()=>TextOnSchedule("아직 올라온 시간표가 없습니다"));}
         SavePreview(timetable,Path.Combine(preview,"timetable-empty-compact.png"));
         Check(TextOnSchedule("아직 올라온 시간표가 없습니다")&&Controls(timetable).OfType<Button>().Count(button=>Equals(button.Content,"시간표 올리기")&&button.IsVisible)==1,
             "unpublished week highlights one upload action in the empty card");

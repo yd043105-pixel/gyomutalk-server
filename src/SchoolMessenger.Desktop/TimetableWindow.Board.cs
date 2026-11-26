@@ -778,12 +778,18 @@ public sealed partial class TimetableWindow
         if (boardPlan!.SwapWeeks is > 0)
         {
             var traded = boardMoves.SelectMany(m => m.Option.Exchanges).SelectMany(e => new[] { e.First, e.Second }).ToHashSet();
-            var carried = boardPlan.Slots.Where(s => s.Mine && string.CompareOrdinal(s.Position.Date, today) >= 0 && !traded.Contains(s.Position))
-                .OrderBy(s => s.Position.Date).ThenBy(s => s.Position.Period).FirstOrDefault();
+            // Today's lessons that have already begun cannot move, so the first one that offers next week's lessons is carried.
+            TimetablePlanSlot? carried = null;
+            foreach (var mine in boardPlan.Slots.Where(s => s.Mine && string.CompareOrdinal(s.Position.Date, today) >= 0 && !traded.Contains(s.Position))
+                .OrderBy(s => s.Position.Date).ThenBy(s => s.Position.Period).Take(12).ToArray())
+            {
+                await BoardPickLesson(mine);
+                boardCarry = boardPick ?? boardCarry; boardWeek = boardWeek.AddDays(7); await Board(); UpdateLayout();
+                if (boardOptions.Count > 0) { carried = mine; break; }
+                boardCarry = null; BoardClearPick(); boardWeek = boardWeek.AddDays(-7); await Board();
+            }
             if (carried is not null)
             {
-                await BoardPickLesson(carried);
-                boardCarry = boardPick ?? boardCarry; boardWeek = boardWeek.AddDays(7); await Board(); UpdateLayout();
                 if (boardCarryChip is not { IsVisible: true } || boardPick?.Position != carried.Position) throw new InvalidOperationException("다음 주로 넘기면 고른 수업이 따라오지 않습니다.");
                 if (boardOptions.Count == 0 || boardOptions.Keys.Any(p => !BoardDates.Contains(p.Date) || p.ClassId != carried.Position.ClassId))
                     throw new InvalidOperationException("다음 주 수업이 교체 후보로 나오지 않거나 다른 학급·다른 주가 섞였습니다: " + feedback.Text);
